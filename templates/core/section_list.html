@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}Sections{% endblock %}
+{% block page_title %}Sections{% endblock %}
+{% block header_actions %}<a href="{% url 'section_create' %}" class="btn btn-primary">➕ Add Section</a>{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="table-container" style="border:none;">
+    <table>
+      <thead>
+        <tr><th>Section</th><th>Subject</th><th>Teacher</th><th>School Year</th><th>Students</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for section in sections %}
+        <tr>
+          <td><strong>{{ section.name }}</strong></td>
+          <td><span class="badge badge-accent">{{ section.subject.code }}</span> {{ section.subject.name }}</td>
+          <td>
+            {% if section.teacher %}
+              {{ section.teacher.user.get_full_name|default:section.teacher.user.username }}
+            {% else %}
+              <span class="text-muted">— Unassigned</span>
+            {% endif %}
+          </td>
+          <td>{{ section.school_year }} <span class="text-muted">({{ section.semester }})</span></td>
+          <td><span class="badge badge-info">{{ section.student_count }}</span></td>
+          <td>
+            <div class="flex gap-1">
+              <a href="{% url 'section_detail' section.pk %}" class="btn btn-outline btn-sm">👁 View</a>
+              <a href="{% url 'section_edit' section.pk %}" class="btn btn-outline btn-sm">✏️</a>
+              <a href="{% url 'section_delete' section.pk %}" class="btn btn-danger btn-sm">🗑️</a>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted" style="padding:30px;">No sections yet. <a href="{% url 'section_create' %}">Create one</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

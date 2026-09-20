@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}Start Attendance{% endblock %}
+{% block page_title %}Start Attendance Session{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:560px;">
+  <div class="card-header"><span class="card-title">▶ Start Attendance</span></div>
+  <div class="card-body">
+    <table style="width:100%; margin-bottom:20px;">
+      <tr><td class="text-muted" style="padding:6px 0; width:140px;">Section</td><td><strong>{{ schedule.section.name }}</strong></td></tr>
+      <tr><td class="text-muted" style="padding:6px 0;">Subject</td><td>{{ schedule.section.subject.code }} – {{ schedule.section.subject.name }}</td></tr>
+      <tr><td class="text-muted" style="padding:6px 0;">Day</td><td>{{ schedule.get_day_of_week_display }}</td></tr>
+      <tr><td class="text-muted" style="padding:6px 0;">Time</td><td>{{ schedule.start_time|time:"H:i" }} – {{ schedule.end_time|time:"H:i" }}</td></tr>
+      <tr><td class="text-muted" style="padding:6px 0;">Room</td><td>{{ schedule.room }}</td></tr>
+      <tr><td class="text-muted" style="padding:6px 0;">Students</td><td>{{ schedule.section.enrollments.count }}</td></tr>
+    </table>
+
+    <div class="alert alert-info">
+      ℹ️ Starting a session will pre-mark all enrolled students as <strong>Absent</strong>.
+      Face recognition will update their status to Present or Late.
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+      <div class="flex gap-1">
+        <button type="submit" class="btn btn-success btn-lg">▶ Start Session</button>
+        <a href="{% url 'dashboard' %}" class="btn btn-outline">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

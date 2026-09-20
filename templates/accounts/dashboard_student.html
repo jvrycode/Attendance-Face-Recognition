@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block title %}Student Dashboard{% endblock %}
+{% block page_title %}My Dashboard{% endblock %}
+{% block page_subtitle %}<p>Track your attendance records</p>{% endblock %}
+
+{% block content %}
+{% if student %}
+<!-- Student Info Card -->
+<div class="grid-2 mb-3">
+  <div class="card">
+    <div class="card-header"><span class="card-title">🎓 My Info</span></div>
+    <div class="card-body">
+      <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
+        {% if user.profile_image %}
+          <img src="{{ user.profile_image.url }}" style="width:60px;height:60px;border-radius:50%;object-fit:cover;" alt="Profile">
+        {% else %}
+          <div class="sidebar-user-avatar" style="width:60px;height:60px;font-size:22px;">
+            {{ user.first_name|first|default:user.username|first|upper }}
+          </div>
+        {% endif %}
+        <div>
+          <div class="font-bold" style="font-size:18px;">{{ user.get_full_name|default:user.username }}</div>
+          <div class="text-muted">Student ID: {{ student.student_id }}</div>
+          <div class="text-muted">{{ student.course }} – Year {{ student.year_level }}</div>
+        </div>
+      </div>
+      {% if student.is_face_enrolled %}
+        <div class="alert alert-success" style="margin-bottom:0;">✅ Face enrolled on {{ student.face_enrolled_at|date:"M d, Y" }}</div>
+      {% else %}
+        <div class="alert alert-warning" style="margin-bottom:0;">
+          ⚠️ Face not enrolled yet.
+          <a href="{% url 'enroll_face' %}" class="btn btn-primary btn-sm" style="margin-left:8px;">Enroll Now</a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">📊 Attendance Summary</span></div>
+    <div class="card-body">
+      {% with present=records|length %}
+      <div class="stats-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="stat-card green" style="padding:14px;">
+          <div class="stat-icon green" style="width:36px;height:36px;font-size:16px;">✅</div>
+          <div class="stat-info">
+            <div class="value" style="font-size:20px;">
+              {{ records|dictsort:"status"|dictsortreversed:"status"|length }}
+            </div>
+            <div class="label">Total Records</div>
+          </div>
+        </div>
+        <div class="stat-card blue" style="padding:14px;">
+          <div class="stat-icon blue" style="width:36px;height:36px;font-size:16px;">📅</div>
+          <div class="stat-info">
+            <div class="value" style="font-size:20px;">{{ records|length }}</div>
+            <div class="label">Recent</div>
+          </div>
+        </div>
+      </div>
+      {% endwith %}
+    </div>
+  </div>
+</div>
+
+<!-- Recent Records -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">📋 Recent Attendance</span>
+    <a href="{% url 'attendance_history' %}" class="btn btn-outline btn-sm">View All</a>
+  </div>
+  {% if records %}
+  <div class="table-container" style="border:none; border-radius:0;">
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Subject</th><th>Section</th><th>Status</th><th>Time</th></tr>
+      </thead>
+      <tbody>
+        {% for record in records %}
+        <tr>
+          <td>{{ record.session.date }}</td>
+          <td><span class="badge badge-accent">{{ record.session.schedule.section.subject.code }}</span></td>
+          <td>{{ record.session.schedule.section.name }}</td>
+          <td>
+            {% if record.status == 'present' %}<span class="badge badge-success">✅ Present</span>
+            {% elif record.status == 'late' %}<span class="badge badge-warning">⏰ Late</span>
+            {% elif record.status == 'excused' %}<span class="badge badge-info">📄 Excused</span>
+            {% else %}<span class="badge badge-danger">❌ Absent</span>{% endif %}
+          </td>
+          <td class="text-muted">
+            {% if record.recognized_at %}{{ record.recognized_at|time:"H:i" }}{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="card-body text-center text-muted">No attendance records yet.</div>
+  {% endif %}
+</div>
+
+{% else %}
+<div class="card">
+  <div class="card-body text-center text-muted">Student profile not set up. Contact your administrator.</div>
+</div>
+{% endif %}
+{% endblock %}

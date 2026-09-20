@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}Attendance History{% endblock %}
+{% block page_title %}Attendance History{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="table-container" style="border:none;">
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Section</th><th>Subject</th><th>Teacher</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for session in sessions %}
+        <tr>
+          <td>{{ session.date }}</td>
+          <td><strong>{{ session.schedule.section.name }}</strong></td>
+          <td><span class="badge badge-accent">{{ session.schedule.section.subject.code }}</span></td>
+          <td class="text-muted">{{ session.started_by.user.get_full_name|default:"—" }}</td>
+          <td>
+            {% if session.status == 'open' %}
+              <span class="badge badge-success">● Open</span>
+            {% else %}
+              <span class="badge badge-muted">Closed</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="flex gap-1">
+              {% if session.status == 'open' and request.user.role == 'teacher' %}
+                <a href="{% url 'session_live' session.pk %}" class="btn btn-primary btn-sm">📷 Live</a>
+              {% endif %}
+              <a href="{% url 'session_report' session.pk %}" class="btn btn-outline btn-sm">📊 Report</a>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted" style="padding:30px;">No sessions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

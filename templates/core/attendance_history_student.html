@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}My Attendance Records{% endblock %}
+{% block page_title %}My Attendance Records{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="table-container" style="border:none;">
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Subject</th><th>Section</th><th>Status</th><th>Time</th><th>Confidence</th></tr>
+      </thead>
+      <tbody>
+        {% for record in records %}
+        <tr>
+          <td>{{ record.session.date }}</td>
+          <td><span class="badge badge-accent">{{ record.session.schedule.section.subject.code }}</span> {{ record.session.schedule.section.subject.name }}</td>
+          <td>{{ record.session.schedule.section.name }}</td>
+          <td>
+            {% if record.status == 'present' %}<span class="badge badge-success">✅ Present</span>
+            {% elif record.status == 'late' %}<span class="badge badge-warning">⏰ Late</span>
+            {% elif record.status == 'excused' %}<span class="badge badge-info">📄 Excused</span>
+            {% else %}<span class="badge badge-danger">❌ Absent</span>{% endif %}
+          </td>
+          <td class="text-muted">{{ record.recognized_at|time:"H:i"|default:"—" }}</td>
+          <td class="text-muted">
+            {% if record.confidence_score %}{{ record.confidence_score|floatformat:1 }}%{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted" style="padding:30px;">No attendance records yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% block title %}Session Report{% endblock %}
+{% block page_title %}Attendance Report{% endblock %}
+{% block page_subtitle %}
+  <p>{{ session.schedule.section.name }} | {{ session.schedule.section.subject.code }} | {{ session.date }}</p>
+{% endblock %}
+{% block header_actions %}
+  <button onclick="window.print()" class="btn btn-outline">🖨️ Print</button>
+  {% if session.status == 'open' %}
+    <form method="post" action="{% url 'session_close' session.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">⏹ Close Session</button>
+    </form>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<!-- Summary Stats -->
+<div class="stats-grid mb-3">
+  <div class="stat-card green">
+    <div class="stat-icon green">✅</div>
+    <div class="stat-info">
+      <div class="value">{{ present_count }}</div>
+      <div class="label">Present</div>
+    </div>
+  </div>
+  <div class="stat-card yellow">
+    <div class="stat-icon yellow">⏰</div>
+    <div class="stat-info">
+      <div class="value">{{ late_count }}</div>
+      <div class="label">Late</div>
+    </div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-icon red">❌</div>
+    <div class="stat-info">
+      <div class="value">{{ absent_count }}</div>
+      <div class="label">Absent</div>
+    </div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-icon blue">👥</div>
+    <div class="stat-info">
+      <div class="value">{{ total }}</div>
+      <div class="label">Total Students</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">📋 Attendance Records</span>
+    <div>
+      {% if session.status == 'open' %}
+        <span class="badge badge-success">● Session Open</span>
+        <a href="{% url 'session_live' session.pk %}" class="btn btn-primary btn-sm" style="margin-left:8px;">Go Live</a>
+      {% else %}
+        <span class="badge badge-muted">Closed at {{ session.closed_at|time:"H:i" }}</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="table-container" style="border:none;">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Student</th><th>Student ID</th><th>Status</th><th>Recognized At</th><th>Confidence</th><th>Remarks</th>
+        {% if request.user.role in 'admin,teacher' %}<th>Edit</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in records %}
+        <tr id="row-{{ record.pk }}">
+          <td class="text-muted">{{ forloop.counter }}</td>
+          <td>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div class="student-avatar-sm">{{ record.student.user.first_name|first|upper }}</div>
+              {{ record.student.user.get_full_name }}
+            </div>
+          </td>
+          <td class="text-muted">{{ record.student.student_id }}</td>
+          <td>
+            {% if record.status == 'present' %}<span class="badge badge-success">✅ Present</span>
+            {% elif record.status == 'late' %}<span class="badge badge-warning">⏰ Late</span>
+            {% elif record.status == 'excused' %}<span class="badge badge-info">📄 Excused</span>
+            {% else %}<span class="badge badge-danger">❌ Absent</span>{% endif %}
+          </td>
+          <td class="text-muted">{{ record.recognized_at|time:"H:i:s"|default:"—" }}</td>
+          <td class="text-muted">
+            {% if record.confidence_score %}{{ record.confidence_score|floatformat:1 }}%{% else %}—{% endif %}
+          </td>
+          <td class="text-muted">{{ record.remarks|default:"—" }}</td>
+          {% if request.user.role == 'admin' or request.user.role == 'teacher' %}
+          <td>
+            <form method="post" style="display:flex;gap:6px;align-items:center;">
+              {% csrf_token %}
+              <input type="hidden" name="record_id" value="{{ record.pk }}">
+              <select name="status" class="form-select" style="width:110px;">
+                <option value="present" {% if record.status == 'present' %}selected{% endif %}>Present</option>
+                <option value="late" {% if record.status == 'late' %}selected{% endif %}>Late</option>
+                <option value="absent" {% if record.status == 'absent' %}selected{% endif %}>Absent</option>
+                <option value="excused" {% if record.status == 'excused' %}selected{% endif %}>Excused</option>
+              </select>
+              <input type="text" name="remarks" value="{{ record.remarks }}" placeholder="Remarks" class="form-control" style="width:120px;">
+              <button type="submit" class="btn btn-outline btn-sm">💾</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

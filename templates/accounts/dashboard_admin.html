@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block title %}Admin Dashboard{% endblock %}
+{% block page_title %}Admin Dashboard{% endblock %}
+{% block page_subtitle %}<p>System overview and management</p>{% endblock %}
+
+{% block content %}
+<!-- Stats -->
+<div class="stats-grid">
+  <div class="stat-card blue">
+    <div class="stat-icon blue">👩‍🏫</div>
+    <div class="stat-info">
+      <div class="value">{{ total_teachers }}</div>
+      <div class="label">Total Teachers</div>
+    </div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-icon green">🎓</div>
+    <div class="stat-info">
+      <div class="value">{{ total_students }}</div>
+      <div class="label">Total Students</div>
+    </div>
+  </div>
+  <div class="stat-card yellow">
+    <div class="stat-icon yellow">📚</div>
+    <div class="stat-info">
+      <div class="value">{{ total_subjects }}</div>
+      <div class="label">Subjects</div>
+    </div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-icon red">🏫</div>
+    <div class="stat-info">
+      <div class="value">{{ total_sections }}</div>
+      <div class="label">Sections</div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="grid-2 mb-3">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">⚡ Quick Actions</span>
+    </div>
+    <div class="card-body" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <a href="{% url 'user_create' %}" class="btn btn-primary">➕ Add User</a>
+      <a href="{% url 'subject_create' %}" class="btn btn-outline">📚 Add Subject</a>
+      <a href="{% url 'section_create' %}" class="btn btn-outline">🏫 Add Section</a>
+      <a href="{% url 'schedule_create' %}" class="btn btn-outline">📅 Add Schedule</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">🕐 Recent Sessions</span>
+      <a href="{% url 'attendance_history' %}" class="btn btn-outline btn-sm">View All</a>
+    </div>
+    <div class="card-body" style="padding:0;">
+      {% if recent_sessions %}
+        <table>
+          <tbody>
+            {% for session in recent_sessions %}
+            <tr>
+              <td>
+                <div class="font-bold" style="font-size:13px;">{{ session.schedule.section.name }}</div>
+                <div class="text-muted" style="font-size:11px;">{{ session.schedule.section.subject.code }}</div>
+              </td>
+              <td>{{ session.date }}</td>
+              <td>
+                {% if session.status == 'open' %}
+                  <span class="badge badge-success">● Open</span>
+                {% else %}
+                  <span class="badge badge-muted">Closed</span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{% url 'session_report' session.pk %}" class="btn btn-outline btn-sm">View</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div style="padding:20px; text-align:center; color:var(--text-muted);">No sessions yet</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

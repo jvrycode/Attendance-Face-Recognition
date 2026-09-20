@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block title %}Users{% endblock %}
+{% block page_title %}User Management{% endblock %}
+{% block page_subtitle %}<p>Manage all system users</p>{% endblock %}
+{% block header_actions %}
+  <a href="{% url 'user_create' %}" class="btn btn-primary">➕ Add User</a>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="table-container" style="border:none;">
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div class="student-avatar-sm">{{ u.first_name|first|default:u.username|first|upper }}</div>
+              <div>
+                <div class="font-bold">{{ u.get_full_name|default:u.username }}</div>
+                {% if u.role == 'teacher' and u.teacher_profile %}
+                  <div class="text-muted" style="font-size:11px;">ID: {{ u.teacher_profile.employee_id }}</div>
+                {% elif u.role == 'student' and u.student_profile %}
+                  <div class="text-muted" style="font-size:11px;">ID: {{ u.student_profile.student_id }}</div>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+          <td class="text-muted">{{ u.username }}</td>
+          <td class="text-muted">{{ u.email|default:"—" }}</td>
+          <td><span class="role-badge {{ u.role }}">{{ u.get_role_display }}</span></td>
+          <td>
+            {% if u.is_active %}<span class="badge badge-success">Active</span>
+            {% else %}<span class="badge badge-danger">Inactive</span>{% endif %}
+          </td>
+          <td>
+            <div class="flex gap-1">
+              <a href="{% url 'user_edit' u.pk %}" class="btn btn-outline btn-sm">✏️</a>
+              {% if u != request.user %}
+                <a href="{% url 'user_delete' u.pk %}" class="btn btn-danger btn-sm">🗑️</a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted">No users found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

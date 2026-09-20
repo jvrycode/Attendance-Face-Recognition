@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+{% block title %}Face Enrollment{% endblock %}
+{% block page_title %}Face Enrollment{% endblock %}
+{% block page_subtitle %}<p>Register your face for automatic attendance recognition</p>{% endblock %}
+
+{% block content %}
+<div style="display:grid; grid-template-columns:1fr 380px; gap:20px; max-width:1000px;">
+
+  <!-- Camera Panel -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📷 Capture Face</span>
+      <span class="badge {% if student.is_face_enrolled %}badge-success{% else %}badge-warning{% endif %}">
+        {% if student.is_face_enrolled %}✅ Face Enrolled{% else %}⚠️ Not Enrolled{% endif %}
+      </span>
+    </div>
+    <div class="card-body">
+      {% if not fr_available %}
+      <div class="alert alert-warning">
+        ⚠️ <strong>face_recognition</strong> library is not installed.
+        Face enrollment requires it.<br>
+        Install with: <code style="background:rgba(255,255,255,.1); padding:2px 6px; border-radius:4px;">pip install face_recognition</code>
+        (requires CMake + Visual C++ Build Tools on Windows)
+      </div>
+      {% endif %}
+
+      <div class="camera-container mb-2" style="max-height:360px;">
+        <video id="enroll-video" class="camera-video" autoplay playsinline muted style="max-height:360px;"></video>
+        <canvas id="enroll-canvas" style="display:none;"></canvas>
+        <div class="camera-overlay">
+          <div class="face-guide" id="enroll-face-guide" style="display:none;"></div>
+        </div>
+        <div id="capture-flash" style="
+          display:none; position:absolute; inset:0; background:white; opacity:0;
+          transition:opacity 0.1s; pointer-events:none;"></div>
+      </div>
+
+      <div class="flex gap-1">
+        <button id="btn-start" class="btn btn-primary" onclick="startEnrollCamera()">📷 Start Camera</button>
+        <button id="btn-capture" class="btn btn-success" onclick="captureAndEnroll()" style="display:none;">🎯 Capture & Enroll</button>
+        <button id="btn-stop" class="btn btn-outline" onclick="stopEnrollCamera()" style="display:none;">⏹ Stop</button>
+      </div>
+
+      <div id="enroll-result" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <!-- Info Panel -->
+  <div>
+    <div class="card mb-2">
+      <div class="card-header"><span class="card-title">🎓 Student Info</span></div>
+      <div class="card-body">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+          {% if student.face_image %}
+            <img src="{{ student.face_image.url }}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--success);" alt="Face">
+          {% else %}
+            <div class="student-avatar-sm" style="width:64px;height:64px;font-size:22px;">{{ student.user.first_name|first|upper }}</div>
+          {% endif %}
+          <div>
+            <div class="font-bold">{{ student.user.get_full_name }}</div>
+            <div class="text-muted">{{ student.student_id }}</div>
+            <div class="text-muted">{{ student.course }}</div>
+          </div>
+        </div>
+        {% if student.face_enrolled_at %}
+          <div class="text-muted" style="font-size:12px;">Last enrolled: {{ student.face_enrolled_at|date:"M d, Y H:i" }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">ℹ️ Tips</span></div>
+      <div class="card-body">
+        <ul style="list-style:none; display:flex; flex-direction:column; gap:8px;">
+          <li>💡 Face the camera directly in good lighting</li>
+          <li>💡 Make sure only your face is visible</li>
+          <li>💡 Remove glasses if possible for better accuracy</li>
+          <li>💡 Keep a neutral expression</li>
+          <li>💡 The system stores only a numerical encoding, not your photo</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STUDENT_ID = {{ student.pk }};
+const CSRF_TOKEN = '{{ csrf_token }}';
+let enrollStream = null;
+
+async function startEnrollCamera() {
+  try {
+    enrollStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+    document.getElementById('enroll-video').srcObject = enrollStream;
+    document.getElementById('btn-start').style.display = 'none';
+    document.getElementById('btn-capture').style.display = 'inline-flex';
+    document.getElementById('btn-stop').style.display = 'inline-flex';
+    document.getElementById('enroll-face-guide').style.display = 'block';
+  } catch (e) {
+    showResult('❌ Camera error: ' + e.message, 'danger');
+  }
+}
+
+function stopEnrollCamera() {
+  if (enrollStream) { enrollStream.getTracks().forEach(t => t.stop()); enrollStream = null; }
+  document.getElementById('enroll-video').srcObject = null;
+  document.getElementById('btn-start').style.display = 'inline-flex';
+  document.getElementById('btn-capture').style.display = 'none';
+  document.getElementById('btn-stop').style.display = 'none';
+  document.getElementById('enroll-face-guide').style.display = 'none';
+}
+
+async function captureAndEnroll() {
+  const video = document.getElementById('enroll-video');
+  const canvas = document.getElementById('enroll-canvas');
+  if (!enrollStream || video.readyState < 2) {
+    showResult('⚠️ Camera not ready.', 'warning');
+    return;
+  }
+
+  // Flash effect
+  const flash = document.getElementById('capture-flash');
+  flash.style.display = 'block';
+  flash.style.opacity = '0.7';
+  setTimeout(() => { flash.style.opacity = '0'; setTimeout(() => flash.style.display = 'none', 200); }, 100);
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  const frame = canvas.toDataURL('image/jpeg', 0.9);
+
+  const btn = document.getElementById('btn-capture');
+  btn.disabled = true;
+  btn.textContent = '⏳ Processing...';
+
+  try {
+    const resp = await fetch('/face/enroll/capture/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+      body: JSON.stringify({ student_id: STUDENT_ID, frame })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      showResult('✅ ' + data.message, 'success');
+      stopEnrollCamera();
+      // Update enrolled badge
+      setTimeout(() => location.reload(), 2000);
+    } else {
+      showResult('⚠️ ' + (data.message || data.error), 'warning');
+    }
+  } catch (e) {
+    showResult('❌ Error: ' + e.message, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🎯 Capture & Enroll';
+  }
+}
+
+function showResult(msg, type) {
+  const el = document.getElementById('enroll-result');
+  el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+  setTimeout(() => el.innerHTML = '', 5000);
+}
+</script>
+{% endblock %}

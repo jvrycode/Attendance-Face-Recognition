@@ -1,0 +1,166 @@
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.db import transaction
+from .forms import LoginForm, AdminUserCreateForm, TeacherProfileForm, StudentProfileForm, UserEditForm
+from .models import CustomUser, Teacher, Student
+from .decorators import admin_required
+
+
+def login_view(request):
+    """Custom login with role-based redirect."""
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    form = LoginForm(request, data=request.POST or None)
+    if request.method == 'POST':
+        if form.is_valid():
+            user = form.get_user()
+            login(request, user)
+            messages.success(request, f'Welcome back, {user.get_full_name() or user.username}!')
+            return redirect('dashboard')
+        else:
+            messages.error(request, 'Invalid username or password.')
+
+    return render(request, 'accounts/login.html', {'form': form})
+
+
+@login_required
+def logout_view(request):
+    logout(request)
+    messages.info(request, 'You have been logged out.')
+    return redirect('login')
+
+
+@login_required
+def dashboard_view(request):
+    """Route to role-specific dashboard."""
+    user = request.user
+    context = {'user': user}
+
+    if user.role == 'admin':
+        from core.models import Subject, Section, Schedule, AttendanceSession
+        context['total_teachers'] = Teacher.objects.count()
+        context['total_students'] = Student.objects.count()
+        context['total_subjects'] = Subject.objects.count()
+        context['total_sections'] = Section.objects.count()
+        context['recent_sessions'] = AttendanceSession.objects.select_related(
+            'schedule__section__subject', 'started_by__user'
+        ).order_by('-date', '-created_at')[:5]
+        return render(request, 'accounts/dashboard_admin.html', context)
+
+    elif user.role == 'teacher':
+        try:
+            teacher = user.teacher_profile
+            from core.models import Section, AttendanceSession
+            sections = teacher.sections.select_related('subject').prefetch_related('schedules')
+            recent_sessions = AttendanceSession.objects.filter(
+                started_by=teacher
+            ).select_related('schedule__section__subject').order_by('-date', '-created_at')[:5]
+            context['teacher'] = teacher
+            context['sections'] = sections
+            context['recent_sessions'] = recent_sessions
+        except Teacher.DoesNotExist:
+            messages.warning(request, 'Teacher profile not set up. Contact admin.')
+        return render(request, 'accounts/dashboard_teacher.html', context)
+
+    elif user.role == 'student':
+        try:
+            student = user.student_profile
+            from core.models import AttendanceRecord, Section
+            records = AttendanceRecord.objects.filter(
+                student=student
+            ).select_related(
+                'session__schedule__section__subject'
+            ).order_by('-session__date')[:10]
+            section = student.section if hasattr(student, 'section') else None
+            context['student'] = student
+            context['records'] = records
+            context['section'] = section
+        except Student.DoesNotExist:
+            messages.warning(request, 'Student profile not set up. Contact admin.')
+        return render(request, 'accounts/dashboard_student.html', context)
+
+    return redirect('login')
+
+
+# ─── Admin: User Management ────────────────────────────────────────────────────
+
+@login_required
+@admin_required
+def user_list_view(request):
+    users = CustomUser.objects.all().order_by('role', 'username')
+    return render(request, 'accounts/user_list.html', {'users': users})
+
+
+@login_required
+@admin_required
+def user_create_view(request):
+    user_form = AdminUserCreateForm(request.POST or None)
+    teacher_form = TeacherProfileForm(request.POST or None)
+    student_form = StudentProfileForm(request.POST or None)
+
+    if request.method == 'POST':
+        role = request.POST.get('role', 'student')
+        user_form = AdminUserCreateForm(request.POST)
+
+        if user_form.is_valid():
+            with transaction.atomic():
+                user = user_form.save()
+                if role == 'teacher':
+                    t_form = TeacherProfileForm(request.POST)
+                    if t_form.is_valid():
+                        teacher = t_form.save(commit=False)
+                        teacher.user = user
+                        teacher.save()
+                elif role == 'student':
+                    s_form = StudentProfileForm(request.POST)
+                    if s_form.is_valid():
+                        student = s_form.save(commit=False)
+                        student.user = user
+                        student.save()
+                messages.success(request, f'User "{user.username}" created successfully.')
+                return redirect('user_list')
+        else:
+            messages.error(request, 'Please fix the errors below.')
+
+    return render(request, 'accounts/user_create.html', {
+        'user_form': user_form,
+        'teacher_form': teacher_form,
+        'student_form': student_form,
+    })
+
+
+@login_required
+@admin_required
+def user_edit_view(request, pk):
+    target_user = get_object_or_404(CustomUser, pk=pk)
+    form = UserEditForm(request.POST or None, request.FILES or None, instance=target_user)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'User updated successfully.')
+        return redirect('user_list')
+    return render(request, 'accounts/user_edit.html', {'form': form, 'target_user': target_user})
+
+
+@login_required
+@admin_required
+def user_delete_view(request, pk):
+    target_user = get_object_or_404(CustomUser, pk=pk)
+    if request.method == 'POST':
+        name = target_user.get_full_name() or target_user.username
+        target_user.delete()
+        messages.success(request, f'User "{name}" deleted.')
+        return redirect('user_list')
+    return render(request, 'accounts/user_confirm_delete.html', {'target_user': target_user})
+
+
+@login_required
+def profile_view(request):
+    form = UserEditForm(request.POST or None, request.FILES or None, instance=request.user)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Profile updated successfully.')
+        return redirect('profile')
+    return render(request, 'accounts/profile.html', {'form': form})

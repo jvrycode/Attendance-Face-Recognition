@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:560px;">
+  <div class="card-header"><span class="card-title">📅 {{ title }}</span></div>
+  <div class="card-body">
+    <div class="alert alert-info">
+      ℹ️ The system will automatically detect room and teacher conflicts when saving.
+    </div>
+    <form method="post">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Section *</label>
+        {{ form.section }}
+        {% if form.section.errors %}<div class="form-error">{{ form.section.errors.0 }}</div>{% endif %}
+      </div>
+      <div class="form-group">
+        <label class="form-label">Day of Week *</label>
+        {{ form.day_of_week }}
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Start Time *</label>
+          {{ form.start_time }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Time *</label>
+          {{ form.end_time }}
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Room *</label>
+        {{ form.room }}
+      </div>
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger">❌ {{ form.non_field_errors.0 }}</div>
+      {% endif %}
+      <div class="flex gap-1 mt-2">
+        <button type="submit" class="btn btn-primary">💾 Save Schedule</button>
+        <a href="{% url 'schedule_list' %}" class="btn btn-outline">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

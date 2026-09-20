@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}Schedules{% endblock %}
+{% block page_title %}Schedules{% endblock %}
+{% block header_actions %}<a href="{% url 'schedule_create' %}" class="btn btn-primary">➕ Add Schedule</a>{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="table-container" style="border:none;">
+    <table>
+      <thead>
+        <tr><th>Section</th><th>Subject</th><th>Teacher</th><th>Day</th><th>Time</th><th>Room</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for sched in schedules %}
+        <tr>
+          <td><strong>{{ sched.section.name }}</strong></td>
+          <td><span class="badge badge-accent">{{ sched.section.subject.code }}</span></td>
+          <td class="text-muted">
+            {% if sched.section.teacher %}{{ sched.section.teacher.user.get_full_name }}{% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="badge badge-info">{{ sched.get_day_of_week_display }}</span>
+          </td>
+          <td>{{ sched.start_time|time:"H:i" }} – {{ sched.end_time|time:"H:i" }}</td>
+          <td>{{ sched.room }}</td>
+          <td>
+            <div class="flex gap-1">
+              <a href="{% url 'schedule_edit' sched.pk %}" class="btn btn-outline btn-sm">✏️</a>
+              <a href="{% url 'schedule_delete' sched.pk %}" class="btn btn-danger btn-sm">🗑️</a>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center text-muted" style="padding:30px;">No schedules. <a href="{% url 'schedule_create' %}">Add one</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

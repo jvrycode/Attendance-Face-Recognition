@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+{% block title %}Live Attendance{% endblock %}
+{% block page_title %}Live Attendance – {{ session.schedule.section.name }}{% endblock %}
+{% block page_subtitle %}
+  <p>{{ session.schedule.section.subject.code }} | {{ session.date }} | {{ session.schedule.start_time|time:"H:i" }}–{{ session.schedule.end_time|time:"H:i" }} @ {{ session.schedule.room }}</p>
+{% endblock %}
+
+{% block header_actions %}
+  <form method="post" action="{% url 'session_close' session.pk %}" onsubmit="return confirm('Close this session?')">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">⏹ Close Session</button>
+  </form>
+{% endblock %}
+
+{% block content %}
+<div style="display:grid; grid-template-columns: 1fr 380px; gap:20px;">
+
+  <!-- Camera Panel -->
+  <div>
+    <div class="card mb-2">
+      <div class="card-header">
+        <span class="card-title">📷 Live Camera Feed</span>
+        <div id="fr-status" class="recognition-status" style="padding:6px 12px; font-size:12px;">
+          <span class="pulse-dot" id="status-dot" style="background:var(--text-muted);"></span>
+          <span id="status-text">Camera off</span>
+        </div>
+      </div>
+      <div class="camera-container">
+        <video id="camera-video" class="camera-video" autoplay playsinline muted></video>
+        <canvas id="camera-canvas" style="display:none;"></canvas>
+        <div class="camera-overlay">
+          <div class="face-guide" id="face-guide" style="display:none;"></div>
+        </div>
+        <!-- Recognition feedback overlay -->
+        <div id="recognition-popup" style="
+          display:none; position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
+          background:rgba(0,0,0,.85); border:1px solid var(--success); border-radius:10px;
+          padding:12px 20px; text-align:center; min-width:240px; backdrop-filter:blur(8px);">
+          <div id="rec-name" style="font-size:16px; font-weight:700; color:var(--text-primary);"></div>
+          <div id="rec-status" style="font-size:13px; margin-top:4px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-1">
+      <button id="btn-start-cam" class="btn btn-primary" onclick="startCamera()">📷 Start Camera</button>
+      <button id="btn-stop-cam" class="btn btn-outline" onclick="stopCamera()" style="display:none;">⏹ Stop Camera</button>
+      <button id="btn-toggle-fr" class="btn btn-success" onclick="toggleRecognition()" style="display:none;">🔍 Start Recognition</button>
+    </div>
+    <p class="text-muted mt-1" style="font-size:12px;">
+      ⚠️ Make sure face_recognition is installed for live recognition. 
+      Manual marking is always available on the right.
+    </p>
+  </div>
+
+  <!-- Attendance List Panel -->
+  <div>
+    <div class="card" style="max-height:calc(100vh - 200px); display:flex; flex-direction:column;">
+      <div class="card-header">
+        <span class="card-title">📋 Students ({{ records.count }})</span>
+        <div>
+          <span class="badge badge-success" id="present-count">
+            ✅ {{ records|dictsort:"status"|first|default:"0" }}
+          </span>
+        </div>
+      </div>
+      <div style="overflow-y:auto; flex:1; padding:12px;">
+        <div class="attendance-list" id="attendance-list">
+          {% for record in records %}
+          <div class="attendance-item {{ record.status }}" id="record-{{ record.student.pk }}" data-student-id="{{ record.student.pk }}">
+            <div class="student-avatar-sm">{{ record.student.user.first_name|first|upper }}</div>
+            <div style="flex:1; min-width:0;">
+              <div class="font-bold truncate">{{ record.student.user.get_full_name }}</div>
+              <div class="text-muted" style="font-size:11px;">{{ record.student.student_id }}</div>
+            </div>
+            <div style="text-align:right; flex-shrink:0;">
+              {% if record.status == 'present' %}
+                <span class="badge badge-success">✅ Present</span>
+              {% elif record.status == 'late' %}
+                <span class="badge badge-warning">⏰ Late</span>
+              {% else %}
+                <span class="badge badge-muted" id="badge-{{ record.student.pk }}">Absent</span>
+              {% endif %}
+              {% if record.recognized_at %}
+                <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">{{ record.recognized_at|time:"H:i:s" }}</div>
+              {% endif %}
+            </div>
+            <!-- Manual mark buttons (shown when absent) -->
+            {% if record.status == 'absent' %}
+            <div style="display:flex; flex-direction:column; gap:4px;" id="manual-btns-{{ record.student.pk }}">
+              <button class="btn btn-success btn-sm" onclick="markManual({{ session.pk }}, {{ record.student.pk }}, 'present')">✅</button>
+              <button class="btn btn-warning btn-sm" onclick="markManual({{ session.pk }}, {{ record.student.pk }}, 'late')">⏰</button>
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <!-- Summary -->
+      <div style="border-top:1px solid var(--border); padding:12px 16px; background:var(--bg-secondary);">
+        <div style="display:flex; gap:16px; font-size:13px;">
+          <span>✅ Present: <strong id="cnt-present">{{ records|dictsort:"status"|length }}</strong></span>
+          <span>⏰ Late: <strong id="cnt-late">0</strong></span>
+          <span>❌ Absent: <strong id="cnt-absent">{{ records.count }}</strong></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SESSION_ID = {{ session.pk }};
+const CSRF_TOKEN = '{{ csrf_token }}';
+let stream = null;
+let recognitionInterval = null;
+let isRecognizing = false;
+
+// Counts from server
+let cntPresent = {% with r=records %}{% for record in r %}{% if record.status == 'present' %}{{ forloop.counter0 }}{% endif %}{% endfor %}0{% endwith %};
+let cntLate = 0;
+let cntAbsent = {{ records.count }};
+
+// Count initial state
+document.addEventListener('DOMContentLoaded', () => {
+  let p = 0, l = 0, a = 0;
+  document.querySelectorAll('.attendance-item').forEach(el => {
+    if (el.classList.contains('present')) p++;
+    else if (el.classList.contains('late')) l++;
+    else a++;
+  });
+  updateCounts(p, l, a);
+});
+
+function updateCounts(p, l, a) {
+  document.getElementById('cnt-present').textContent = p;
+  document.getElementById('cnt-late').textContent = l;
+  document.getElementById('cnt-absent').textContent = a;
+}
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+    const video = document.getElementById('camera-video');
+    video.srcObject = stream;
+    document.getElementById('btn-start-cam').style.display = 'none';
+    document.getElementById('btn-stop-cam').style.display = 'inline-flex';
+    document.getElementById('btn-toggle-fr').style.display = 'inline-flex';
+    document.getElementById('face-guide').style.display = 'block';
+    setStatus('ready', '🟡 Camera ready');
+  } catch (e) {
+    alert('Camera error: ' + e.message);
+  }
+}
+
+function stopCamera() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (recognitionInterval) { clearInterval(recognitionInterval); recognitionInterval = null; }
+  isRecognizing = false;
+  document.getElementById('camera-video').srcObject = null;
+  document.getElementById('btn-start-cam').style.display = 'inline-flex';
+  document.getElementById('btn-stop-cam').style.display = 'none';
+  document.getElementById('btn-toggle-fr').style.display = 'none';
+  document.getElementById('btn-toggle-fr').textContent = '🔍 Start Recognition';
+  document.getElementById('face-guide').style.display = 'none';
+  setStatus('off', 'Camera off');
+}
+
+function toggleRecognition() {
+  if (isRecognizing) {
+    clearInterval(recognitionInterval); recognitionInterval = null;
+    isRecognizing = false;
+    document.getElementById('btn-toggle-fr').textContent = '🔍 Start Recognition';
+    document.getElementById('btn-toggle-fr').className = 'btn btn-success';
+    setStatus('ready', '🟡 Paused');
+  } else {
+    isRecognizing = true;
+    document.getElementById('btn-toggle-fr').textContent = '⏸ Pause Recognition';
+    document.getElementById('btn-toggle-fr').className = 'btn btn-warning';
+    setStatus('scanning', '🟢 Scanning...');
+    recognitionInterval = setInterval(captureAndRecognize, 1500);
+  }
+}
+
+function setStatus(state, text) {
+  const dot = document.getElementById('status-dot');
+  document.getElementById('status-text').textContent = text;
+  dot.style.background = state === 'scanning' ? 'var(--success)' : state === 'ready' ? 'var(--warning)' : 'var(--text-muted)';
+}
+
+async function captureAndRecognize() {
+  const video = document.getElementById('camera-video');
+  const canvas = document.getElementById('camera-canvas');
+  if (!stream || video.readyState < 2) return;
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+  const frame = canvas.toDataURL('image/jpeg', 0.7);
+
+  try {
+    const resp = await fetch('/face/recognize/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+      body: JSON.stringify({ session_id: SESSION_ID, frame })
+    });
+    const data = await resp.json();
+    if (data.success && data.recognized.length > 0) {
+      data.recognized.forEach(r => handleRecognized(r));
+    }
+  } catch (e) { console.error('Recognition error:', e); }
+}
+
+function handleRecognized(result) {
+  const item = document.getElementById('record-' + result.student_id);
+  if (!item) return;
+
+  // Only update if newly marked
+  if (result.new_status) {
+    item.className = 'attendance-item ' + result.new_status;
+    const badge = item.querySelector('[id^="badge-"]');
+    if (badge) {
+      badge.className = result.new_status === 'present' ? 'badge badge-success' : 'badge badge-warning';
+      badge.textContent = result.new_status === 'present' ? '✅ Present' : '⏰ Late';
+    }
+    const manualBtns = document.getElementById('manual-btns-' + result.student_id);
+    if (manualBtns) manualBtns.remove();
+
+    // Update counters
+    let p = 0, l = 0, a = 0;
+    document.querySelectorAll('.attendance-item').forEach(el => {
+      if (el.classList.contains('present')) p++;
+      else if (el.classList.contains('late')) l++;
+      else a++;
+    });
+    updateCounts(p, l, a);
+
+    // Show popup
+    const popup = document.getElementById('recognition-popup');
+    document.getElementById('rec-name').textContent = result.name;
+    document.getElementById('rec-status').innerHTML =
+      `${result.new_status === 'present' ? '✅ Marked Present' : '⏰ Marked Late'} — ${result.confidence}% confidence`;
+    popup.style.display = 'block';
+    setTimeout(() => popup.style.display = 'none', 3000);
+  }
+}
+
+async function markManual(sessionId, studentId, status) {
+  try {
+    const resp = await fetch('/api/mark-present/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+      body: JSON.stringify({ session_id: sessionId, student_id: studentId, confidence: 1.0 })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      handleRecognized({ student_id: studentId, name: data.student_name, new_status: data.status, confidence: 100 });
+    }
+  } catch (e) { console.error(e); }
+}
+</script>
+{% endblock %}

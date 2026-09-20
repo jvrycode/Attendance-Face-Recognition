@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% block title %}{{ section.name }} Detail{% endblock %}
+{% block page_title %}{{ section.name }}{% endblock %}
+{% block page_subtitle %}<p>{{ section.subject.code }} – {{ section.subject.name }} | {{ section.school_year }} {{ section.semester }}</p>{% endblock %}
+
+{% block header_actions %}
+  <a href="{% url 'section_edit' section.pk %}" class="btn btn-outline">✏️ Edit</a>
+{% endblock %}
+
+{% block content %}
+<div class="grid-2 mb-3">
+
+  <!-- Schedules -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📅 Schedules</span>
+      {% if request.user.role == 'admin' %}
+        <a href="{% url 'schedule_create' %}?section={{ section.pk }}" class="btn btn-outline btn-sm">➕ Add</a>
+      {% endif %}
+    </div>
+    <div class="card-body" style="padding:0;">
+      {% if section.schedules.all %}
+        <table>
+          <thead><tr><th>Day</th><th>Time</th><th>Room</th><th></th></tr></thead>
+          <tbody>
+            {% for sched in section.schedules.all %}
+            <tr>
+              <td>{{ sched.get_day_of_week_display }}</td>
+              <td>{{ sched.start_time|time:"H:i" }} – {{ sched.end_time|time:"H:i" }}</td>
+              <td>{{ sched.room }}</td>
+              <td>
+                {% if request.user.role == 'teacher' %}
+                  <a href="{% url 'session_start' sched.pk %}" class="btn btn-success btn-sm">▶ Start Session</a>
+                {% elif request.user.role == 'admin' %}
+                  <a href="{% url 'schedule_edit' sched.pk %}" class="btn btn-outline btn-sm">✏️</a>
+                  <a href="{% url 'schedule_delete' sched.pk %}" class="btn btn-danger btn-sm">🗑️</a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div style="padding:20px; text-align:center; color:var(--text-muted);">No schedules set.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Teacher Info -->
+  <div class="card">
+    <div class="card-header"><span class="card-title">👩‍🏫 Assigned Teacher</span></div>
+    <div class="card-body">
+      {% if section.teacher %}
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div class="student-avatar-sm" style="width:48px;height:48px;font-size:18px;">
+            {{ section.teacher.user.first_name|first|upper }}
+          </div>
+          <div>
+            <div class="font-bold">{{ section.teacher.user.get_full_name }}</div>
+            <div class="text-muted">{{ section.teacher.department }}</div>
+            <div class="text-muted" style="font-size:11px;">ID: {{ section.teacher.employee_id }}</div>
+          </div>
+        </div>
+      {% else %}
+        <span class="text-muted">No teacher assigned.</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Students -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">🎓 Enrolled Students ({{ section.enrollments.count }})</span>
+  </div>
+  <div class="card-body">
+    {% if request.user.role == 'admin' %}
+    <form method="post" style="display:flex; gap:10px; margin-bottom:16px;">
+      {% csrf_token %}
+      {{ enroll_form.student }}
+      <button type="submit" class="btn btn-primary">➕ Enroll Student</button>
+    </form>
+    {% endif %}
+    {% if section.enrollments.all %}
+    <div class="table-container">
+      <table>
+        <thead><tr><th>Student</th><th>Student ID</th><th>Course</th><th>Face</th>{% if request.user.role == 'admin' %}<th></th>{% endif %}</tr></thead>
+        <tbody>
+          {% for enrollment in section.enrollments.all %}
+          <tr>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div class="student-avatar-sm">{{ enrollment.student.user.first_name|first|upper }}</div>
+                {{ enrollment.student.user.get_full_name }}
+              </div>
+            </td>
+            <td class="text-muted">{{ enrollment.student.student_id }}</td>
+            <td class="text-muted">{{ enrollment.student.course }}</td>
+            <td>
+              {% if enrollment.student.is_face_enrolled %}
+                <span class="badge badge-success">✅ Enrolled</span>
+              {% else %}
+                <span class="badge badge-warning">⚠️ Not enrolled</span>
+              {% endif %}
+            </td>
+            {% if request.user.role == 'admin' %}
+            <td>
+              <form method="post" action="{% url 'student_unenroll' section.pk enrollment.student.pk %}" onsubmit="return confirm('Remove this student?')">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+              </form>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="text-muted text-center">No students enrolled yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
