@@ -4,7 +4,7 @@
 {% block page_subtitle %}<p>{{ section.subject.code }} – {{ section.subject.name }} | {{ section.school_year }} {{ section.semester }}</p>{% endblock %}
 
 {% block header_actions %}
-  <a href="{% url 'section_edit' section.pk %}" class="btn btn-outline">✏️ Edit</a>
+  <a href="{% url 'section_edit' section.pk %}" class="btn btn-outline"><i data-lucide="edit-2"></i> Edit</a>
 {% endblock %}
 
 {% block content %}
@@ -13,9 +13,9 @@
   <!-- Schedules -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">📅 Schedules</span>
+      <span class="card-title"><i data-lucide="calendar"></i> Schedules</span>
       {% if request.user.role == 'admin' %}
-        <a href="{% url 'schedule_create' %}?section={{ section.pk }}" class="btn btn-outline btn-sm">➕ Add</a>
+        <a href="{% url 'schedule_create' %}?section={{ section.pk }}" class="btn btn-outline btn-sm"><i data-lucide="plus"></i> Add</a>
       {% endif %}
     </div>
     <div class="card-body" style="padding:0;">
@@ -30,10 +30,10 @@
               <td>{{ sched.room }}</td>
               <td>
                 {% if request.user.role == 'teacher' %}
-                  <a href="{% url 'session_start' sched.pk %}" class="btn btn-success btn-sm">▶ Start Session</a>
+                  <a href="{% url 'session_start' sched.pk %}" class="btn btn-success btn-sm"><i data-lucide="play"></i> Start Session</a>
                 {% elif request.user.role == 'admin' %}
-                  <a href="{% url 'schedule_edit' sched.pk %}" class="btn btn-outline btn-sm">✏️</a>
-                  <a href="{% url 'schedule_delete' sched.pk %}" class="btn btn-danger btn-sm">🗑️</a>
+                  <a href="{% url 'schedule_edit' sched.pk %}" class="btn btn-outline btn-sm"><i data-lucide="edit-2"></i></a>
+                  <a href="{% url 'schedule_delete' sched.pk %}" class="btn btn-danger btn-sm"><i data-lucide="trash-2"></i></a>
                 {% endif %}
               </td>
             </tr>
@@ -48,7 +48,7 @@
 
   <!-- Teacher Info -->
   <div class="card">
-    <div class="card-header"><span class="card-title">👩‍🏫 Assigned Teacher</span></div>
+    <div class="card-header"><span class="card-title"><i data-lucide="contact"></i> Assigned Teacher</span></div>
     <div class="card-body">
       {% if section.teacher %}
         <div style="display:flex; align-items:center; gap:12px;">
@@ -71,14 +71,14 @@
 <!-- Students -->
 <div class="card">
   <div class="card-header">
-    <span class="card-title">🎓 Enrolled Students ({{ section.enrollments.count }})</span>
+    <span class="card-title"><i data-lucide="graduation-cap"></i> Enrolled Students ({{ section.enrollments.count }})</span>
   </div>
   <div class="card-body">
     {% if request.user.role == 'admin' %}
     <form method="post" style="display:flex; gap:10px; margin-bottom:16px;">
       {% csrf_token %}
       {{ enroll_form.student }}
-      <button type="submit" class="btn btn-primary">➕ Enroll Student</button>
+      <button type="submit" class="btn btn-primary"><i data-lucide="plus"></i> Enroll Student</button>
     </form>
     {% endif %}
     {% if section.enrollments.all %}
@@ -98,9 +98,9 @@
             <td class="text-muted">{{ enrollment.student.course }}</td>
             <td>
               {% if enrollment.student.is_face_enrolled %}
-                <span class="badge badge-success">✅ Enrolled</span>
+                <span class="badge badge-success"><i data-lucide="check-circle"></i> Enrolled</span>
               {% else %}
-                <span class="badge badge-warning">⚠️ Not enrolled</span>
+                <span class="badge badge-warning"><i data-lucide="alert-triangle"></i> Not enrolled</span>
               {% endif %}
             </td>
             {% if request.user.role == 'admin' %}

@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="card" style="max-width:560px;">
-  <div class="card-header"><span class="card-title">▶ Start Attendance</span></div>
+  <div class="card-header"><span class="card-title"><i data-lucide="play"></i> Start Attendance</span></div>
   <div class="card-body">
     <table style="width:100%; margin-bottom:20px;">
       <tr><td class="text-muted" style="padding:6px 0; width:140px;">Section</td><td><strong>{{ schedule.section.name }}</strong></td></tr>
@@ -16,14 +16,14 @@
     </table>
 
     <div class="alert alert-info">
-      ℹ️ Starting a session will pre-mark all enrolled students as <strong>Absent</strong>.
+      <i data-lucide="info"></i> Starting a session will pre-mark all enrolled students as <strong>Absent</strong>.
       Face recognition will update their status to Present or Late.
     </div>
 
     <form method="post">
       {% csrf_token %}
       <div class="flex gap-1">
-        <button type="submit" class="btn btn-success btn-lg">▶ Start Session</button>
+        <button type="submit" class="btn btn-success btn-lg"><i data-lucide="play"></i> Start Session</button>
         <a href="{% url 'dashboard' %}" class="btn btn-outline">Cancel</a>
       </div>
     </form>

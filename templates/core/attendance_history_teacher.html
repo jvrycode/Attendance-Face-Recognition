@@ -17,7 +17,7 @@
           <td><span class="badge badge-accent">{{ session.schedule.section.subject.code }}</span></td>
           <td>
             {% if session.status == 'open' %}
-              <span class="badge badge-success">● Open</span>
+              <span class="badge badge-success"><i data-lucide="circle-dot"></i> Open</span>
             {% else %}
               <span class="badge badge-muted">Closed</span>
             {% endif %}
@@ -25,9 +25,9 @@
           <td>
             <div class="flex gap-1">
               {% if session.status == 'open' %}
-                <a href="{% url 'session_live' session.pk %}" class="btn btn-primary btn-sm">📷 Live</a>
+                <a href="{% url 'session_live' session.pk %}" class="btn btn-primary btn-sm"><i data-lucide="camera"></i> Live</a>
               {% endif %}
-              <a href="{% url 'session_report' session.pk %}" class="btn btn-outline btn-sm">📊 Report</a>
+              <a href="{% url 'session_report' session.pk %}" class="btn btn-outline btn-sm"><i data-lucide="bar-chart-2"></i> Report</a>
             </div>
           </td>
         </tr>

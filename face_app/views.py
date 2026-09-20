@@ -10,7 +10,7 @@ from accounts.models import Student
 from core.models import AttendanceSession, AttendanceRecord, StudentSection
 from .utils import (
     encode_face_from_frame, compare_faces, base64_to_bytes,
-    draw_face_boxes, FACE_RECOGNITION_AVAILABLE
+    draw_face_boxes, FR_AVAILABLE
 )
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ def enroll_face(request):
 
     return render(request, 'face/enroll.html', {
         'student': student,
-        'fr_available': FACE_RECOGNITION_AVAILABLE,
+        'fr_available': FR_AVAILABLE,
     })
 
 
@@ -62,10 +62,9 @@ def enroll_face_capture(request):
         if user.role == 'student' and student.user != user:
             return JsonResponse({'error': 'Permission denied'}, status=403)
 
-        if not FACE_RECOGNITION_AVAILABLE:
+        if not FR_AVAILABLE:
             return JsonResponse({
-                'error': 'Face recognition library not installed. Please install face_recognition.',
-                'install_hint': 'pip install face_recognition (requires CMake + dlib)'
+                'error': 'Face recognition is not available. Please install opencv-contrib-python.',
             }, status=503)
 
         frame_bytes = base64_to_bytes(frame_b64)
@@ -129,10 +128,9 @@ def recognize_faces(request):
         if not frame_b64 or not session_id:
             return JsonResponse({'error': 'Missing data'}, status=400)
 
-        if not FACE_RECOGNITION_AVAILABLE:
+        if not FR_AVAILABLE:
             return JsonResponse({
-                'error': 'face_recognition library not installed.',
-                'install_hint': 'pip install face_recognition'
+                'error': 'Face recognition is not available.',
             }, status=503)
 
         session = get_object_or_404(AttendanceSession, pk=session_id, status='open')
@@ -201,3 +199,44 @@ def recognize_faces(request):
     except Exception as e:
         logger.exception("Error during face recognition")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+def delete_face(request):
+    """Delete a student's enrolled face data."""
+    if request.method != 'POST':
+        messages.error(request, 'Invalid request.')
+        return redirect('enroll_face')
+
+    user = request.user
+    student_id = request.POST.get('student_id')
+
+    # Admins can delete any student's face; students can only delete their own
+    if user.role == 'admin' and student_id:
+        student = get_object_or_404(Student, pk=student_id)
+    elif user.role == 'student':
+        student = get_object_or_404(Student, user=user)
+    else:
+        messages.error(request, 'Permission denied.')
+        return redirect('dashboard')
+
+    # Delete the face image file from disk
+    if student.face_image:
+        import os
+        try:
+            if os.path.isfile(student.face_image.path):
+                os.remove(student.face_image.path)
+        except Exception:
+            pass
+        student.face_image = None
+
+    # Clear encoding + timestamp
+    student.face_encoding = None
+    student.face_enrolled_at = None
+    student.save()
+
+    messages.success(request, 'Face data has been deleted successfully.')
+
+    if user.role == 'admin' and student_id:
+        return redirect(f'/face/enroll/?student_id={student.pk}')
+    return redirect('enroll_face')

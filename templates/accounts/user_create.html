@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="card" style="max-width:700px;">
-  <div class="card-header"><span class="card-title">👤 New User</span></div>
+  <div class="card-header"><span class="card-title"><i data-lucide="user"></i> New User</span></div>
   <div class="card-body">
     <form method="post" id="create-user-form">
       {% csrf_token %}
@@ -85,7 +85,7 @@
       </div>
 
       <div class="flex gap-1 mt-2">
-        <button type="submit" class="btn btn-primary">✅ Create User</button>
+        <button type="submit" class="btn btn-primary"><i data-lucide="check-circle"></i> Create User</button>
         <a href="{% url 'user_list' %}" class="btn btn-outline">Cancel</a>
       </div>
     </form>
@@ -98,6 +98,12 @@ function updateRoleFields() {
   const role = roleSelect.value;
   document.getElementById('teacher-fields').style.display = role === 'teacher' ? 'block' : 'none';
   document.getElementById('student-fields').style.display = role === 'student' ? 'block' : 'none';
+  
+  const empId = document.getElementById('id_employee_id');
+  if (empId) empId.required = (role === 'teacher');
+  
+  const studentId = document.getElementById('id_student_id');
+  if (studentId) studentId.required = (role === 'student');
 }
 roleSelect.addEventListener('change', updateRoleFields);
 updateRoleFields();

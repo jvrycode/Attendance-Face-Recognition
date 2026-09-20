@@ -8,7 +8,7 @@
 <!-- Student Info Card -->
 <div class="grid-2 mb-3">
   <div class="card">
-    <div class="card-header"><span class="card-title">🎓 My Info</span></div>
+    <div class="card-header"><span class="card-title"><i data-lucide="graduation-cap"></i> My Info</span></div>
     <div class="card-body">
       <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
         {% if user.profile_image %}
@@ -25,10 +25,10 @@
         </div>
       </div>
       {% if student.is_face_enrolled %}
-        <div class="alert alert-success" style="margin-bottom:0;">✅ Face enrolled on {{ student.face_enrolled_at|date:"M d, Y" }}</div>
+        <div class="alert alert-success" style="margin-bottom:0;"><i data-lucide="check-circle"></i> Face enrolled on {{ student.face_enrolled_at|date:"M d, Y" }}</div>
       {% else %}
         <div class="alert alert-warning" style="margin-bottom:0;">
-          ⚠️ Face not enrolled yet.
+          <i data-lucide="alert-triangle"></i> Face not enrolled yet.
           <a href="{% url 'enroll_face' %}" class="btn btn-primary btn-sm" style="margin-left:8px;">Enroll Now</a>
         </div>
       {% endif %}
@@ -36,12 +36,12 @@
   </div>
 
   <div class="card">
-    <div class="card-header"><span class="card-title">📊 Attendance Summary</span></div>
+    <div class="card-header"><span class="card-title"><i data-lucide="bar-chart-2"></i> Attendance Summary</span></div>
     <div class="card-body">
       {% with present=records|length %}
       <div class="stats-grid" style="grid-template-columns:1fr 1fr;">
         <div class="stat-card green" style="padding:14px;">
-          <div class="stat-icon green" style="width:36px;height:36px;font-size:16px;">✅</div>
+          <div class="stat-icon green" style="width:36px;height:36px;font-size:16px;"><i data-lucide="check-circle"></i></div>
           <div class="stat-info">
             <div class="value" style="font-size:20px;">
               {{ records|dictsort:"status"|dictsortreversed:"status"|length }}
@@ -50,7 +50,7 @@
           </div>
         </div>
         <div class="stat-card blue" style="padding:14px;">
-          <div class="stat-icon blue" style="width:36px;height:36px;font-size:16px;">📅</div>
+          <div class="stat-icon blue" style="width:36px;height:36px;font-size:16px;"><i data-lucide="calendar"></i></div>
           <div class="stat-info">
             <div class="value" style="font-size:20px;">{{ records|length }}</div>
             <div class="label">Recent</div>
@@ -65,7 +65,7 @@
 <!-- Recent Records -->
 <div class="card">
   <div class="card-header">
-    <span class="card-title">📋 Recent Attendance</span>
+    <span class="card-title"><i data-lucide="clipboard-list"></i> Recent Attendance</span>
     <a href="{% url 'attendance_history' %}" class="btn btn-outline btn-sm">View All</a>
   </div>
   {% if records %}
@@ -81,10 +81,10 @@
           <td><span class="badge badge-accent">{{ record.session.schedule.section.subject.code }}</span></td>
           <td>{{ record.session.schedule.section.name }}</td>
           <td>
-            {% if record.status == 'present' %}<span class="badge badge-success">✅ Present</span>
-            {% elif record.status == 'late' %}<span class="badge badge-warning">⏰ Late</span>
-            {% elif record.status == 'excused' %}<span class="badge badge-info">📄 Excused</span>
-            {% else %}<span class="badge badge-danger">❌ Absent</span>{% endif %}
+            {% if record.status == 'present' %}<span class="badge badge-success"><i data-lucide="check-circle"></i> Present</span>
+            {% elif record.status == 'late' %}<span class="badge badge-warning"><i data-lucide="alarm-clock"></i> Late</span>
+            {% elif record.status == 'excused' %}<span class="badge badge-info"><i data-lucide="file-text"></i> Excused</span>
+            {% else %}<span class="badge badge-danger"><i data-lucide="x-circle"></i> Absent</span>{% endif %}
           </td>
           <td class="text-muted">
             {% if record.recognized_at %}{{ record.recognized_at|time:"H:i" }}{% else %}—{% endif %}

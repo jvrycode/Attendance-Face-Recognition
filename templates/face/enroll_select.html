@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="card">
-  <div class="card-header"><span class="card-title">🎓 Students</span></div>
+  <div class="card-header"><span class="card-title"><i data-lucide="graduation-cap"></i> Students</span></div>
   <div class="table-container" style="border:none;">
     <table>
       <thead>
@@ -18,14 +18,14 @@
           <td>{{ student.course }}</td>
           <td>
             {% if student.is_face_enrolled %}
-              <span class="badge badge-success">✅ Enrolled</span>
+              <span class="badge badge-success"><i data-lucide="check-circle"></i> Enrolled</span>
             {% else %}
-              <span class="badge badge-warning">⚠️ Not Enrolled</span>
+              <span class="badge badge-warning"><i data-lucide="alert-triangle"></i> Not Enrolled</span>
             {% endif %}
           </td>
           <td>
             <a href="{% url 'enroll_face' %}?student_id={{ student.pk }}" class="btn btn-primary btn-sm">
-              📷 {% if student.is_face_enrolled %}Re-enroll{% else %}Enroll{% endif %}
+              <i data-lucide="camera"></i> {% if student.is_face_enrolled %}Re-enroll{% else %}Enroll{% endif %}
             </a>
           </td>
         </tr>

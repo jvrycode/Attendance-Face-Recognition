@@ -16,10 +16,10 @@
           <td><span class="badge badge-accent">{{ record.session.schedule.section.subject.code }}</span> {{ record.session.schedule.section.subject.name }}</td>
           <td>{{ record.session.schedule.section.name }}</td>
           <td>
-            {% if record.status == 'present' %}<span class="badge badge-success">✅ Present</span>
-            {% elif record.status == 'late' %}<span class="badge badge-warning">⏰ Late</span>
-            {% elif record.status == 'excused' %}<span class="badge badge-info">📄 Excused</span>
-            {% else %}<span class="badge badge-danger">❌ Absent</span>{% endif %}
+            {% if record.status == 'present' %}<span class="badge badge-success"><i data-lucide="check-circle"></i> Present</span>
+            {% elif record.status == 'late' %}<span class="badge badge-warning"><i data-lucide="alarm-clock"></i> Late</span>
+            {% elif record.status == 'excused' %}<span class="badge badge-info"><i data-lucide="file-text"></i> Excused</span>
+            {% else %}<span class="badge badge-danger"><i data-lucide="x-circle"></i> Absent</span>{% endif %}
           </td>
           <td class="text-muted">{{ record.recognized_at|time:"H:i"|default:"—" }}</td>
           <td class="text-muted">

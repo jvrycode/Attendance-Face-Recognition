@@ -3,7 +3,7 @@
 {% block page_title %}User Management{% endblock %}
 {% block page_subtitle %}<p>Manage all system users</p>{% endblock %}
 {% block header_actions %}
-  <a href="{% url 'user_create' %}" class="btn btn-primary">➕ Add User</a>
+  <a href="{% url 'user_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add User</a>
 {% endblock %}
 
 {% block content %}
@@ -38,9 +38,9 @@
           </td>
           <td>
             <div class="flex gap-1">
-              <a href="{% url 'user_edit' u.pk %}" class="btn btn-outline btn-sm">✏️</a>
+              <a href="{% url 'user_edit' u.pk %}" class="btn btn-outline btn-sm"><i data-lucide="edit-2"></i></a>
               {% if u != request.user %}
-                <a href="{% url 'user_delete' u.pk %}" class="btn btn-danger btn-sm">🗑️</a>
+                <a href="{% url 'user_delete' u.pk %}" class="btn btn-danger btn-sm"><i data-lucide="trash-2"></i></a>
               {% endif %}
             </div>
           </td>

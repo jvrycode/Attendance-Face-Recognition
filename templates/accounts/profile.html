@@ -5,7 +5,7 @@
 {% block content %}
 <div class="grid-2">
   <div class="card">
-    <div class="card-header"><span class="card-title">👤 Profile Settings</span></div>
+    <div class="card-header"><span class="card-title"><i data-lucide="user"></i> Profile Settings</span></div>
     <div class="card-body">
       <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
@@ -29,13 +29,13 @@
           <label class="form-label">Profile Picture</label>
           {{ form.profile_image }}
         </div>
-        <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+        <button type="submit" class="btn btn-primary"><i data-lucide="save"></i> Save Changes</button>
       </form>
     </div>
   </div>
 
   <div class="card">
-    <div class="card-header"><span class="card-title">ℹ️ Account Info</span></div>
+    <div class="card-header"><span class="card-title"><i data-lucide="info"></i> Account Info</span></div>
     <div class="card-body">
       <div style="text-align:center; margin-bottom:20px;">
         {% if user.profile_image %}
@@ -57,7 +57,7 @@
         {% with student=user.student_profile %}
         <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
           <a href="{% url 'enroll_face' %}" class="btn btn-primary w-full" style="justify-content:center;">
-            📷 {% if student.is_face_enrolled %}Re-enroll Face{% else %}Enroll Face{% endif %}
+            <i data-lucide="camera"></i> {% if student.is_face_enrolled %}Re-enroll Face{% else %}Enroll Face{% endif %}
           </a>
         </div>
         {% endwith %}

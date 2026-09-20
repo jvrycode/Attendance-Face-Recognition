@@ -18,7 +18,7 @@
           <td class="text-muted">{{ session.started_by.user.get_full_name|default:"—" }}</td>
           <td>
             {% if session.status == 'open' %}
-              <span class="badge badge-success">● Open</span>
+              <span class="badge badge-success"><i data-lucide="circle-dot"></i> Open</span>
             {% else %}
               <span class="badge badge-muted">Closed</span>
             {% endif %}
@@ -26,9 +26,9 @@
           <td>
             <div class="flex gap-1">
               {% if session.status == 'open' and request.user.role == 'teacher' %}
-                <a href="{% url 'session_live' session.pk %}" class="btn btn-primary btn-sm">📷 Live</a>
+                <a href="{% url 'session_live' session.pk %}" class="btn btn-primary btn-sm"><i data-lucide="camera"></i> Live</a>
               {% endif %}
-              <a href="{% url 'session_report' session.pk %}" class="btn btn-outline btn-sm">📊 Report</a>
+              <a href="{% url 'session_report' session.pk %}" class="btn btn-outline btn-sm"><i data-lucide="bar-chart-2"></i> Report</a>
             </div>
           </td>
         </tr>

@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="card" style="max-width:560px;">
-  <div class="card-header"><span class="card-title">📚 {{ title }}</span></div>
+  <div class="card-header"><span class="card-title"><i data-lucide="book-open"></i> {{ title }}</span></div>
   <div class="card-body">
     <form method="post">
       {% csrf_token %}
@@ -26,7 +26,7 @@
         {{ form.units }}
       </div>
       <div class="flex gap-1 mt-2">
-        <button type="submit" class="btn btn-primary">💾 Save</button>
+        <button type="submit" class="btn btn-primary"><i data-lucide="save"></i> Save</button>
         <a href="{% url 'subject_list' %}" class="btn btn-outline">Cancel</a>
       </div>
     </form>

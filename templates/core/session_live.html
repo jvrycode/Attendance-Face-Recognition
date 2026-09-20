@@ -8,7 +8,7 @@
 {% block header_actions %}
   <form method="post" action="{% url 'session_close' session.pk %}" onsubmit="return confirm('Close this session?')">
     {% csrf_token %}
-    <button type="submit" class="btn btn-danger">⏹ Close Session</button>
+    <button type="submit" class="btn btn-danger"><i data-lucide="square"></i> Close Session</button>
   </form>
 {% endblock %}
 
@@ -19,7 +19,7 @@
   <div>
     <div class="card mb-2">
       <div class="card-header">
-        <span class="card-title">📷 Live Camera Feed</span>
+        <span class="card-title"><i data-lucide="camera"></i> Live Camera Feed</span>
         <div id="fr-status" class="recognition-status" style="padding:6px 12px; font-size:12px;">
           <span class="pulse-dot" id="status-dot" style="background:var(--text-muted);"></span>
           <span id="status-text">Camera off</span>
@@ -43,12 +43,12 @@
     </div>
 
     <div class="flex gap-1">
-      <button id="btn-start-cam" class="btn btn-primary" onclick="startCamera()">📷 Start Camera</button>
-      <button id="btn-stop-cam" class="btn btn-outline" onclick="stopCamera()" style="display:none;">⏹ Stop Camera</button>
-      <button id="btn-toggle-fr" class="btn btn-success" onclick="toggleRecognition()" style="display:none;">🔍 Start Recognition</button>
+      <button id="btn-start-cam" class="btn btn-primary" onclick="startCamera()"><i data-lucide="camera"></i> Start Camera</button>
+      <button id="btn-stop-cam" class="btn btn-outline" onclick="stopCamera()" style="display:none;"><i data-lucide="square"></i> Stop Camera</button>
+      <button id="btn-toggle-fr" class="btn btn-success" onclick="toggleRecognition()" style="display:none;"><i data-lucide="search"></i> Start Recognition</button>
     </div>
     <p class="text-muted mt-1" style="font-size:12px;">
-      ⚠️ Make sure face_recognition is installed for live recognition. 
+      <i data-lucide="alert-triangle"></i> Make sure face_recognition is installed for live recognition. 
       Manual marking is always available on the right.
     </p>
   </div>
@@ -57,10 +57,10 @@
   <div>
     <div class="card" style="max-height:calc(100vh - 200px); display:flex; flex-direction:column;">
       <div class="card-header">
-        <span class="card-title">📋 Students ({{ records.count }})</span>
+        <span class="card-title"><i data-lucide="clipboard-list"></i> Students ({{ records.count }})</span>
         <div>
           <span class="badge badge-success" id="present-count">
-            ✅ {{ records|dictsort:"status"|first|default:"0" }}
+            <i data-lucide="check-circle"></i> {{ records|dictsort:"status"|first|default:"0" }}
           </span>
         </div>
       </div>
@@ -75,9 +75,9 @@
             </div>
             <div style="text-align:right; flex-shrink:0;">
               {% if record.status == 'present' %}
-                <span class="badge badge-success">✅ Present</span>
+                <span class="badge badge-success"><i data-lucide="check-circle"></i> Present</span>
               {% elif record.status == 'late' %}
-                <span class="badge badge-warning">⏰ Late</span>
+                <span class="badge badge-warning"><i data-lucide="alarm-clock"></i> Late</span>
               {% else %}
                 <span class="badge badge-muted" id="badge-{{ record.student.pk }}">Absent</span>
               {% endif %}
@@ -88,8 +88,8 @@
             <!-- Manual mark buttons (shown when absent) -->
             {% if record.status == 'absent' %}
             <div style="display:flex; flex-direction:column; gap:4px;" id="manual-btns-{{ record.student.pk }}">
-              <button class="btn btn-success btn-sm" onclick="markManual({{ session.pk }}, {{ record.student.pk }}, 'present')">✅</button>
-              <button class="btn btn-warning btn-sm" onclick="markManual({{ session.pk }}, {{ record.student.pk }}, 'late')">⏰</button>
+              <button class="btn btn-success btn-sm" onclick="markManual({{ session.pk }}, {{ record.student.pk }}, 'present')"><i data-lucide="check-circle"></i></button>
+              <button class="btn btn-warning btn-sm" onclick="markManual({{ session.pk }}, {{ record.student.pk }}, 'late')"><i data-lucide="alarm-clock"></i></button>
             </div>
             {% endif %}
           </div>
@@ -99,9 +99,9 @@
       <!-- Summary -->
       <div style="border-top:1px solid var(--border); padding:12px 16px; background:var(--bg-secondary);">
         <div style="display:flex; gap:16px; font-size:13px;">
-          <span>✅ Present: <strong id="cnt-present">{{ records|dictsort:"status"|length }}</strong></span>
-          <span>⏰ Late: <strong id="cnt-late">0</strong></span>
-          <span>❌ Absent: <strong id="cnt-absent">{{ records.count }}</strong></span>
+          <span><i data-lucide="check-circle"></i> Present: <strong id="cnt-present">{{ records|dictsort:"status"|length }}</strong></span>
+          <span><i data-lucide="alarm-clock"></i> Late: <strong id="cnt-late">0</strong></span>
+          <span><i data-lucide="x-circle"></i> Absent: <strong id="cnt-absent">{{ records.count }}</strong></span>
         </div>
       </div>
     </div>
@@ -146,7 +146,7 @@ async function startCamera() {
     document.getElementById('btn-stop-cam').style.display = 'inline-flex';
     document.getElementById('btn-toggle-fr').style.display = 'inline-flex';
     document.getElementById('face-guide').style.display = 'block';
-    setStatus('ready', '🟡 Camera ready');
+    setStatus('ready', '<i data-lucide="circle"></i> Camera ready');
   } catch (e) {
     alert('Camera error: ' + e.message);
   }
@@ -160,7 +160,7 @@ function stopCamera() {
   document.getElementById('btn-start-cam').style.display = 'inline-flex';
   document.getElementById('btn-stop-cam').style.display = 'none';
   document.getElementById('btn-toggle-fr').style.display = 'none';
-  document.getElementById('btn-toggle-fr').textContent = '🔍 Start Recognition';
+  document.getElementById('btn-toggle-fr').textContent = '<i data-lucide="search"></i> Start Recognition';
   document.getElementById('face-guide').style.display = 'none';
   setStatus('off', 'Camera off');
 }
@@ -169,14 +169,14 @@ function toggleRecognition() {
   if (isRecognizing) {
     clearInterval(recognitionInterval); recognitionInterval = null;
     isRecognizing = false;
-    document.getElementById('btn-toggle-fr').textContent = '🔍 Start Recognition';
+    document.getElementById('btn-toggle-fr').textContent = '<i data-lucide="search"></i> Start Recognition';
     document.getElementById('btn-toggle-fr').className = 'btn btn-success';
-    setStatus('ready', '🟡 Paused');
+    setStatus('ready', '<i data-lucide="circle"></i> Paused');
   } else {
     isRecognizing = true;
-    document.getElementById('btn-toggle-fr').textContent = '⏸ Pause Recognition';
+    document.getElementById('btn-toggle-fr').textContent = '<i data-lucide="pause"></i> Pause Recognition';
     document.getElementById('btn-toggle-fr').className = 'btn btn-warning';
-    setStatus('scanning', '🟢 Scanning...');
+    setStatus('scanning', '<i data-lucide="circle-dot"></i> Scanning...');
     recognitionInterval = setInterval(captureAndRecognize, 1500);
   }
 }
@@ -221,7 +221,7 @@ function handleRecognized(result) {
     const badge = item.querySelector('[id^="badge-"]');
     if (badge) {
       badge.className = result.new_status === 'present' ? 'badge badge-success' : 'badge badge-warning';
-      badge.textContent = result.new_status === 'present' ? '✅ Present' : '⏰ Late';
+      badge.textContent = result.new_status === 'present' ? '<i data-lucide="check-circle"></i> Present' : '<i data-lucide="alarm-clock"></i> Late';
     }
     const manualBtns = document.getElementById('manual-btns-' + result.student_id);
     if (manualBtns) manualBtns.remove();
@@ -239,7 +239,7 @@ function handleRecognized(result) {
     const popup = document.getElementById('recognition-popup');
     document.getElementById('rec-name').textContent = result.name;
     document.getElementById('rec-status').innerHTML =
-      `${result.new_status === 'present' ? '✅ Marked Present' : '⏰ Marked Late'} — ${result.confidence}% confidence`;
+      `${result.new_status === 'present' ? '<i data-lucide="check-circle"></i> Marked Present' : '<i data-lucide="alarm-clock"></i> Marked Late'} — ${result.confidence}% confidence`;
     popup.style.display = 'block';
     setTimeout(() => popup.style.display = 'none', 3000);
   }

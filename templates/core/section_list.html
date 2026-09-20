@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Sections{% endblock %}
 {% block page_title %}Sections{% endblock %}
-{% block header_actions %}<a href="{% url 'section_create' %}" class="btn btn-primary">➕ Add Section</a>{% endblock %}
+{% block header_actions %}<a href="{% url 'section_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Section</a>{% endblock %}
 
 {% block content %}
 <div class="card">
@@ -26,9 +26,9 @@
           <td><span class="badge badge-info">{{ section.student_count }}</span></td>
           <td>
             <div class="flex gap-1">
-              <a href="{% url 'section_detail' section.pk %}" class="btn btn-outline btn-sm">👁 View</a>
-              <a href="{% url 'section_edit' section.pk %}" class="btn btn-outline btn-sm">✏️</a>
-              <a href="{% url 'section_delete' section.pk %}" class="btn btn-danger btn-sm">🗑️</a>
+              <a href="{% url 'section_detail' section.pk %}" class="btn btn-outline btn-sm"><i data-lucide="eye"></i> View</a>
+              <a href="{% url 'section_edit' section.pk %}" class="btn btn-outline btn-sm"><i data-lucide="edit-2"></i></a>
+              <a href="{% url 'section_delete' section.pk %}" class="btn btn-danger btn-sm"><i data-lucide="trash-2"></i></a>
             </div>
           </td>
         </tr>

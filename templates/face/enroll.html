@@ -9,15 +9,15 @@
   <!-- Camera Panel -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">📷 Capture Face</span>
+      <span class="card-title"><i data-lucide="camera"></i> Capture Face</span>
       <span class="badge {% if student.is_face_enrolled %}badge-success{% else %}badge-warning{% endif %}">
-        {% if student.is_face_enrolled %}✅ Face Enrolled{% else %}⚠️ Not Enrolled{% endif %}
+        {% if student.is_face_enrolled %}<i data-lucide="check-circle"></i> Face Enrolled{% else %}<i data-lucide="alert-triangle"></i> Not Enrolled{% endif %}
       </span>
     </div>
     <div class="card-body">
       {% if not fr_available %}
       <div class="alert alert-warning">
-        ⚠️ <strong>face_recognition</strong> library is not installed.
+        <i data-lucide="alert-triangle"></i> <strong>face_recognition</strong> library is not installed.
         Face enrollment requires it.<br>
         Install with: <code style="background:rgba(255,255,255,.1); padding:2px 6px; border-radius:4px;">pip install face_recognition</code>
         (requires CMake + Visual C++ Build Tools on Windows)
@@ -36,9 +36,9 @@
       </div>
 
       <div class="flex gap-1">
-        <button id="btn-start" class="btn btn-primary" onclick="startEnrollCamera()">📷 Start Camera</button>
-        <button id="btn-capture" class="btn btn-success" onclick="captureAndEnroll()" style="display:none;">🎯 Capture & Enroll</button>
-        <button id="btn-stop" class="btn btn-outline" onclick="stopEnrollCamera()" style="display:none;">⏹ Stop</button>
+        <button id="btn-start" class="btn btn-primary" onclick="startEnrollCamera()"><i data-lucide="camera"></i> Start Camera</button>
+        <button id="btn-capture" class="btn btn-success" onclick="captureAndEnroll()" style="display:none;"><i data-lucide="target"></i> Capture & Enroll</button>
+        <button id="btn-stop" class="btn btn-outline" onclick="stopEnrollCamera()" style="display:none;"><i data-lucide="square"></i> Stop</button>
       </div>
 
       <div id="enroll-result" style="margin-top:12px;"></div>
@@ -48,7 +48,7 @@
   <!-- Info Panel -->
   <div>
     <div class="card mb-2">
-      <div class="card-header"><span class="card-title">🎓 Student Info</span></div>
+      <div class="card-header"><span class="card-title"><i data-lucide="graduation-cap"></i> Student Info</span></div>
       <div class="card-body">
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
           {% if student.face_image %}
@@ -65,18 +65,29 @@
         {% if student.face_enrolled_at %}
           <div class="text-muted" style="font-size:12px;">Last enrolled: {{ student.face_enrolled_at|date:"M d, Y H:i" }}</div>
         {% endif %}
+
+        {% if student.is_face_enrolled %}
+        <form method="post" action="{% url 'delete_face' %}" style="margin-top:14px;"
+              onsubmit="return confirm('Are you sure you want to delete your enrolled face? You will need to re-enroll to use automatic attendance.')">
+          {% csrf_token %}
+          <input type="hidden" name="student_id" value="{{ student.pk }}">
+          <button type="submit" class="btn btn-danger btn-sm w-full">
+            <i data-lucide="trash-2"></i> Delete Enrolled Face
+          </button>
+        </form>
+        {% endif %}
       </div>
     </div>
 
     <div class="card">
-      <div class="card-header"><span class="card-title">ℹ️ Tips</span></div>
+      <div class="card-header"><span class="card-title"><i data-lucide="info"></i> Tips</span></div>
       <div class="card-body">
         <ul style="list-style:none; display:flex; flex-direction:column; gap:8px;">
-          <li>💡 Face the camera directly in good lighting</li>
-          <li>💡 Make sure only your face is visible</li>
-          <li>💡 Remove glasses if possible for better accuracy</li>
-          <li>💡 Keep a neutral expression</li>
-          <li>💡 The system stores only a numerical encoding, not your photo</li>
+          <li><i data-lucide="lightbulb"></i> Face the camera directly in good lighting</li>
+          <li><i data-lucide="lightbulb"></i> Make sure only your face is visible</li>
+          <li><i data-lucide="lightbulb"></i> Remove glasses if possible for better accuracy</li>
+          <li><i data-lucide="lightbulb"></i> Keep a neutral expression</li>
+          <li><i data-lucide="lightbulb"></i> The system stores only a numerical encoding, not your photo</li>
         </ul>
       </div>
     </div>
@@ -97,7 +108,7 @@ async function startEnrollCamera() {
     document.getElementById('btn-stop').style.display = 'inline-flex';
     document.getElementById('enroll-face-guide').style.display = 'block';
   } catch (e) {
-    showResult('❌ Camera error: ' + e.message, 'danger');
+    showResult('<i data-lucide="x-circle"></i> Camera error: ' + e.message, 'danger'); lucide.createIcons();
   }
 }
 
@@ -114,7 +125,7 @@ async function captureAndEnroll() {
   const video = document.getElementById('enroll-video');
   const canvas = document.getElementById('enroll-canvas');
   if (!enrollStream || video.readyState < 2) {
-    showResult('⚠️ Camera not ready.', 'warning');
+    showResult('<i data-lucide="alert-triangle"></i> Camera not ready.', 'warning'); lucide.createIcons();
     return;
   }
 
@@ -131,7 +142,7 @@ async function captureAndEnroll() {
 
   const btn = document.getElementById('btn-capture');
   btn.disabled = true;
-  btn.textContent = '⏳ Processing...';
+  btn.innerHTML = 'Processing...';
 
   try {
     const resp = await fetch('/face/enroll/capture/', {
@@ -141,18 +152,18 @@ async function captureAndEnroll() {
     });
     const data = await resp.json();
     if (data.success) {
-      showResult('✅ ' + data.message, 'success');
+      showResult('<i data-lucide="check-circle"></i> ' + data.message, 'success'); lucide.createIcons();
       stopEnrollCamera();
       // Update enrolled badge
       setTimeout(() => location.reload(), 2000);
     } else {
-      showResult('⚠️ ' + (data.message || data.error), 'warning');
+      showResult('<i data-lucide="alert-triangle"></i> ' + (data.message || data.error), 'warning'); lucide.createIcons();
     }
   } catch (e) {
-    showResult('❌ Error: ' + e.message, 'danger');
+    showResult('<i data-lucide="x-circle"></i> Error: ' + e.message, 'danger'); lucide.createIcons();
   } finally {
     btn.disabled = false;
-    btn.textContent = '🎯 Capture & Enroll';
+    btn.innerHTML = '<i data-lucide="target"></i> Capture & Enroll'; lucide.createIcons();
   }
 }
 

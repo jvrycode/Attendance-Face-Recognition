@@ -5,11 +5,11 @@
   <p>{{ session.schedule.section.name }} | {{ session.schedule.section.subject.code }} | {{ session.date }}</p>
 {% endblock %}
 {% block header_actions %}
-  <button onclick="window.print()" class="btn btn-outline">🖨️ Print</button>
+  <button onclick="window.print()" class="btn btn-outline"><i data-lucide="printer"></i> Print</button>
   {% if session.status == 'open' %}
     <form method="post" action="{% url 'session_close' session.pk %}" style="display:inline;">
       {% csrf_token %}
-      <button type="submit" class="btn btn-danger">⏹ Close Session</button>
+      <button type="submit" class="btn btn-danger"><i data-lucide="square"></i> Close Session</button>
     </form>
   {% endif %}
 {% endblock %}
@@ -18,28 +18,28 @@
 <!-- Summary Stats -->
 <div class="stats-grid mb-3">
   <div class="stat-card green">
-    <div class="stat-icon green">✅</div>
+    <div class="stat-icon green"><i data-lucide="check-circle"></i></div>
     <div class="stat-info">
       <div class="value">{{ present_count }}</div>
       <div class="label">Present</div>
     </div>
   </div>
   <div class="stat-card yellow">
-    <div class="stat-icon yellow">⏰</div>
+    <div class="stat-icon yellow"><i data-lucide="alarm-clock"></i></div>
     <div class="stat-info">
       <div class="value">{{ late_count }}</div>
       <div class="label">Late</div>
     </div>
   </div>
   <div class="stat-card red">
-    <div class="stat-icon red">❌</div>
+    <div class="stat-icon red"><i data-lucide="x-circle"></i></div>
     <div class="stat-info">
       <div class="value">{{ absent_count }}</div>
       <div class="label">Absent</div>
     </div>
   </div>
   <div class="stat-card blue">
-    <div class="stat-icon blue">👥</div>
+    <div class="stat-icon blue"><i data-lucide="users"></i></div>
     <div class="stat-info">
       <div class="value">{{ total }}</div>
       <div class="label">Total Students</div>
@@ -49,10 +49,10 @@
 
 <div class="card">
   <div class="card-header">
-    <span class="card-title">📋 Attendance Records</span>
+    <span class="card-title"><i data-lucide="clipboard-list"></i> Attendance Records</span>
     <div>
       {% if session.status == 'open' %}
-        <span class="badge badge-success">● Session Open</span>
+        <span class="badge badge-success"><i data-lucide="circle-dot"></i> Session Open</span>
         <a href="{% url 'session_live' session.pk %}" class="btn btn-primary btn-sm" style="margin-left:8px;">Go Live</a>
       {% else %}
         <span class="badge badge-muted">Closed at {{ session.closed_at|time:"H:i" }}</span>
@@ -78,10 +78,10 @@
           </td>
           <td class="text-muted">{{ record.student.student_id }}</td>
           <td>
-            {% if record.status == 'present' %}<span class="badge badge-success">✅ Present</span>
-            {% elif record.status == 'late' %}<span class="badge badge-warning">⏰ Late</span>
-            {% elif record.status == 'excused' %}<span class="badge badge-info">📄 Excused</span>
-            {% else %}<span class="badge badge-danger">❌ Absent</span>{% endif %}
+            {% if record.status == 'present' %}<span class="badge badge-success"><i data-lucide="check-circle"></i> Present</span>
+            {% elif record.status == 'late' %}<span class="badge badge-warning"><i data-lucide="alarm-clock"></i> Late</span>
+            {% elif record.status == 'excused' %}<span class="badge badge-info"><i data-lucide="file-text"></i> Excused</span>
+            {% else %}<span class="badge badge-danger"><i data-lucide="x-circle"></i> Absent</span>{% endif %}
           </td>
           <td class="text-muted">{{ record.recognized_at|time:"H:i:s"|default:"—" }}</td>
           <td class="text-muted">
@@ -100,7 +100,7 @@
                 <option value="excused" {% if record.status == 'excused' %}selected{% endif %}>Excused</option>
               </select>
               <input type="text" name="remarks" value="{{ record.remarks }}" placeholder="Remarks" class="form-control" style="width:120px;">
-              <button type="submit" class="btn btn-outline btn-sm">💾</button>
+              <button type="submit" class="btn btn-outline btn-sm"><i data-lucide="save"></i></button>
             </form>
           </td>
           {% endif %}

@@ -7,28 +7,28 @@
 <!-- Stats -->
 <div class="stats-grid">
   <div class="stat-card blue">
-    <div class="stat-icon blue">👩‍🏫</div>
+    <div class="stat-icon blue"><i data-lucide="contact"></i></div>
     <div class="stat-info">
       <div class="value">{{ total_teachers }}</div>
       <div class="label">Total Teachers</div>
     </div>
   </div>
   <div class="stat-card green">
-    <div class="stat-icon green">🎓</div>
+    <div class="stat-icon green"><i data-lucide="graduation-cap"></i></div>
     <div class="stat-info">
       <div class="value">{{ total_students }}</div>
       <div class="label">Total Students</div>
     </div>
   </div>
   <div class="stat-card yellow">
-    <div class="stat-icon yellow">📚</div>
+    <div class="stat-icon yellow"><i data-lucide="book-open"></i></div>
     <div class="stat-info">
       <div class="value">{{ total_subjects }}</div>
       <div class="label">Subjects</div>
     </div>
   </div>
   <div class="stat-card red">
-    <div class="stat-icon red">🏫</div>
+    <div class="stat-icon red"><i data-lucide="building"></i></div>
     <div class="stat-info">
       <div class="value">{{ total_sections }}</div>
       <div class="label">Sections</div>
@@ -40,19 +40,19 @@
 <div class="grid-2 mb-3">
   <div class="card">
     <div class="card-header">
-      <span class="card-title">⚡ Quick Actions</span>
+      <span class="card-title"><i data-lucide="zap"></i> Quick Actions</span>
     </div>
     <div class="card-body" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-      <a href="{% url 'user_create' %}" class="btn btn-primary">➕ Add User</a>
-      <a href="{% url 'subject_create' %}" class="btn btn-outline">📚 Add Subject</a>
-      <a href="{% url 'section_create' %}" class="btn btn-outline">🏫 Add Section</a>
-      <a href="{% url 'schedule_create' %}" class="btn btn-outline">📅 Add Schedule</a>
+      <a href="{% url 'user_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add User</a>
+      <a href="{% url 'subject_create' %}" class="btn btn-outline"><i data-lucide="book-open"></i> Add Subject</a>
+      <a href="{% url 'section_create' %}" class="btn btn-outline"><i data-lucide="building"></i> Add Section</a>
+      <a href="{% url 'schedule_create' %}" class="btn btn-outline"><i data-lucide="calendar"></i> Add Schedule</a>
     </div>
   </div>
 
   <div class="card">
     <div class="card-header">
-      <span class="card-title">🕐 Recent Sessions</span>
+      <span class="card-title"><i data-lucide="clock"></i> Recent Sessions</span>
       <a href="{% url 'attendance_history' %}" class="btn btn-outline btn-sm">View All</a>
     </div>
     <div class="card-body" style="padding:0;">
@@ -68,7 +68,7 @@
               <td>{{ session.date }}</td>
               <td>
                 {% if session.status == 'open' %}
-                  <span class="badge badge-success">● Open</span>
+                  <span class="badge badge-success"><i data-lucide="circle-dot"></i> Open</span>
                 {% else %}
                   <span class="badge badge-muted">Closed</span>
                 {% endif %}

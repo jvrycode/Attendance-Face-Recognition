@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Schedules{% endblock %}
 {% block page_title %}Schedules{% endblock %}
-{% block header_actions %}<a href="{% url 'schedule_create' %}" class="btn btn-primary">➕ Add Schedule</a>{% endblock %}
+{% block header_actions %}<a href="{% url 'schedule_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Schedule</a>{% endblock %}
 
 {% block content %}
 <div class="card">
@@ -25,8 +25,8 @@
           <td>{{ sched.room }}</td>
           <td>
             <div class="flex gap-1">
-              <a href="{% url 'schedule_edit' sched.pk %}" class="btn btn-outline btn-sm">✏️</a>
-              <a href="{% url 'schedule_delete' sched.pk %}" class="btn btn-danger btn-sm">🗑️</a>
+              <a href="{% url 'schedule_edit' sched.pk %}" class="btn btn-outline btn-sm"><i data-lucide="edit-2"></i></a>
+              <a href="{% url 'schedule_delete' sched.pk %}" class="btn btn-danger btn-sm"><i data-lucide="trash-2"></i></a>
             </div>
           </td>
         </tr>
