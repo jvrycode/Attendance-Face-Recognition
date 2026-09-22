@@ -7,36 +7,83 @@
 {% endblock %}
 
 {% block content %}
-<div class="card">
+<div class="card mb-3">
+  <!-- Toolbar: Role Filter Tabs & Instant Search -->
+  <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+    
+    <!-- Role Filter Tabs -->
+    <div class="segmented-control" style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius-sm); padding:3px; display:inline-flex; gap:3px;">
+      <a href="?role={% if search_query %}&q={{ search_query }}{% endif %}" 
+         class="seg-btn {% if not selected_role %}active{% endif %}" style="padding:6px 14px; font-size:12.5px; font-weight:600; text-decoration:none; border-radius:4px; display:inline-flex; align-items:center; gap:6px;">
+        <i data-lucide="users" style="width:14px; height:14px;"></i> All
+        <span class="badge badge-outline" style="font-size:11px; padding:1px 6px;">{{ counts.all }}</span>
+      </a>
+      <a href="?role=student{% if search_query %}&q={{ search_query }}{% endif %}" 
+         class="seg-btn {% if selected_role == 'student' %}active{% endif %}" style="padding:6px 14px; font-size:12.5px; font-weight:600; text-decoration:none; border-radius:4px; display:inline-flex; align-items:center; gap:6px;">
+        <i data-lucide="graduation-cap" style="width:14px; height:14px;"></i> Students
+        <span class="badge badge-info" style="font-size:11px; padding:1px 6px;">{{ counts.student }}</span>
+      </a>
+      <a href="?role=teacher{% if search_query %}&q={{ search_query }}{% endif %}" 
+         class="seg-btn {% if selected_role == 'teacher' %}active{% endif %}" style="padding:6px 14px; font-size:12.5px; font-weight:600; text-decoration:none; border-radius:4px; display:inline-flex; align-items:center; gap:6px;">
+        <i data-lucide="book-open" style="width:14px; height:14px;"></i> Teachers
+        <span class="badge badge-warning" style="font-size:11px; padding:1px 6px;">{{ counts.teacher }}</span>
+      </a>
+      <a href="?role=admin{% if search_query %}&q={{ search_query }}{% endif %}" 
+         class="seg-btn {% if selected_role == 'admin' %}active{% endif %}" style="padding:6px 14px; font-size:12.5px; font-weight:600; text-decoration:none; border-radius:4px; display:inline-flex; align-items:center; gap:6px;">
+        <i data-lucide="shield" style="width:14px; height:14px;"></i> Admins
+        <span class="badge badge-accent" style="font-size:11px; padding:1px 6px;">{{ counts.admin }}</span>
+      </a>
+    </div>
+
+    <!-- Search Input -->
+    <div style="display:flex; align-items:center; gap:8px;">
+      <form method="get" style="margin:0; position:relative;">
+        {% if selected_role %}<input type="hidden" name="role" value="{{ selected_role }}">{% endif %}
+        <input type="text" name="q" id="user-search-input" value="{{ search_query }}" 
+               class="form-control form-control-sm" placeholder="Search name, ID, username..." 
+               style="padding-left:32px; width:250px; font-size:13px;" onkeyup="filterUsersTable(this.value)">
+        <span style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none;">
+          <i data-lucide="search" style="width:14px; height:14px;"></i>
+        </span>
+      </form>
+      {% if search_query or selected_role %}
+        <a href="{% url 'user_list' %}" class="btn btn-outline btn-sm" title="Clear Filters">
+          <i data-lucide="x"></i> Reset
+        </a>
+      {% endif %}
+    </div>
+
+  </div>
+
   <div class="table-container" style="border:none;">
-    <table>
+    <table id="users-table">
       <thead>
-        <tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>User</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th style="text-align:right;">Actions</th></tr>
       </thead>
       <tbody>
         {% for u in users %}
-        <tr>
+        <tr class="user-row" data-search="{{ u.get_full_name|lower }} {{ u.username|lower }} {{ u.email|lower }} {% if u.student_profile %}{{ u.student_profile.student_id|lower }}{% endif %} {% if u.teacher_profile %}{{ u.teacher_profile.employee_id|lower }}{% endif %}">
           <td>
             <div style="display:flex;align-items:center;gap:10px;">
-              <div class="student-avatar-sm">{{ u.first_name|first|default:u.username|first|upper }}</div>
+              <div class="student-avatar-sm" style="font-weight:700;">{{ u.first_name|first|default:u.username|first|upper }}</div>
               <div>
                 <div class="font-bold">{{ u.get_full_name|default:u.username }}</div>
                 {% if u.role == 'teacher' and u.teacher_profile %}
-                  <div class="text-muted" style="font-size:11px;">ID: {{ u.teacher_profile.employee_id }}</div>
+                  <div class="text-muted" style="font-size:11px;">Emp ID: {{ u.teacher_profile.employee_id }} &bull; {{ u.teacher_profile.department|default:"Faculty" }}</div>
                 {% elif u.role == 'student' and u.student_profile %}
-                  <div class="text-muted" style="font-size:11px;">ID: {{ u.student_profile.student_id }}</div>
+                  <div class="text-muted" style="font-size:11px;">Student ID: {{ u.student_profile.student_id }} &bull; {{ u.student_profile.course|default:"Student" }}</div>
                 {% endif %}
               </div>
             </div>
           </td>
-          <td class="text-muted">{{ u.username }}</td>
-          <td class="text-muted">{{ u.email|default:"—" }}</td>
+          <td class="text-muted" style="font-family:monospace; font-size:12.5px;">{{ u.username }}</td>
+          <td class="text-muted" style="font-size:13px;">{{ u.email|default:"—" }}</td>
           <td><span class="role-badge {{ u.role }}">{{ u.get_role_display }}</span></td>
           <td>
-            {% if u.is_active %}<span class="badge badge-success">Active</span>
+            {% if u.is_active %}<span class="badge badge-success"><i data-lucide="check" style="width:11px; height:11px;"></i> Active</span>
             {% else %}<span class="badge badge-danger">Inactive</span>{% endif %}
           </td>
-          <td>
+          <td style="text-align:right;">
             <div class="action-popover-dropdown">
               <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="Actions" aria-label="Actions">
                 <i data-lucide="more-vertical"></i>
@@ -56,10 +103,25 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-center text-muted">No users found.</td></tr>
+        <tr><td colspan="6" class="text-center text-muted" style="padding:40px;">No users found matching your criteria.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+<script>
+function filterUsersTable(val) {
+  const q = val.toLowerCase().trim();
+  const rows = document.querySelectorAll('.user-row');
+  rows.forEach(row => {
+    const data = row.getAttribute('data-search') || '';
+    if (!q || data.includes(q)) {
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+}
+</script>
 {% endblock %}

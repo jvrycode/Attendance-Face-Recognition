@@ -121,8 +121,40 @@ def dashboard_view(request):
 @login_required
 @admin_required
 def user_list_view(request):
-    users = CustomUser.objects.all().order_by('role', 'username')
-    return render(request, 'accounts/user_list.html', {'users': users})
+    role_filter = request.GET.get('role', '').strip().lower()
+    search_query = request.GET.get('q', '').strip()
+
+    qs = CustomUser.objects.select_related('teacher_profile', 'student_profile').all()
+
+    if role_filter in ['admin', 'teacher', 'student']:
+        qs = qs.filter(role=role_filter)
+
+    if search_query:
+        from django.db.models import Q
+        qs = qs.filter(
+            Q(username__icontains=search_query) |
+            Q(first_name__icontains=search_query) |
+            Q(last_name__icontains=search_query) |
+            Q(email__icontains=search_query) |
+            Q(student_profile__student_id__icontains=search_query) |
+            Q(teacher_profile__employee_id__icontains=search_query)
+        )
+
+    users = qs.order_by('role', 'last_name', 'first_name', 'username')
+
+    counts = {
+        'all': CustomUser.objects.count(),
+        'student': CustomUser.objects.filter(role='student').count(),
+        'teacher': CustomUser.objects.filter(role='teacher').count(),
+        'admin': CustomUser.objects.filter(role='admin').count(),
+    }
+
+    return render(request, 'accounts/user_list.html', {
+        'users': users,
+        'selected_role': role_filter,
+        'search_query': search_query,
+        'counts': counts,
+    })
 
 
 @login_required

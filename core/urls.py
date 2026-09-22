@@ -44,6 +44,8 @@ urlpatterns = [
 
     # AJAX API
     path('api/mark-present/', views.mark_present_api, name='mark_present_api'),
+    path('api/students/search/', views.student_search_api, name='api_student_search'),
+    path('sections/<int:pk>/enroll/', views.section_enroll_student_api, name='section_enroll_student_api'),
     path('api/sections-by-program/<int:program_id>/', views.api_sections_by_program, name='api_sections_by_program'),
     path('api/program-sections/<int:program_id>/', views.api_program_sections, name='api_program_sections'),
     path('api/program-sections/create/', views.api_create_program_section, name='api_create_program_section'),

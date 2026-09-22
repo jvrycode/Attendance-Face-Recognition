@@ -91,24 +91,38 @@
   </div>
   <div class="card-body">
     {% if request.user.role == 'admin' %}
-    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
-      <form method="post" style="display:flex; gap:10px; flex:1; max-width:500px; margin:0;">
-        {% csrf_token %}
-        {{ enroll_form.student }}
-        <button type="submit" class="btn btn-primary" style="white-space:nowrap;"><i data-lucide="user-check"></i> Add Student to Section</button>
-      </form>
-      <a href="{% url 'student_register' %}?section_id={{ section.pk }}" class="btn btn-success">
-        <i data-lucide="user-plus"></i> Register New Student to Section
-      </a>
+    <!-- High-Performance Indexed Student Search for Section Enrollment -->
+    <div class="student-search-enroll-wrap mb-3" style="position:relative; max-width:580px;">
+      <label style="font-size:12px; font-weight:700; color:var(--text-secondary); margin-bottom:6px; display:inline-flex; align-items:center; gap:5px;">
+        <i data-lucide="user-plus" style="width:13px; height:13px; color:var(--primary);"></i> Add Student to Section
+      </label>
+      <div style="position:relative;">
+        <input type="text" id="student-search-input" class="form-control" 
+               placeholder="Search by student name or ID (e.g., 2024-00001)..." 
+               autocomplete="off" style="padding-left:36px; height:40px; font-size:13.5px;"
+               oninput="onStudentSearchInput(this.value)">
+        <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none;">
+          <i data-lucide="search" style="width:15px; height:15px;"></i>
+        </span>
+        <span id="search-spinner" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); display:none;">
+          <i data-lucide="loader-2" class="spin" style="width:15px; height:15px; color:var(--primary);"></i>
+        </span>
+      </div>
+
+      <!-- Floating Typeahead Search Results Dropdown -->
+      <div id="student-search-dropdown" style="display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:100; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 12px 28px rgba(0,0,0,0.15); max-height:340px; overflow-y:auto;">
+        <div id="student-search-results-list"></div>
+      </div>
     </div>
     {% endif %}
+
     {% if section.enrollments.all %}
-    <div class="table-container">
-      <table>
+    <div class="table-container" id="class-list-container">
+      <table id="class-list-table">
         <thead><tr><th>Student</th><th>Student ID</th><th>Course</th><th>Face Status</th>{% if request.user.role in 'admin,teacher' %}<th>Actions</th>{% endif %}</tr></thead>
         <tbody>
           {% for enrollment in section.enrollments.all %}
-          <tr>
+          <tr id="row-student-{{ enrollment.student.pk }}">
             <td>
               <div style="display:flex;align-items:center;gap:8px;">
                 <div class="student-avatar-sm">{{ enrollment.student.user.first_name|first|upper }}</div>
@@ -145,16 +159,153 @@
       </table>
     </div>
     {% else %}
-      <div style="text-align:center; padding:36px 16px; color:var(--text-muted);">
+      <div id="empty-enrollment-msg" style="text-align:center; padding:36px 16px; color:var(--text-muted);">
         <i data-lucide="users" style="width:36px; height:36px; margin:0 auto 8px; opacity:.4; display:block;"></i>
         <div style="font-weight:600; font-size:14px;">No students enrolled yet.</div>
         {% if request.user.role == 'teacher' %}
           <div style="font-size:12px; margin-top:4px; opacity:.75;">The administrator registers and assigns students to this class list.</div>
         {% else %}
-          <div style="font-size:12px; margin-top:4px; opacity:.75;">Use the form above to add or register students into this class.</div>
+          <div style="font-size:12px; margin-top:4px; opacity:.75;">Use the search bar above to add students into this class.</div>
         {% endif %}
       </div>
     {% endif %}
+  </div>
+</div>
+
+<script>
+let searchDebounceTimer = null;
+const SECTION_PK = {{ section.pk }};
+const CSRF_TOKEN = '{{ csrf_token }}';
+
+function onStudentSearchInput(val) {
+  clearTimeout(searchDebounceTimer);
+  const q = val.trim();
+  const dropdown = document.getElementById('student-search-dropdown');
+  const spinner = document.getElementById('search-spinner');
+
+  if (q.length < 1) {
+    if (dropdown) dropdown.style.display = 'none';
+    if (spinner) spinner.style.display = 'none';
+    return;
+  }
+
+  if (spinner) spinner.style.display = 'block';
+
+  searchDebounceTimer = setTimeout(async () => {
+    try {
+      const resp = await fetch(`/api/students/search/?section_id=${SECTION_PK}&q=${encodeURIComponent(q)}`);
+      const data = await resp.json();
+      renderSearchResults(data.results, q);
+    } catch (e) {
+      console.error('Student search error:', e);
+    } finally {
+      if (spinner) spinner.style.display = 'none';
+    }
+  }, 220);
+}
+
+function renderSearchResults(results, query) {
+  const dropdown = document.getElementById('student-search-dropdown');
+  const list = document.getElementById('student-search-results-list');
+  if (!dropdown || !list) return;
+
+  if (!results || results.length === 0) {
+    list.innerHTML = `<div style="padding:16px; text-align:center; color:var(--text-muted); font-size:13px;">
+      No unenrolled students found matching <strong>"${escapeHtml(query)}"</strong>
+    </div>`;
+    dropdown.style.display = 'block';
+    return;
+  }
+
+  let html = '';
+  results.forEach(s => {
+    html += `
+      <div class="search-result-item">
+        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+          <div class="student-avatar-sm" style="font-weight:700;">${s.avatar_letter}</div>
+          <div style="min-width:0;">
+            <div style="font-weight:700; font-size:13.5px; color:var(--text-primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">
+              ${escapeHtml(s.name)}
+            </div>
+            <div style="font-size:11.5px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-top:2px;">
+              <span class="badge badge-outline" style="font-size:11px; padding:1px 5px;">${escapeHtml(s.student_id)}</span>
+              <span>${escapeHtml(s.course || 'No course')}</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+          ${s.is_face_enrolled 
+            ? '<span class="badge badge-success" style="font-size:10.5px;"><i data-lucide="check-circle" style="width:11px; height:11px;"></i> Enrolled</span>' 
+            : '<span class="badge badge-warning" style="font-size:10.5px;"><i data-lucide="alert-triangle" style="width:11px; height:11px;"></i> No Face</span>'}
+          <button type="button" class="btn btn-primary btn-sm" onclick="enrollStudent(${s.id}, '${escapeHtml(s.name)}', this)">
+            <i data-lucide="plus"></i> Add
+          </button>
+        </div>
+      </div>
+    `;
+  });
+
+  list.innerHTML = html;
+  dropdown.style.display = 'block';
+  if (window.lucide) lucide.createIcons();
+}
+
+async function enrollStudent(studentId, studentName, btnElem) {
+  if (btnElem) {
+    btnElem.disabled = true;
+    btnElem.innerHTML = '<i data-lucide="loader-2" class="spin" style="width:12px; height:12px;"></i> Adding...';
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('student_id', studentId);
+
+    const resp = await fetch(`/sections/${SECTION_PK}/enroll/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': CSRF_TOKEN,
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: formData
+    });
+
+    const data = await resp.json();
+    if (data.success) {
+      // Reload page smoothly to refresh table & enrollment count
+      window.location.reload();
+    } else {
+      alert('Enrollment failed: ' + (data.error || 'Unknown error'));
+      if (btnElem) {
+        btnElem.disabled = false;
+        btnElem.innerHTML = '<i data-lucide="plus"></i> Add';
+      }
+    }
+  } catch (e) {
+    console.error('Enroll error:', e);
+    alert('Enrollment request error.');
+    if (btnElem) {
+      btnElem.disabled = false;
+      btnElem.innerHTML = '<i data-lucide="plus"></i> Add';
+    }
+  }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const wrap = document.querySelector('.student-search-enroll-wrap');
+  const dropdown = document.getElementById('student-search-dropdown');
+  if (wrap && dropdown && !wrap.contains(e.target)) {
+    dropdown.style.display = 'none';
+  }
+});
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/[&<>"']/g, function(m) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+  });
+}
+</script>
   </div>
 </div>
 {% endblock %}

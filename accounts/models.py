@@ -32,6 +32,10 @@ class CustomUser(AbstractUser):
     class Meta:
         verbose_name = 'User'
         verbose_name_plural = 'Users'
+        indexes = [
+            models.Index(fields=['role'], name='user_role_idx'),
+            models.Index(fields=['last_name', 'first_name'], name='user_name_idx'),
+        ]
 
 
 class Teacher(models.Model):
@@ -70,3 +74,6 @@ class Student(models.Model):
     class Meta:
         verbose_name = 'Student'
         verbose_name_plural = 'Students'
+        indexes = [
+            models.Index(fields=['course', 'year_level'], name='student_crs_yr_idx'),
+        ]

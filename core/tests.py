@@ -290,3 +290,77 @@ class CoreFeatureTests(TestCase):
         expected_redirect = f"/face/enroll/?student_id={new_student.pk}"
         self.assertRedirects(res, expected_redirect)
 
+    def test_indexed_student_search_api(self):
+        """Verify indexed student search filters unenrolled students and respects query terms."""
+        client = Client()
+        client.force_login(self.admin_user)
+
+        # Create a second student not enrolled in section_a
+        student2_user = User.objects.create_user(
+            username='stud_isaac', first_name='Isaac', last_name='Newton',
+            role='student', password='StrongPassword123!'
+        )
+        student2 = Student.objects.create(
+            user=student2_user, student_id='STU-2026-999', year_level=3, course='BSCS'
+        )
+
+        # Search for 'Newton'
+        res = client.get(f'/api/students/search/?section_id={self.section_a.pk}&q=Newton')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(len(data['results']), 1)
+        self.assertEqual(data['results'][0]['student_id'], 'STU-2026-999')
+        self.assertEqual(data['results'][0]['name'], 'Isaac Newton')
+
+        # Enroll student2 into section_a
+        StudentSection.objects.create(student=student2, section=self.section_a)
+
+        # Search again: now student2 should be excluded because they are already enrolled
+        res2 = client.get(f'/api/students/search/?section_id={self.section_a.pk}&q=Newton')
+        self.assertEqual(res2.status_code, 200)
+        data2 = res2.json()
+        self.assertEqual(len(data2['results']), 0)
+
+    def test_section_enroll_student_api(self):
+        """Verify section enroll API enrolls student and enforces admin role."""
+        # Unenrolled student
+        student3_user = User.objects.create_user(
+            username='stud_alan', first_name='Alan', last_name='Turing',
+            role='student', password='StrongPassword123!'
+        )
+        student3 = Student.objects.create(
+            user=student3_user, student_id='STU-2026-777', year_level=4, course='BSCS'
+        )
+
+        client = Client()
+        # Student cannot enroll
+        client.force_login(self.student_user)
+        res_fail = client.post(f'/sections/{self.section_a.pk}/enroll/', {'student_id': student3.pk})
+        self.assertEqual(res_fail.status_code, 403)
+
+        # Admin can enroll
+        client.force_login(self.admin_user)
+        res_ok = client.post(f'/sections/{self.section_a.pk}/enroll/', {'student_id': student3.pk}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_ok.status_code, 200)
+        self.assertTrue(res_ok.json()['success'])
+        self.assertTrue(StudentSection.objects.filter(student=student3, section=self.section_a).exists())
+
+    def test_user_list_role_filter(self):
+        """Verify user list filters by role and search query."""
+        client = Client()
+        client.force_login(self.admin_user)
+
+        res_students = client.get('/accounts/users/?role=student')
+        self.assertEqual(res_students.status_code, 200)
+        self.assertContains(res_students, 'stud_marie')
+        self.assertNotContains(res_students, 'prof_albert')
+
+        res_teachers = client.get('/accounts/users/?role=teacher')
+        self.assertEqual(res_teachers.status_code, 200)
+        self.assertContains(res_teachers, 'prof_albert')
+        self.assertNotContains(res_teachers, 'stud_marie')
+
+        res_search = client.get('/accounts/users/?q=Einstein')
+        self.assertEqual(res_search.status_code, 200)
+        self.assertContains(res_search, 'Albert Einstein')
+
