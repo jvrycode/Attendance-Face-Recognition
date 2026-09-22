@@ -59,6 +59,9 @@
       <a href="{% url 'schedule_list' %}" class="nav-item {% if 'schedule' in request.resolver_match.url_name %}active{% endif %}">
         <span class="icon"><i data-lucide="calendar"></i></span> Schedules
       </a>
+      <a href="{% url 'enroll_face' %}" class="nav-item {% if 'enroll' in request.resolver_match.url_name %}active{% endif %}">
+        <span class="icon"><i data-lucide="camera"></i></span> Face Enrollment
+      </a>
       <div class="nav-section-label">Reports</div>
       <a href="{% url 'attendance_history' %}" class="nav-item {% if 'history' in request.resolver_match.url_name %}active{% endif %}">
         <span class="icon"><i data-lucide="bar-chart-2"></i></span> Attendance History
@@ -68,6 +71,15 @@
       <div class="nav-section-label">Teaching</div>
       <a href="{% url 'attendance_history' %}" class="nav-item {% if 'history' in request.resolver_match.url_name %}active{% endif %}">
         <span class="icon"><i data-lucide="bar-chart-2"></i></span> My Sessions
+      </a>
+      <a href="{% url 'section_list' %}" class="nav-item {% if 'section' in request.resolver_match.url_name %}active{% endif %}">
+        <span class="icon"><i data-lucide="building"></i></span> Sections
+      </a>
+      <a href="{% url 'schedule_list' %}" class="nav-item {% if 'schedule' in request.resolver_match.url_name %}active{% endif %}">
+        <span class="icon"><i data-lucide="calendar"></i></span> Schedules
+      </a>
+      <a href="{% url 'enroll_face' %}" class="nav-item {% if 'enroll' in request.resolver_match.url_name %}active{% endif %}">
+        <span class="icon"><i data-lucide="camera"></i></span> Face Enrollment
       </a>
 
       {% elif user.role == 'student' %}

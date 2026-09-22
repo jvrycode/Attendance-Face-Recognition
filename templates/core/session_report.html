@@ -7,9 +7,15 @@
 {% block header_actions %}
   <button onclick="window.print()" class="btn btn-outline"><i data-lucide="printer"></i> Print</button>
   {% if session.status == 'open' %}
+    <a href="{% url 'session_live' session.pk %}" class="btn btn-primary"><i data-lucide="camera"></i> Live Scanner</a>
     <form method="post" action="{% url 'session_close' session.pk %}" style="display:inline;">
       {% csrf_token %}
       <button type="submit" class="btn btn-danger"><i data-lucide="square"></i> Close Session</button>
+    </form>
+  {% elif request.user.role in 'admin,teacher' %}
+    <form method="post" action="{% url 'session_reopen' session.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-warning"><i data-lucide="rotate-ccw"></i> Re-open Session</button>
     </form>
   {% endif %}
 {% endblock %}

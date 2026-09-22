@@ -66,3 +66,57 @@ class UserEditForm(forms.ModelForm):
             'phone': forms.TextInput(attrs={'class': 'form-control'}),
             'profile_image': forms.FileInput(attrs={'class': 'form-control'}),
         }
+
+
+class StudentRegisterForm(forms.Form):
+    """Convenient streamlined form to register a new student and directly assign to a section."""
+    student_id = forms.CharField(
+        max_length=30, required=True,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. 2024-00002'})
+    )
+    first_name = forms.CharField(
+        max_length=50, required=True,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'First Name'})
+    )
+    last_name = forms.CharField(
+        max_length=50, required=True,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Last Name'})
+    )
+    email = forms.EmailField(
+        required=False,
+        widget=forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'Optional (defaults to <id>@attendfr.edu)'})
+    )
+    course = forms.CharField(
+        max_length=100, initial='BSCS', required=True,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. BSCS, BSIT'})
+    )
+    year_level = forms.IntegerField(
+        initial=1, min_value=1, max_value=6, required=True,
+        widget=forms.NumberInput(attrs={'class': 'form-control'})
+    )
+    section = forms.ModelChoiceField(
+        queryset=None,
+        required=False,
+        empty_label='-- Select Section (Optional) --',
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    password = forms.CharField(
+        required=False,
+        widget=forms.PasswordInput(attrs={'class': 'form-control', 'placeholder': 'Default: student123 if blank'})
+    )
+
+    def __init__(self, user=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from core.models import Section
+        if user and user.role == 'teacher':
+            teacher = getattr(user, 'teacher_profile', None)
+            self.fields['section'].queryset = Section.objects.filter(teacher=teacher) if teacher else Section.objects.none()
+        else:
+            self.fields['section'].queryset = Section.objects.select_related('subject', 'teacher__user').all()
+
+    def clean_student_id(self):
+        sid = self.cleaned_data['student_id'].strip()
+        if Student.objects.filter(student_id=sid).exists():
+            raise forms.ValidationError(f"A student with Student ID '{sid}' already exists.")
+        return sid
+

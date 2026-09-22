@@ -127,27 +127,102 @@ def encode_face_from_path(image_path: str):
         return None
 
 
+def detect_and_encode_all_faces(frame_bytes: bytes, downscale: float = 0.5):
+    """
+    Lightning-fast multi-face detection and encoding.
+    Downscales the frame for rapid face localization (omni-directional, catches off-center faces),
+    then extracts 128-D encodings for ALL detected faces.
+    Returns list of dicts: [{'encoding': list_of_floats, 'box': {'top', 'right', 'bottom', 'left'}}, ...]
+    """
+    results = []
+    try:
+        img_np = _decode_image_to_rgb(frame_bytes)
+        h, w = img_np.shape[:2]
+
+        if FACE_RECOGNITION_AVAILABLE:
+            # Fast downscaled localization first (fast path)
+            scale_factor = 1.0
+            small_locations = []
+            if downscale < 1.0 and (w > 320 or h > 240):
+                small_w = max(1, int(w * downscale))
+                small_h = max(1, int(h * downscale))
+                small_img = cv2.resize(img_np, (small_w, small_h)) if OPENCV_AVAILABLE else img_np
+                scale_factor = 1.0 / downscale if OPENCV_AVAILABLE else 1.0
+                small_locations = fr.face_locations(small_img, model='hog')
+
+            # Fallback 1: If downscaled detection found no faces, run on original full image
+            if not small_locations:
+                small_locations = fr.face_locations(img_np, number_of_times_to_upsample=0, model='hog')
+                scale_factor = 1.0
+
+            # Fallback 2: Upsample by 1 to detect smaller or distant faces
+            if not small_locations:
+                small_locations = fr.face_locations(img_np, number_of_times_to_upsample=1, model='hog')
+                scale_factor = 1.0
+
+            # Fallback 3: For backlit scenes (e.g. bright window behind student), enhance contrast using CLAHE
+            if not small_locations and OPENCV_AVAILABLE:
+                try:
+                    lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
+                    l, a, b = cv2.split(lab)
+                    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+                    cl = clahe.apply(l)
+                    enhanced = cv2.cvtColor(cv2.merge((cl, a, b)), cv2.COLOR_LAB2RGB)
+                    small_locations = fr.face_locations(enhanced, number_of_times_to_upsample=0, model='hog')
+                    scale_factor = 1.0
+                except Exception:
+                    pass
+
+            # Upscale locations back to original resolution
+            upscaled_locations = []
+            for (t, r, b, l) in small_locations:
+                upscaled_locations.append((
+                    max(0, int(t * scale_factor)),
+                    min(w, int(r * scale_factor)),
+                    min(h, int(b * scale_factor)),
+                    max(0, int(l * scale_factor))
+                ))
+
+            if upscaled_locations:
+                encodings = fr.face_encodings(img_np, upscaled_locations)
+                for enc, (top, right, bottom, left) in zip(encodings, upscaled_locations):
+                    results.append({
+                        'encoding': enc.tolist(),
+                        'box': {'top': top, 'right': right, 'bottom': bottom, 'left': left}
+                    })
+            return results
+
+        if LBPH_AVAILABLE:
+            gray = _to_gray(img_np)
+            faces = _detect_faces_cv(gray)
+            for (x, y, fw, fh) in faces:
+                face_gray = gray[y:y+fh, x:x+fw]
+                if face_gray.size > 0:
+                    face_resized = cv2.resize(face_gray, (128, 128))
+                    lbp_hist = _compute_lbp_histogram(face_resized)
+                    results.append({
+                        'encoding': lbp_hist.tolist(),
+                        'box': {'top': y, 'right': x+fw, 'bottom': y+fh, 'left': x}
+                    })
+            return results
+
+    except Exception as e:
+        logger.error(f"detect_and_encode_all_faces error: {e}")
+
+    return results
+
+
 def encode_face_from_frame(frame_bytes: bytes):
     """
-    Encode all faces found in a webcam frame.
+    Backward-compatible single/multi-face frame encoder.
     Returns (first_encoding_or_None, list_of_face_location_dicts)
     """
-    if FACE_RECOGNITION_AVAILABLE:
-        try:
-            img_np = _decode_image_to_rgb(frame_bytes)
-            locations = fr.face_locations(img_np, model='hog')
-            encodings = fr.face_encodings(img_np, locations)
-            face_locs = [{'top': t, 'right': r, 'bottom': b, 'left': l}
-                         for (t, r, b, l) in locations]
-            return (encodings[0].tolist() if encodings else None), face_locs
-        except Exception as e:
-            logger.error(f"encode_face_from_frame (dlib) error: {e}")
-
-    if LBPH_AVAILABLE:
-        encoding = _lbph_encode(frame_bytes)
-        return encoding, _detect_locations(frame_bytes)
-
-    return None, []
+    all_faces = detect_and_encode_all_faces(frame_bytes)
+    if not all_faces:
+        return None, []
+    primary_encoding = all_faces[0]['encoding']
+    face_locs = [f['box'] for f in all_faces]
+    return primary_encoding, face_locs
 
 
 def _lbph_encode(image_data: bytes):
@@ -252,6 +327,50 @@ def compare_faces(known_encoding: list, unknown_encoding: list, tolerance: float
     is_match = chi_sq <= lbph_threshold
     confidence = max(0.0, 1.0 - chi_sq / lbph_threshold)
     return is_match, round(confidence, 3)
+
+
+def batch_compare_faces(known_matrix: np.ndarray, unknown_encoding: list, tolerance: float = None):
+    """
+    Sub-millisecond vectorized comparison of an unknown face against a section's pre-indexed matrix.
+    known_matrix shape: (N, 128)
+    unknown_encoding length: 128
+    Returns (is_match: bool, best_index: int or None, min_distance: float, confidence: float)
+    """
+    if tolerance is None:
+        tolerance = getattr(settings, 'FACE_RECOGNITION_TOLERANCE', 0.5)
+
+    if known_matrix is None or len(known_matrix) == 0 or unknown_encoding is None:
+        return False, None, 999.0, 0.0
+
+    try:
+        unknown_np = np.array(unknown_encoding, dtype=np.float32)
+
+        # High-accuracy 128-D Euclidean Vectorized Matching
+        if known_matrix.ndim == 2 and known_matrix.shape[1] == len(unknown_np):
+            # Compute Euclidean distances across all students at C speed in one step
+            distances = np.linalg.norm(known_matrix - unknown_np, axis=1)
+            best_idx = int(np.argmin(distances))
+            min_dist = float(distances[best_idx])
+            is_match = min_dist <= tolerance
+            confidence = max(0.0, 1.0 - min_dist)
+            return is_match, best_idx, min_dist, round(confidence, 3)
+
+        # Fallback for LBPH or differing dimensions
+        best_idx = None
+        best_confidence = 0.0
+        best_match = False
+        min_dist = 999.0
+        for i, known_row in enumerate(known_matrix):
+            matched, conf = compare_faces(known_row.tolist(), unknown_encoding, tolerance)
+            if matched and conf > best_confidence:
+                best_match = True
+                best_idx = i
+                best_confidence = conf
+        return best_match, best_idx, min_dist, best_confidence
+
+    except Exception as e:
+        logger.error(f"batch_compare_faces error: {e}")
+        return False, None, 999.0, 0.0
 
 
 def _chi_squared_distance(h1: np.ndarray, h2: np.ndarray) -> float:

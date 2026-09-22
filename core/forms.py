@@ -49,11 +49,16 @@ class ScheduleForm(forms.ModelForm):
 
 
 class TeacherScheduleForm(forms.ModelForm):
-    """Schedule form limited to teacher's own sections."""
+    """Schedule form filtered to sections assigned to the specific teacher."""
+    def __init__(self, teacher, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['section'].queryset = Section.objects.filter(teacher=teacher)
+
     class Meta:
         model = Schedule
-        fields = ['day_of_week', 'start_time', 'end_time', 'room']
+        fields = ['section', 'day_of_week', 'start_time', 'end_time', 'room']
         widgets = {
+            'section': forms.Select(attrs={'class': 'form-select'}),
             'day_of_week': forms.Select(attrs={'class': 'form-select'}),
             'start_time': forms.TimeInput(attrs={'class': 'form-control', 'type': 'time'}),
             'end_time': forms.TimeInput(attrs={'class': 'form-control', 'type': 'time'}),

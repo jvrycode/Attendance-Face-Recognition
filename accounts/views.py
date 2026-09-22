@@ -3,7 +3,11 @@ from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction
-from .forms import LoginForm, AdminUserCreateForm, TeacherProfileForm, StudentProfileForm, UserEditForm
+from django.urls import reverse
+from .forms import (
+    LoginForm, AdminUserCreateForm, TeacherProfileForm,
+    StudentProfileForm, UserEditForm, StudentRegisterForm
+)
 from .models import CustomUser, Teacher, Student
 from .decorators import admin_required
 
@@ -129,6 +133,77 @@ def user_create_view(request):
         'user_form': user_form,
         'teacher_form': teacher_form,
         'student_form': student_form,
+    })
+
+
+@login_required
+def student_register_view(request):
+    """
+    Streamlined student registration flow accessible to Admin & Teachers.
+    Creates user, creates student profile, assigns to section, and immediately
+    redirects to face enrollment.
+    """
+    if request.user.role not in ['admin', 'teacher']:
+        messages.error(request, "Permission denied.")
+        return redirect('dashboard')
+
+    initial_data = {}
+    section_id = request.GET.get('section_id')
+    if section_id:
+        initial_data['section'] = section_id
+
+    form = StudentRegisterForm(user=request.user, data=request.POST or None, initial=initial_data)
+
+    if request.method == 'POST' and form.is_valid():
+        from core.models import StudentSection
+        from face_app.services.face_service import FaceService
+
+        cd = form.cleaned_data
+        student_id = cd['student_id']
+        first_name = cd['first_name']
+        last_name = cd['last_name']
+        email = cd['email'] or f"{student_id.lower().replace('-', '')}@attendfr.edu"
+        course = cd['course']
+        year_level = cd['year_level']
+        section = cd.get('section')
+        password = cd['password'] or 'student123'
+
+        # Generate unique username
+        base_username = f"s_{student_id.lower().replace('-', '')}"
+        username = base_username
+        suffix = 1
+        while CustomUser.objects.filter(username=username).exists():
+            username = f"{base_username}_{suffix}"
+            suffix += 1
+
+        with transaction.atomic():
+            user = CustomUser.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                role='student'
+            )
+            student = Student.objects.create(
+                user=user,
+                student_id=student_id,
+                course=course,
+                year_level=year_level
+            )
+            if section:
+                StudentSection.objects.get_or_create(student=student, section=section)
+                FaceService.invalidate_cache(section.pk)
+
+        messages.success(
+            request,
+            f'Student {student_id} ({first_name} {last_name}) registered successfully! Capture face now to activate biometric attendance.'
+        )
+        return redirect(f"{reverse('enroll_face')}?student_id={student.pk}")
+
+    return render(request, 'accounts/student_register.html', {
+        'form': form,
+        'section_id': section_id,
     })
 
 

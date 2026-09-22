@@ -1,39 +1,113 @@
 {% extends 'base.html' %}
 {% block title %}Select Student for Enrollment{% endblock %}
 {% block page_title %}Select Student to Enroll{% endblock %}
+{% block page_subtitle %}<p>Enroll or update biometric 128-D face embeddings for students</p>{% endblock %}
+
+{% block header_actions %}
+  <a href="{% url 'student_register' %}" class="btn btn-primary">
+    <i data-lucide="user-plus"></i> Register New Student
+  </a>
+{% endblock %}
 
 {% block content %}
 <div class="card">
-  <div class="card-header"><span class="card-title"><i data-lucide="graduation-cap"></i> Students</span></div>
+  <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+    <span class="card-title" style="display:flex; align-items:center; gap:8px;">
+      <i data-lucide="graduation-cap"></i> Registered Students
+      <span class="badge badge-info" style="font-size:12px;">{{ students.count }}</span>
+    </span>
+
+    <div style="display:flex; align-items:center; gap:10px;">
+      <!-- Real-time Filter -->
+      <div style="position:relative;">
+        <input type="text" id="student-filter" class="form-control form-control-sm" placeholder="Search student or ID..." style="padding-left:32px; font-size:13px; width:220px;" onkeyup="filterStudentTable()">
+        <span style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none;">
+          <i data-lucide="search" style="width:14px; height:14px;"></i>
+        </span>
+      </div>
+
+      <a href="{% url 'student_register' %}" class="btn btn-outline btn-sm">
+        <i data-lucide="plus"></i> Add Student
+      </a>
+    </div>
+  </div>
+
   <div class="table-container" style="border:none;">
-    <table>
+    <table id="students-table">
       <thead>
-        <tr><th>Student</th><th>Student ID</th><th>Course</th><th>Face Status</th><th>Action</th></tr>
+        <tr>
+          <th>Student</th>
+          <th>Student ID</th>
+          <th>Course & Year</th>
+          <th>Face Status</th>
+          <th style="text-align:right;">Action</th>
+        </tr>
       </thead>
       <tbody>
         {% for student in students %}
-        <tr>
-          <td>{{ student.user.get_full_name }}</td>
-          <td>{{ student.student_id }}</td>
-          <td>{{ student.course }}</td>
+        <tr class="student-row">
+          <td>
+            <div style="display:flex; align-items:center; gap:10px;">
+              {% if student.face_image %}
+                <img src="{{ student.face_image.url }}" alt="{{ student.user.get_full_name }}" style="width:36px; height:36px; border-radius:50%; object-fit:cover; border:2px solid var(--success);">
+              {% else %}
+                <div class="student-avatar-sm">{{ student.user.first_name|first|upper }}</div>
+              {% endif %}
+              <div>
+                <div class="font-bold student-name">{{ student.user.get_full_name|default:student.user.username }}</div>
+                <div class="text-muted" style="font-size:11px;">{{ student.user.email }}</div>
+              </div>
+            </div>
+          </td>
+          <td class="student-id"><code style="font-weight:600;">{{ student.student_id }}</code></td>
+          <td class="student-course">{{ student.course }} - Year {{ student.year_level }}</td>
           <td>
             {% if student.is_face_enrolled %}
-              <span class="badge badge-success"><i data-lucide="check-circle"></i> Enrolled</span>
+              <span class="badge badge-success" style="display:inline-flex; align-items:center; gap:4px;">
+                <i data-lucide="check-circle" style="width:13px; height:13px;"></i> Enrolled
+              </span>
             {% else %}
-              <span class="badge badge-warning"><i data-lucide="alert-triangle"></i> Not Enrolled</span>
+              <span class="badge badge-warning" style="display:inline-flex; align-items:center; gap:4px;">
+                <i data-lucide="alert-triangle" style="width:13px; height:13px;"></i> Not Enrolled
+              </span>
             {% endif %}
           </td>
-          <td>
-            <a href="{% url 'enroll_face' %}?student_id={{ student.pk }}" class="btn btn-primary btn-sm">
-              <i data-lucide="camera"></i> {% if student.is_face_enrolled %}Re-enroll{% else %}Enroll{% endif %}
-            </a>
+          <td style="text-align:right;">
+            {% if student.is_face_enrolled %}
+              <a href="{% url 'enroll_face' %}?student_id={{ student.pk }}" class="btn btn-outline btn-sm">
+                <i data-lucide="camera"></i> Re-enroll
+              </a>
+            {% else %}
+              <a href="{% url 'enroll_face' %}?student_id={{ student.pk }}" class="btn btn-success btn-sm">
+                <i data-lucide="camera"></i> Enroll Face
+              </a>
+            {% endif %}
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="text-center text-muted" style="padding:30px;">No students found.</td></tr>
+        <tr>
+          <td colspan="5" class="text-center text-muted" style="padding:40px 20px;">
+            <div style="margin-bottom:12px;"><i data-lucide="users" style="width:40px; height:40px; opacity:0.4;"></i></div>
+            <p style="font-size:14px; margin-bottom:14px;">No students registered in the system yet.</p>
+            <a href="{% url 'student_register' %}" class="btn btn-primary">
+              <i data-lucide="user-plus"></i> Register First Student
+            </a>
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+<script>
+function filterStudentTable() {
+  const query = document.getElementById('student-filter').value.toLowerCase().trim();
+  const rows = document.querySelectorAll('#students-table tbody tr.student-row');
+  rows.forEach(row => {
+    const text = row.textContent.toLowerCase();
+    row.style.display = text.includes(query) ? '' : 'none';
+  });
+}
+</script>
 {% endblock %}

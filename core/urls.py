@@ -29,6 +29,7 @@ urlpatterns = [
     path('sessions/start/<int:schedule_pk>/', views.session_start, name='session_start'),
     path('sessions/<int:pk>/live/', views.session_live, name='session_live'),
     path('sessions/<int:pk>/close/', views.session_close, name='session_close'),
+    path('sessions/<int:pk>/reopen/', views.session_reopen, name='session_reopen'),
     path('sessions/<int:pk>/report/', views.session_report, name='session_report'),
     path('history/', views.attendance_history, name='attendance_history'),
 

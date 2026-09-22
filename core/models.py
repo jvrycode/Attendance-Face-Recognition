@@ -40,6 +40,35 @@ class Section(models.Model):
     def __str__(self):
         return f"{self.name} - {self.subject.code} ({self.school_year} {self.semester})"
 
+    @property
+    def schedule_display(self):
+        """Returns concise summary of schedules, e.g. 'M-TH 08:00–09:30 @ Room 101' or 'Mon 08:00–09:30 @ Room 101'."""
+        schedules = list(self.schedules.all())
+        if not schedules:
+            return "No schedule set"
+
+        day_order = {'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7}
+        day_short = {'Mon': 'M', 'Tue': 'T', 'Wed': 'W', 'Thu': 'TH', 'Fri': 'F', 'Sat': 'S', 'Sun': 'Su'}
+
+        # Sort chronologically by day
+        schedules.sort(key=lambda s: (day_order.get(s.day_of_week, 99), s.start_time))
+
+        grouped = {}
+        for s in schedules:
+            time_room = (s.start_time.strftime("%H:%M"), s.end_time.strftime("%H:%M"), s.room)
+            grouped.setdefault(time_room, []).append(s.day_of_week)
+
+        parts = []
+        for (start, end, room), days in grouped.items():
+            if len(days) > 1:
+                short_days = [day_short.get(d, d) for d in days]
+                day_str = "-".join(short_days)
+            else:
+                day_str = days[0]
+            parts.append(f"{day_str} {start}–{end} @ {room}")
+
+        return ", ".join(parts)
+
     class Meta:
         ordering = ['name']
         verbose_name = 'Section'
@@ -81,43 +110,11 @@ class Schedule(models.Model):
         return f"{self.section.name} | {self.get_day_of_week_display()} {self.start_time:%H:%M}–{self.end_time:%H:%M} @ {self.room}"
 
     def clean(self):
-        """Validate no schedule conflicts (room or teacher)."""
-        if self.start_time and self.end_time:
-            if self.start_time >= self.end_time:
-                raise ValidationError("End time must be after start time.")
-
-        if not self.section_id:
-            return
-
-        # Get overlapping schedules (exclude self)
-        qs = Schedule.objects.filter(day_of_week=self.day_of_week)
-        if self.pk:
-            qs = qs.exclude(pk=self.pk)
-
-        for sched in qs:
-            overlaps = (self.start_time < sched.end_time and self.end_time > sched.start_time)
-            if not overlaps:
-                continue
-
-            # Room conflict
-            if sched.room.strip().lower() == self.room.strip().lower():
-                raise ValidationError(
-                    f"Room conflict: '{self.room}' is already booked on "
-                    f"{self.get_day_of_week_display()} from {sched.start_time:%H:%M} to {sched.end_time:%H:%M} "
-                    f"by section '{sched.section.name}'."
-                )
-
-            # Teacher conflict
-            if (
-                self.section.teacher and
-                sched.section.teacher and
-                self.section.teacher == sched.section.teacher
-            ):
-                raise ValidationError(
-                    f"Teacher conflict: {self.section.teacher} is already scheduled on "
-                    f"{self.get_day_of_week_display()} from {sched.start_time:%H:%M} to {sched.end_time:%H:%M} "
-                    f"for section '{sched.section.name}'."
-                )
+        """Validate no schedule conflicts (room or teacher) via ScheduleService."""
+        from core.services.schedule_service import ScheduleService
+        conflicts = ScheduleService.check_conflicts(self)
+        if conflicts:
+            raise ValidationError(conflicts[0])
 
     def save(self, *args, **kwargs):
         self.full_clean()

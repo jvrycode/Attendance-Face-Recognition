@@ -13,6 +13,23 @@
 {% endblock %}
 
 {% block content %}
+{% if enrolled_face_count == 0 %}
+<div class="alert mb-2" style="background: rgba(245, 158, 11, 0.12); border: 1px solid var(--warning); border-radius: 10px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+  <div style="display: flex; align-items: center; gap: 12px;">
+    <span style="color: var(--warning); display: flex; align-items: center;"><i data-lucide="alert-triangle" style="width: 24px; height: 24px;"></i></span>
+    <div>
+      <strong style="color: var(--text-primary); font-size: 14px;">No enrolled student faces in this section yet!</strong>
+      <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+        All <strong>{{ records.count }}</strong> students in this section currently have unenrolled face data. The camera will display <em>"Unknown / Face Not Enrolled in Section"</em> until student biometric data is registered.
+      </div>
+    </div>
+  </div>
+  <a href="{% url 'section_detail' session.schedule.section.pk %}" class="btn btn-warning btn-sm" style="flex-shrink: 0;">
+    <i data-lucide="camera"></i> View & Enroll Students
+  </a>
+</div>
+{% endif %}
+
 <div style="display:grid; grid-template-columns: 1fr 380px; gap:20px;">
 
   <!-- Camera Panel -->
@@ -25,19 +42,22 @@
           <span id="status-text">Camera off</span>
         </div>
       </div>
-      <div class="camera-container">
-        <video id="camera-video" class="camera-video" autoplay playsinline muted></video>
+      <div class="camera-container" style="position: relative; border-radius: var(--radius); overflow: hidden; background: #000; min-height: 380px; display: flex; align-items: center; justify-content: center;">
+        <video id="camera-video" class="camera-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1); display: block;"></video>
+        <!-- Real-Time Bounding Box Canvas Overlay -->
+        <canvas id="overlay-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5;"></canvas>
+        <!-- Hidden processing canvas for frame captures -->
         <canvas id="camera-canvas" style="display:none;"></canvas>
-        <div class="camera-overlay">
+        <div class="camera-overlay" style="z-index: 2;">
           <div class="face-guide" id="face-guide" style="display:none;"></div>
         </div>
-        <!-- Recognition feedback overlay -->
+        <!-- Recognition feedback overlay popup -->
         <div id="recognition-popup" style="
-          display:none; position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
-          background:rgba(0,0,0,.85); border:1px solid var(--success); border-radius:10px;
-          padding:12px 20px; text-align:center; min-width:240px; backdrop-filter:blur(8px);">
-          <div id="rec-name" style="font-size:16px; font-weight:700; color:var(--text-primary);"></div>
-          <div id="rec-status" style="font-size:13px; margin-top:4px;"></div>
+          display:none; position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+          background:rgba(15, 23, 42, 0.92); border:2px solid var(--success); border-radius:12px;
+          padding:12px 24px; text-align:center; min-width:280px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6); backdrop-filter:blur(10px); z-index: 10;">
+          <div id="rec-name" style="font-size:16px; font-weight:700; color:#fff;"></div>
+          <div id="rec-status" style="font-size:13px; margin-top:4px; font-weight: 500;"></div>
         </div>
       </div>
     </div>
@@ -48,8 +68,7 @@
       <button id="btn-toggle-fr" class="btn btn-success" onclick="toggleRecognition()" style="display:none;"><i data-lucide="search"></i> Start Recognition</button>
     </div>
     <p class="text-muted mt-1" style="font-size:12px;">
-      <i data-lucide="alert-triangle"></i> Make sure face_recognition is installed for live recognition. 
-      Manual marking is always available on the right.
+      <i data-lucide="info"></i> The camera automatically scans for student faces and draws real-time bounding boxes. Green = recognized student; Orange = unknown / not enrolled. Manual marking is available on the right.
     </p>
   </div>
 
@@ -75,21 +94,21 @@
             </div>
             <div style="text-align:right; flex-shrink:0;">
               {% if record.status == 'present' %}
-                <span class="badge badge-success"><i data-lucide="check-circle"></i> Present</span>
+                <span class="badge badge-success" id="badge-{{ record.student.pk }}"><i data-lucide="check-circle"></i> Present</span>
               {% elif record.status == 'late' %}
-                <span class="badge badge-warning"><i data-lucide="alarm-clock"></i> Late</span>
+                <span class="badge badge-warning" id="badge-{{ record.student.pk }}"><i data-lucide="alarm-clock"></i> Late</span>
               {% else %}
                 <span class="badge badge-muted" id="badge-{{ record.student.pk }}">Absent</span>
               {% endif %}
-              {% if record.recognized_at %}
-                <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">{{ record.recognized_at|time:"H:i:s" }}</div>
-              {% endif %}
+              <div id="rec-time-{{ record.student.pk }}" style="font-size:10px; color:var(--text-muted); margin-top:2px;">
+                {% if record.recognized_at %}{{ record.recognized_at|time:"H:i:s" }}{% endif %}
+              </div>
             </div>
             <!-- Manual mark buttons (shown when absent) -->
             {% if record.status == 'absent' %}
-            <div style="display:flex; flex-direction:column; gap:4px;" id="manual-btns-{{ record.student.pk }}">
-              <button class="btn btn-success btn-sm" onclick="markManual({{ session.pk }}, {{ record.student.pk }}, 'present')"><i data-lucide="check-circle"></i></button>
-              <button class="btn btn-warning btn-sm" onclick="markManual({{ session.pk }}, {{ record.student.pk }}, 'late')"><i data-lucide="alarm-clock"></i></button>
+            <div style="display:flex; flex-direction:column; gap:4px; margin-left:6px;" id="manual-btns-{{ record.student.pk }}">
+              <button class="btn btn-success btn-sm" onclick="markManual({{ session.pk }}, {{ record.student.pk }}, 'present')" title="Mark Present"><i data-lucide="check-circle"></i></button>
+              <button class="btn btn-warning btn-sm" onclick="markManual({{ session.pk }}, {{ record.student.pk }}, 'late')" title="Mark Late"><i data-lucide="alarm-clock"></i></button>
             </div>
             {% endif %}
           </div>
@@ -98,8 +117,8 @@
       </div>
       <!-- Summary -->
       <div style="border-top:1px solid var(--border); padding:12px 16px; background:var(--bg-secondary);">
-        <div style="display:flex; gap:16px; font-size:13px;">
-          <span><i data-lucide="check-circle"></i> Present: <strong id="cnt-present">{{ records|dictsort:"status"|length }}</strong></span>
+        <div style="display:flex; justify-content:space-between; font-size:13px;">
+          <span><i data-lucide="check-circle"></i> Present: <strong id="cnt-present">0</strong></span>
           <span><i data-lucide="alarm-clock"></i> Late: <strong id="cnt-late">0</strong></span>
           <span><i data-lucide="x-circle"></i> Absent: <strong id="cnt-absent">{{ records.count }}</strong></span>
         </div>
@@ -114,24 +133,69 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 let stream = null;
 let recognitionInterval = null;
 let isRecognizing = false;
+let isRequestPending = false;
 
-// Counts from server
-let cntPresent = {% with r=records %}{% for record in r %}{% if record.status == 'present' %}{{ forloop.counter0 }}{% endif %}{% endfor %}0{% endwith %};
-let cntLate = 0;
-let cntAbsent = {{ records.count }};
+// Audio Chime using Web Audio API (zero external assets needed)
+function playAttendanceChime(isLate = false) {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    if (!isLate) {
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.setValueAtTime(1320, ctx.currentTime + 0.1);
+    } else {
+      osc.frequency.setValueAtTime(660, ctx.currentTime);
+      osc.frequency.setValueAtTime(550, ctx.currentTime + 0.12);
+    }
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch(e) {
+    console.debug('Audio chime error:', e);
+  }
+}
 
-// Count initial state
+function playWarningBuzz() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(220, ctx.currentTime);
+    osc.frequency.setValueAtTime(160, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+  } catch(e) {
+    console.debug('Audio warning error:', e);
+  }
+}
+
+const wrongSectionAlertCooldown = new Map();
+
+// Initial counts
 document.addEventListener('DOMContentLoaded', () => {
+  refreshCounts();
+  if (window.lucide) lucide.createIcons();
+});
+
+function refreshCounts() {
   let p = 0, l = 0, a = 0;
   document.querySelectorAll('.attendance-item').forEach(el => {
     if (el.classList.contains('present')) p++;
     else if (el.classList.contains('late')) l++;
     else a++;
   });
-  updateCounts(p, l, a);
-});
-
-function updateCounts(p, l, a) {
   document.getElementById('cnt-present').textContent = p;
   document.getElementById('cnt-late').textContent = l;
   document.getElementById('cnt-absent').textContent = a;
@@ -139,46 +203,66 @@ function updateCounts(p, l, a) {
 
 async function startCamera() {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+    });
     const video = document.getElementById('camera-video');
     video.srcObject = stream;
+    await video.play();
+
     document.getElementById('btn-start-cam').style.display = 'none';
     document.getElementById('btn-stop-cam').style.display = 'inline-flex';
     document.getElementById('btn-toggle-fr').style.display = 'inline-flex';
     document.getElementById('face-guide').style.display = 'block';
-    setStatus('ready', '<i data-lucide="circle"></i> Camera ready');
+    setStatus('ready', 'Camera ready');
+    if (window.lucide) lucide.createIcons();
   } catch (e) {
     alert('Camera error: ' + e.message);
   }
 }
 
 function stopCamera() {
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-  if (recognitionInterval) { clearInterval(recognitionInterval); recognitionInterval = null; }
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  if (recognitionInterval) {
+    clearInterval(recognitionInterval);
+    recognitionInterval = null;
+  }
   isRecognizing = false;
+  isRequestPending = false;
   document.getElementById('camera-video').srcObject = null;
   document.getElementById('btn-start-cam').style.display = 'inline-flex';
   document.getElementById('btn-stop-cam').style.display = 'none';
   document.getElementById('btn-toggle-fr').style.display = 'none';
-  document.getElementById('btn-toggle-fr').textContent = '<i data-lucide="search"></i> Start Recognition';
+  document.getElementById('btn-toggle-fr').innerHTML = '<i data-lucide="search"></i> Start Recognition';
+  document.getElementById('btn-toggle-fr').className = 'btn btn-success';
   document.getElementById('face-guide').style.display = 'none';
+  clearOverlayCanvas();
   setStatus('off', 'Camera off');
+  if (window.lucide) lucide.createIcons();
 }
 
 function toggleRecognition() {
   if (isRecognizing) {
-    clearInterval(recognitionInterval); recognitionInterval = null;
+    clearInterval(recognitionInterval);
+    recognitionInterval = null;
     isRecognizing = false;
-    document.getElementById('btn-toggle-fr').textContent = '<i data-lucide="search"></i> Start Recognition';
+    document.getElementById('btn-toggle-fr').innerHTML = '<i data-lucide="search"></i> Start Recognition';
     document.getElementById('btn-toggle-fr').className = 'btn btn-success';
-    setStatus('ready', '<i data-lucide="circle"></i> Paused');
+    setStatus('ready', 'Paused');
+    clearOverlayCanvas();
   } else {
     isRecognizing = true;
-    document.getElementById('btn-toggle-fr').textContent = '<i data-lucide="pause"></i> Pause Recognition';
+    document.getElementById('btn-toggle-fr').innerHTML = '<i data-lucide="pause"></i> Pause Recognition';
     document.getElementById('btn-toggle-fr').className = 'btn btn-warning';
-    setStatus('scanning', '<i data-lucide="circle-dot"></i> Scanning...');
-    recognitionInterval = setInterval(captureAndRecognize, 1500);
+    setStatus('scanning', 'Scanning...');
+    // Initial immediate scan, then fast 600ms scanning loop
+    captureAndRecognize();
+    recognitionInterval = setInterval(captureAndRecognize, 600);
   }
+  if (window.lucide) lucide.createIcons();
 }
 
 function setStatus(state, text) {
@@ -187,17 +271,38 @@ function setStatus(state, text) {
   dot.style.background = state === 'scanning' ? 'var(--success)' : state === 'ready' ? 'var(--warning)' : 'var(--text-muted)';
 }
 
+function clearOverlayCanvas() {
+  const overlay = document.getElementById('overlay-canvas');
+  if (overlay) {
+    const ctx = overlay.getContext('2d');
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+  }
+}
+
 async function captureAndRecognize() {
+  if (!isRecognizing || isRequestPending) return;
   const video = document.getElementById('camera-video');
   const canvas = document.getElementById('camera-canvas');
   if (!stream || video.readyState < 2) return;
 
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0);
-  const frame = canvas.toDataURL('image/jpeg', 0.7);
+  // Optimize resolution for fast transmission and lightning processing
+  const srcW = video.videoWidth || 640;
+  const srcH = video.videoHeight || 480;
+  const maxDim = 640;
+  let targetW = srcW;
+  let targetH = srcH;
+  if (targetW > maxDim) {
+    targetH = Math.round(targetH * (maxDim / targetW));
+    targetW = maxDim;
+  }
 
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, targetW, targetH);
+  const frame = canvas.toDataURL('image/jpeg', 0.85);
+
+  isRequestPending = true;
   try {
     const resp = await fetch('/face/recognize/', {
       method: 'POST',
@@ -205,43 +310,194 @@ async function captureAndRecognize() {
       body: JSON.stringify({ session_id: SESSION_ID, frame })
     });
     const data = await resp.json();
-    if (data.success && data.recognized.length > 0) {
-      data.recognized.forEach(r => handleRecognized(r));
+
+    if (data.session_closed) {
+      stopCamera();
+      alert('This attendance session is currently closed. Redirecting to the session report.');
+      window.location.href = `/sessions/${SESSION_ID}/report/`;
+      return;
     }
-  } catch (e) { console.error('Recognition error:', e); }
+
+    if (data.success) {
+      drawBoundingBoxes(data.recognized, targetW, targetH);
+      if (data.recognized && data.recognized.length > 0) {
+        data.recognized.forEach(r => {
+          if (r.matched) {
+            handleRecognized(r);
+          } else if (r.wrong_section) {
+            handleWrongSection(r);
+          }
+        });
+      }
+    }
+  } catch (e) {
+    console.error('Recognition error:', e);
+  } finally {
+    isRequestPending = false;
+  }
 }
+
+function drawBoundingBoxes(recognizedList, videoW, videoH) {
+  const overlay = document.getElementById('overlay-canvas');
+  if (!overlay) return;
+  const ctx = overlay.getContext('2d');
+
+  // Match canvas internal resolution to video source resolution
+  if (overlay.width !== videoW || overlay.height !== videoH) {
+    overlay.width = videoW;
+    overlay.height = videoH;
+  }
+
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!recognizedList || recognizedList.length === 0) return;
+
+  recognizedList.forEach(item => {
+    const box = item.box;
+    if (!box) return;
+
+    // Coordinate translation for mirrored video (video has CSS scaleX(-1))
+    const boxW = Math.max(10, box.right - box.left);
+    const boxH = Math.max(10, box.bottom - box.top);
+    const dispLeft = videoW - box.right;
+    const dispTop = box.top;
+
+    const isMatch = item.matched && item.name && item.name !== 'Unknown';
+    const isWrongSection = item.wrong_section;
+
+    let color = isMatch ? '#10b981' : (isWrongSection ? '#ef4444' : '#f59e0b');
+    let bgColor = isMatch ? 'rgba(16, 185, 129, 0.92)' : (isWrongSection ? 'rgba(239, 68, 68, 0.95)' : 'rgba(245, 158, 11, 0.92)');
+
+    // Bounding Box
+    ctx.strokeStyle = color;
+    ctx.lineWidth = isWrongSection ? 4 : 3;
+    ctx.strokeRect(dispLeft, dispTop, boxW, boxH);
+
+    // Corner accents
+    const corner = Math.min(18, boxW / 4, boxH / 4);
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    // Top-left
+    ctx.moveTo(dispLeft, dispTop + corner);
+    ctx.lineTo(dispLeft, dispTop);
+    ctx.lineTo(dispLeft + corner, dispTop);
+    // Top-right
+    ctx.moveTo(dispLeft + boxW - corner, dispTop);
+    ctx.lineTo(dispLeft + boxW);
+    ctx.lineTo(dispLeft + boxW, dispTop + corner);
+    // Bottom-left
+    ctx.moveTo(dispLeft, dispTop + boxH - corner);
+    ctx.lineTo(dispLeft, dispTop + boxH);
+    ctx.lineTo(dispLeft + corner, dispTop + boxH);
+    // Bottom-right
+    ctx.moveTo(dispLeft + boxW - corner, dispTop + boxH);
+    ctx.lineTo(dispLeft + boxW);
+    ctx.lineTo(dispLeft + boxW, dispTop + boxH - corner);
+    ctx.stroke();
+
+    // Floating Label with Student ID and Name
+    let labelText = 'Unknown / Face Not Enrolled';
+    if (isMatch) {
+      labelText = `${item.student_number ? item.student_number + ' · ' : ''}${item.name} (${item.confidence}%)`;
+    } else if (isWrongSection) {
+      labelText = `⚠ WRONG SECTION: ${item.student_number ? item.student_number + ' · ' : ''}${item.name} (Assigned: ${item.assigned_sections || 'Other'})`;
+    }
+
+    ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
+    const tagW = ctx.measureText(labelText).width + 16;
+    const tagH = 26;
+    const tagY = dispTop > tagH + 6 ? dispTop - tagH - 6 : dispTop + boxH + 6;
+
+    ctx.fillStyle = bgColor;
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(dispLeft, tagY, tagW, tagH, 6);
+      ctx.fill();
+    } else {
+      ctx.fillRect(dispLeft, tagY, tagW, tagH);
+    }
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(labelText, dispLeft + 8, tagY + 18);
+  });
+}
+
+function handleWrongSection(result) {
+  const now = Date.now();
+  const lastAlert = wrongSectionAlertCooldown.get(result.student_id) || 0;
+  if (now - lastAlert < 4000) return; // 4s cooldown per student
+  wrongSectionAlertCooldown.set(result.student_id, now);
+
+  playWarningBuzz();
+
+  const popup = document.getElementById('recognition-popup');
+  popup.style.borderColor = '#ef4444';
+  document.getElementById('rec-name').textContent = `⚠ WRONG SECTION: ${(result.student_number ? result.student_number + ' — ' : '') + result.name}`;
+  document.getElementById('rec-status').innerHTML = `<span style="color:#ef4444; font-weight:700;">Assigned Section: ${result.assigned_sections || 'Different Section'}</span> — Attendance NOT marked`;
+  popup.style.display = 'block';
+  setTimeout(() => { popup.style.display = 'none'; }, 4000);
+
+  if (window.lucide) lucide.createIcons();
+}
+
+const recognizedAlertCooldown = new Map();
 
 function handleRecognized(result) {
   const item = document.getElementById('record-' + result.student_id);
   if (!item) return;
 
-  // Only update if newly marked
-  if (result.new_status) {
-    item.className = 'attendance-item ' + result.new_status;
-    const badge = item.querySelector('[id^="badge-"]');
+  const targetStatus = result.new_status || result.status;
+  if (!targetStatus) return;
+
+  const isCurrentlyAbsent = item.classList.contains('absent');
+
+  // Update DOM if it's newly marked OR if DOM is currently showing absent
+  if (result.new_status || isCurrentlyAbsent) {
+    item.className = 'attendance-item ' + targetStatus;
+    const badge = document.getElementById('badge-' + result.student_id);
     if (badge) {
-      badge.className = result.new_status === 'present' ? 'badge badge-success' : 'badge badge-warning';
-      badge.textContent = result.new_status === 'present' ? '<i data-lucide="check-circle"></i> Present' : '<i data-lucide="alarm-clock"></i> Late';
+      badge.className = targetStatus === 'present' ? 'badge badge-success' : 'badge badge-warning';
+      badge.innerHTML = targetStatus === 'present'
+        ? '<i data-lucide="check-circle"></i> Present'
+        : '<i data-lucide="alarm-clock"></i> Late';
     }
+
+    const timeEl = document.getElementById('rec-time-' + result.student_id);
+    if (timeEl) {
+      const now = new Date();
+      timeEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
     const manualBtns = document.getElementById('manual-btns-' + result.student_id);
     if (manualBtns) manualBtns.remove();
 
-    // Update counters
-    let p = 0, l = 0, a = 0;
-    document.querySelectorAll('.attendance-item').forEach(el => {
-      if (el.classList.contains('present')) p++;
-      else if (el.classList.contains('late')) l++;
-      else a++;
-    });
-    updateCounts(p, l, a);
+    refreshCounts();
+    playAttendanceChime(targetStatus === 'late');
 
     // Show popup
     const popup = document.getElementById('recognition-popup');
-    document.getElementById('rec-name').textContent = result.name;
+    popup.style.borderColor = targetStatus === 'present' ? 'var(--success)' : 'var(--warning)';
+    document.getElementById('rec-name').textContent = (result.student_number ? result.student_number + ' — ' : '') + result.name;
     document.getElementById('rec-status').innerHTML =
-      `${result.new_status === 'present' ? '<i data-lucide="check-circle"></i> Marked Present' : '<i data-lucide="alarm-clock"></i> Marked Late'} — ${result.confidence}% confidence`;
+      `${targetStatus === 'present' ? '<span style="color:var(--success); font-weight:700;">✓ Marked Present</span>' : '<span style="color:var(--warning); font-weight:700;">⏰ Marked Late</span>'} — ${result.confidence}% match (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })})`;
     popup.style.display = 'block';
-    setTimeout(() => popup.style.display = 'none', 3000);
+    setTimeout(() => { popup.style.display = 'none'; }, 3500);
+
+    if (window.lucide) lucide.createIcons();
+  } else {
+    // If student is already marked present/late, show occasional gentle confirmation when scanned again
+    const now = Date.now();
+    const lastSeen = recognizedAlertCooldown.get(result.student_id) || 0;
+    if (now - lastSeen > 5000) {
+      recognizedAlertCooldown.set(result.student_id, now);
+      const popup = document.getElementById('recognition-popup');
+      popup.style.borderColor = targetStatus === 'present' ? 'var(--success)' : 'var(--warning)';
+      document.getElementById('rec-name').textContent = (result.student_number ? result.student_number + ' — ' : '') + result.name;
+      document.getElementById('rec-status').innerHTML =
+        `<span style="color:${targetStatus === 'present' ? 'var(--success)' : 'var(--warning)'}; font-weight:700;">✓ Already Recorded (${targetStatus.toUpperCase()})</span> — ${result.confidence}% match`;
+      popup.style.display = 'block';
+      setTimeout(() => { popup.style.display = 'none'; }, 2500);
+      if (window.lucide) lucide.createIcons();
+    }
   }
 }
 
@@ -250,13 +506,21 @@ async function markManual(sessionId, studentId, status) {
     const resp = await fetch('/api/mark-present/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
-      body: JSON.stringify({ session_id: sessionId, student_id: studentId, confidence: 1.0 })
+      body: JSON.stringify({ session_id: sessionId, student_id: studentId, confidence: 1.0, status: status })
     });
     const data = await resp.json();
     if (data.success) {
-      handleRecognized({ student_id: studentId, name: data.student_name, new_status: data.status, confidence: 100 });
+      handleRecognized({
+        student_id: studentId,
+        name: data.student_name,
+        new_status: data.status,
+        confidence: 100,
+        matched: true
+      });
     }
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    console.error('Manual mark error:', e);
+  }
 }
 </script>
 {% endblock %}

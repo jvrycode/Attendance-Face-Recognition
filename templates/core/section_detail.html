@@ -74,17 +74,22 @@
     <span class="card-title"><i data-lucide="graduation-cap"></i> Enrolled Students ({{ section.enrollments.count }})</span>
   </div>
   <div class="card-body">
-    {% if request.user.role == 'admin' %}
-    <form method="post" style="display:flex; gap:10px; margin-bottom:16px;">
-      {% csrf_token %}
-      {{ enroll_form.student }}
-      <button type="submit" class="btn btn-primary"><i data-lucide="plus"></i> Enroll Student</button>
-    </form>
+    {% if request.user.role in 'admin,teacher' %}
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
+      <form method="post" style="display:flex; gap:10px; flex:1; max-width:500px; margin:0;">
+        {% csrf_token %}
+        {{ enroll_form.student }}
+        <button type="submit" class="btn btn-primary" style="white-space:nowrap;"><i data-lucide="user-check"></i> Add Existing</button>
+      </form>
+      <a href="{% url 'student_register' %}?section_id={{ section.pk }}" class="btn btn-success">
+        <i data-lucide="user-plus"></i> Register New Student to Section
+      </a>
+    </div>
     {% endif %}
     {% if section.enrollments.all %}
     <div class="table-container">
       <table>
-        <thead><tr><th>Student</th><th>Student ID</th><th>Course</th><th>Face</th>{% if request.user.role == 'admin' %}<th></th>{% endif %}</tr></thead>
+        <thead><tr><th>Student</th><th>Student ID</th><th>Course</th><th>Face</th>{% if request.user.role in 'admin,teacher' %}<th>Actions</th>{% endif %}</tr></thead>
         <tbody>
           {% for enrollment in section.enrollments.all %}
           <tr>
@@ -103,12 +108,17 @@
                 <span class="badge badge-warning"><i data-lucide="alert-triangle"></i> Not enrolled</span>
               {% endif %}
             </td>
-            {% if request.user.role == 'admin' %}
+            {% if request.user.role in 'admin,teacher' %}
             <td>
-              <form method="post" action="{% url 'student_unenroll' section.pk enrollment.student.pk %}" onsubmit="return confirm('Remove this student?')">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-danger btn-sm">Remove</button>
-              </form>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <a href="{% url 'enroll_face' %}?student_id={{ enrollment.student.pk }}" class="btn btn-outline btn-sm">
+                  <i data-lucide="camera"></i> {% if enrollment.student.is_face_enrolled %}Re-enroll{% else %}Enroll Face{% endif %}
+                </a>
+                <form method="post" action="{% url 'student_unenroll' section.pk enrollment.student.pk %}" onsubmit="return confirm('Remove this student from section?')" style="margin:0;">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                </form>
+              </div>
             </td>
             {% endif %}
           </tr>

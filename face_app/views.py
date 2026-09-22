@@ -8,6 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from accounts.models import Student
 from core.models import AttendanceSession, AttendanceRecord, StudentSection
+from face_app.services.face_service import FaceService
 from .utils import (
     encode_face_from_frame, compare_faces, base64_to_bytes,
     draw_face_boxes, FR_AVAILABLE
@@ -29,10 +30,27 @@ def enroll_face(request):
         else:
             students = Student.objects.select_related('user').all()
             return render(request, 'face/enroll_select.html', {'students': students})
+    elif user.role == 'teacher':
+        # Teacher can enroll for students in their assigned sections
+        student_id = request.GET.get('student_id')
+        teacher = getattr(user, 'teacher_profile', None)
+        if student_id:
+            student = get_object_or_404(Student, pk=student_id)
+            if teacher and not student.enrollments.filter(section__teacher=teacher).exists():
+                messages.error(request, "Permission denied: Student is not in your assigned sections.")
+                return redirect('dashboard')
+        else:
+            if teacher:
+                students = Student.objects.filter(
+                    enrollments__section__teacher=teacher
+                ).select_related('user').distinct()
+            else:
+                students = Student.objects.none()
+            return render(request, 'face/enroll_select.html', {'students': students})
     elif user.role == 'student':
         student = get_object_or_404(Student, user=user)
     else:
-        messages.error(request, "Only students or admins can enroll faces.")
+        messages.error(request, "Permission denied.")
         return redirect('dashboard')
 
     return render(request, 'face/enroll.html', {
@@ -60,6 +78,12 @@ def enroll_face_capture(request):
         # Check permissions
         user = request.user
         if user.role == 'student' and student.user != user:
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+        elif user.role == 'teacher':
+            teacher = getattr(user, 'teacher_profile', None)
+            if not teacher or not student.enrollments.filter(section__teacher=teacher).exists():
+                return JsonResponse({'error': 'Permission denied: Student is not in your assigned sections'}, status=403)
+        elif user.role != 'admin' and user.role != 'student':
             return JsonResponse({'error': 'Permission denied'}, status=403)
 
         if not FR_AVAILABLE:
@@ -102,6 +126,7 @@ def enroll_face_capture(request):
         filename = f"face_{student.student_id}_{timezone.now().strftime('%Y%m%d%H%M%S')}.jpg"
         student.face_image.save(filename, ContentFile(img_io.getvalue()), save=False)
         student.save()
+        FaceService.invalidate_cache()
 
         return JsonResponse({
             'success': True,
@@ -116,7 +141,7 @@ def enroll_face_capture(request):
 
 @login_required
 def recognize_faces(request):
-    """AJAX endpoint: receive frame, match against enrolled students in a session."""
+    """AJAX endpoint: receive frame, match all faces against enrolled students in a session."""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
 
@@ -133,68 +158,17 @@ def recognize_faces(request):
                 'error': 'Face recognition is not available.',
             }, status=503)
 
-        session = get_object_or_404(AttendanceSession, pk=session_id, status='open')
+        session = AttendanceSession.objects.filter(pk=session_id).first()
+        if not session:
+            return JsonResponse({'error': f'Attendance session #{session_id} not found.', 'session_closed': True}, status=404)
+        if session.status != 'open':
+            return JsonResponse({'error': f'Attendance session #{session_id} is closed.', 'session_closed': True}, status=400)
+
         frame_bytes = base64_to_bytes(frame_b64)
 
-        # Get encoding from frame
-        unknown_encoding, face_locations = encode_face_from_frame(frame_bytes)
-        if not unknown_encoding:
-            return JsonResponse({'success': True, 'recognized': [], 'face_count': 0})
-
-        # Get all enrolled students with face encodings for this section
-        section = session.schedule.section
-        enrollments = StudentSection.objects.filter(
-            section=section
-        ).select_related('student__user').exclude(student__face_encoding__isnull=True).exclude(
-            student__face_encoding__exact=''
-        )
-
-        tolerance = 0.5
-        matched = []
-
-        for enrollment in enrollments:
-            student = enrollment.student
-            try:
-                known_encoding = json.loads(student.face_encoding)
-            except (json.JSONDecodeError, TypeError):
-                continue
-
-            is_match, confidence = compare_faces(known_encoding, unknown_encoding, tolerance)
-            if is_match:
-                # Mark student present via the API logic
-                record, _ = AttendanceRecord.objects.get_or_create(
-                    session=session,
-                    student=student,
-                    defaults={'status': 'absent'}
-                )
-                new_status = None
-                if record.status == 'absent':
-                    now = timezone.now()
-                    session_start_dt = timezone.make_aware(
-                        timezone.datetime.combine(session.date, session.schedule.start_time)
-                    )
-                    is_late = (now - session_start_dt).total_seconds() > 900  # 15 min
-                    record.status = 'late' if is_late else 'present'
-                    record.recognized_at = now
-                    record.confidence_score = round(confidence, 4)
-                    record.save()
-                    new_status = record.status
-
-                matched.append({
-                    'student_id': student.pk,
-                    'student_number': student.student_id,
-                    'name': student.user.get_full_name() or student.user.username,
-                    'confidence': round(confidence * 100, 1),
-                    'status': record.status,
-                    'new_status': new_status,
-                })
-                break  # Only match one face per frame (one face visible at a time)
-
-        return JsonResponse({
-            'success': True,
-            'recognized': matched,
-            'face_count': len(face_locations),
-        })
+        # Delegate recognition to FaceService (vectorized, multi-face, cached)
+        result = FaceService.recognize_all_faces_in_frame(session, frame_bytes)
+        return JsonResponse(result)
 
     except Exception as e:
         logger.exception("Error during face recognition")
@@ -211,9 +185,15 @@ def delete_face(request):
     user = request.user
     student_id = request.POST.get('student_id')
 
-    # Admins can delete any student's face; students can only delete their own
+    # Admins can delete any student's face; teachers can delete for their students; students delete their own
     if user.role == 'admin' and student_id:
         student = get_object_or_404(Student, pk=student_id)
+    elif user.role == 'teacher' and student_id:
+        teacher = getattr(user, 'teacher_profile', None)
+        student = get_object_or_404(Student, pk=student_id)
+        if not teacher or not student.enrollments.filter(section__teacher=teacher).exists():
+            messages.error(request, 'Permission denied: Student is not in your assigned sections.')
+            return redirect('dashboard')
     elif user.role == 'student':
         student = get_object_or_404(Student, user=user)
     else:
@@ -234,9 +214,10 @@ def delete_face(request):
     student.face_encoding = None
     student.face_enrolled_at = None
     student.save()
+    FaceService.invalidate_cache()
 
     messages.success(request, 'Face data has been deleted successfully.')
 
-    if user.role == 'admin' and student_id:
+    if user.role in ('admin', 'teacher') and student_id:
         return redirect(f'/face/enroll/?student_id={student.pk}')
     return redirect('enroll_face')

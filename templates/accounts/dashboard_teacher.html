@@ -53,9 +53,18 @@
           </td>
           <td>{{ section.enrollments.count }}</td>
           <td>
-            {% for sched in section.schedules.all %}
-              <a href="{% url 'session_start' sched.pk %}" class="btn btn-success btn-sm"><i data-lucide="play"></i> Start</a>
-            {% endfor %}
+            <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+              {% for sched in section.schedules.all %}
+                <a href="{% url 'session_start' sched.pk %}" class="btn btn-success btn-sm" title="Start attendance session for {{ sched.get_day_of_week_display }} {{ sched.start_time|time:'H:i' }}">
+                  <i data-lucide="play"></i> Start Attendance
+                </a>
+              {% empty %}
+                <span class="text-muted" style="font-size:12px;">No schedule</span>
+              {% endfor %}
+              <a href="{% url 'section_detail' section.pk %}" class="btn btn-outline btn-sm" title="View enrolled students">
+                <i data-lucide="users"></i> Roster
+              </a>
+            </div>
           </td>
         </tr>
         {% endfor %}

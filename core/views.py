@@ -57,11 +57,19 @@ def subject_delete(request, pk):
 # ─── Sections ─────────────────────────────────────────────────────────────────
 
 @login_required
-@admin_required
 def section_list(request):
-    sections = Section.objects.select_related('subject', 'teacher__user').annotate(
-        student_count=Count('enrollments')
-    ).order_by('name')
+    if request.user.role == 'admin':
+        sections = Section.objects.select_related('subject', 'teacher__user').prefetch_related('schedules').annotate(
+            student_count=Count('enrollments')
+        ).order_by('name')
+    elif request.user.role == 'teacher':
+        teacher = getattr(request.user, 'teacher_profile', None)
+        sections = Section.objects.filter(teacher=teacher).select_related('subject', 'teacher__user').prefetch_related('schedules').annotate(
+            student_count=Count('enrollments')
+        ).order_by('name') if teacher else Section.objects.none()
+    else:
+        messages.error(request, "Permission denied.")
+        return redirect('dashboard')
     return render(request, 'core/section_list.html', {'sections': sections})
 
 
@@ -100,13 +108,22 @@ def section_delete(request, pk):
 
 
 @login_required
-@admin_required
 def section_detail(request, pk):
     section = get_object_or_404(
         Section.objects.select_related('subject', 'teacher__user').prefetch_related(
             'schedules', 'enrollments__student__user'
         ), pk=pk
     )
+
+    if request.user.role == 'teacher':
+        teacher = getattr(request.user, 'teacher_profile', None)
+        if section.teacher != teacher and request.user.role != 'admin':
+            messages.error(request, "Permission denied: You are not assigned to this section.")
+            return redirect('dashboard')
+    elif request.user.role != 'admin':
+        messages.error(request, "Permission denied.")
+        return redirect('dashboard')
+
     enroll_form = EnrollStudentForm(request.POST or None)
     # Students not yet enrolled
     enrolled_ids = section.enrollments.values_list('student_id', flat=True)
@@ -115,6 +132,8 @@ def section_detail(request, pk):
     if request.method == 'POST' and enroll_form.is_valid():
         student = enroll_form.cleaned_data['student']
         StudentSection.objects.get_or_create(student=student, section=section)
+        from face_app.services.face_service import FaceService
+        FaceService.invalidate_cache(section.pk)
         messages.success(request, f'{student} enrolled in {section.name}.')
         return redirect('section_detail', pk=pk)
 
@@ -125,11 +144,21 @@ def section_detail(request, pk):
 
 
 @login_required
-@admin_required
 def student_unenroll(request, section_pk, student_pk):
     enrollment = get_object_or_404(StudentSection, section_id=section_pk, student_id=student_pk)
+    if request.user.role == 'teacher':
+        teacher = getattr(request.user, 'teacher_profile', None)
+        if enrollment.section.teacher != teacher and request.user.role != 'admin':
+            messages.error(request, "Permission denied.")
+            return redirect('dashboard')
+    elif request.user.role != 'admin':
+        messages.error(request, "Permission denied.")
+        return redirect('dashboard')
+
     if request.method == 'POST':
         enrollment.delete()
+        from face_app.services.face_service import FaceService
+        FaceService.invalidate_cache(section_pk)
         messages.success(request, 'Student removed from section.')
     return redirect('section_detail', pk=section_pk)
 
@@ -235,10 +264,28 @@ def session_live(request, pk):
             'schedule__section__subject', 'schedule__section__teacher__user'
         ), pk=pk
     )
+    if session.status == 'closed':
+        messages.warning(request, f"Attendance session #{pk} is currently closed. You can re-open it below if needed.")
+        return redirect('session_report', pk=pk)
+
+    # Dynamically sync any newly enrolled section students into this session as absent
+    section_students = Student.objects.filter(enrollments__section=session.schedule.section)
+    existing_ids = set(session.records.values_list('student_id', flat=True))
+    missing_students = [s for s in section_students if s.id not in existing_ids]
+    if missing_students:
+        AttendanceRecord.objects.bulk_create([
+            AttendanceRecord(session=session, student=s, status='absent')
+            for s in missing_students
+        ])
+
     records = session.records.select_related('student__user').order_by('student__user__last_name')
+    enrolled_face_count = records.filter(
+        student__face_encoding__isnull=False
+    ).exclude(student__face_encoding='').count()
     return render(request, 'core/session_live.html', {
         'session': session,
         'records': records,
+        'enrolled_face_count': enrolled_face_count,
     })
 
 
@@ -253,6 +300,19 @@ def session_close(request, pk):
         messages.success(request, 'Attendance session closed.')
         return redirect('session_report', pk=pk)
     return redirect('session_live', pk=pk)
+
+
+@login_required
+@teacher_required
+def session_reopen(request, pk):
+    session = get_object_or_404(AttendanceSession, pk=pk)
+    if request.method == 'POST':
+        session.status = 'open'
+        session.closed_at = None
+        session.save()
+        messages.success(request, f'Attendance session #{pk} re-opened.')
+        return redirect('session_live', pk=pk)
+    return redirect('session_report', pk=pk)
 
 
 @login_required
@@ -321,32 +381,24 @@ def mark_present_api(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
     import json
+    from core.services.attendance_service import AttendanceService
+
     data = json.loads(request.body)
     session_id = data.get('session_id')
     student_id = data.get('student_id')
-    confidence = data.get('confidence', 0.0)
+    confidence = float(data.get('confidence', 1.0))
 
     try:
         session = AttendanceSession.objects.get(pk=session_id, status='open')
         student = Student.objects.get(pk=student_id)
-        record, created = AttendanceRecord.objects.get_or_create(
+
+        record, is_new = AttendanceService.mark_attendance(
             session=session,
             student=student,
-            defaults={'status': 'absent'}
+            confidence=confidence
         )
-        if record.status == 'absent':
-            now = timezone.now()
-            schedule = session.schedule
-            # Late if past 15 minutes from start
-            late_cutoff_minutes = 15
-            session_start = timezone.make_aware(
-                timezone.datetime.combine(session.date, schedule.start_time)
-            )
-            is_late = (now - session_start).total_seconds() > (late_cutoff_minutes * 60)
-            record.status = 'late' if is_late else 'present'
-            record.recognized_at = now
-            record.confidence_score = confidence
-            record.save()
+
+        if is_new:
             return JsonResponse({
                 'success': True,
                 'status': record.status,
@@ -357,7 +409,8 @@ def mark_present_api(request):
             return JsonResponse({
                 'success': False,
                 'message': f'Already marked as {record.status}',
-                'student_name': student.user.get_full_name(),
+                'status': record.status,
+                'student_name': student.user.get_full_name() or student.user.username,
             })
     except (AttendanceSession.DoesNotExist, Student.DoesNotExist) as e:
         return JsonResponse({'error': str(e)}, status=404)

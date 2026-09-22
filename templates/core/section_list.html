@@ -1,20 +1,44 @@
 {% extends 'base.html' %}
 {% block title %}Sections{% endblock %}
 {% block page_title %}Sections{% endblock %}
-{% block header_actions %}<a href="{% url 'section_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Section</a>{% endblock %}
+{% block header_actions %}
+  {% if request.user.role == 'admin' %}
+    <a href="{% url 'section_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Section</a>
+  {% endif %}
+{% endblock %}
 
 {% block content %}
 <div class="card">
   <div class="table-container" style="border:none;">
     <table>
       <thead>
-        <tr><th>Section</th><th>Subject</th><th>Teacher</th><th>School Year</th><th>Students</th><th>Actions</th></tr>
+        <tr>
+          <th>Section</th>
+          <th>Subject</th>
+          <th>Schedule (Day & Time)</th>
+          <th>Teacher</th>
+          <th>School Year</th>
+          <th>Students</th>
+          <th>Actions</th>
+        </tr>
       </thead>
       <tbody>
         {% for section in sections %}
         <tr>
           <td><strong>{{ section.name }}</strong></td>
           <td><span class="badge badge-accent">{{ section.subject.code }}</span> {{ section.subject.name }}</td>
+          <td>
+            {% if section.schedules.all %}
+              <div style="display:flex; flex-direction:column; gap:4px;">
+                <span class="badge badge-outline" style="font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:5px; color:var(--text-primary); border-color:rgba(99,102,241,0.35); background:rgba(99,102,241,0.06);">
+                  <i data-lucide="clock" style="width:13px; height:13px; color:var(--primary);"></i>
+                  {{ section.schedule_display }}
+                </span>
+              </div>
+            {% else %}
+              <span class="text-muted" style="font-size:12px;"><i data-lucide="clock"></i> No schedule</span>
+            {% endif %}
+          </td>
           <td>
             {% if section.teacher %}
               {{ section.teacher.user.get_full_name|default:section.teacher.user.username }}
@@ -26,14 +50,30 @@
           <td><span class="badge badge-info">{{ section.student_count }}</span></td>
           <td>
             <div class="flex gap-1">
-              <a href="{% url 'section_detail' section.pk %}" class="btn btn-outline btn-sm"><i data-lucide="eye"></i> View</a>
-              <a href="{% url 'section_edit' section.pk %}" class="btn btn-outline btn-sm"><i data-lucide="edit-2"></i></a>
-              <a href="{% url 'section_delete' section.pk %}" class="btn btn-danger btn-sm"><i data-lucide="trash-2"></i></a>
+              {% if request.user.role == 'teacher' %}
+                <a href="{% url 'section_detail' section.pk %}" class="btn btn-outline btn-sm"><i data-lucide="users"></i> Roster</a>
+                {% with first_sched=section.schedules.first %}
+                  {% if first_sched %}
+                    <a href="{% url 'session_start' first_sched.pk %}" class="btn btn-success btn-sm"><i data-lucide="play"></i> Attendance</a>
+                  {% endif %}
+                {% endwith %}
+              {% else %}
+                <a href="{% url 'section_detail' section.pk %}" class="btn btn-outline btn-sm"><i data-lucide="eye"></i> View</a>
+                <a href="{% url 'section_edit' section.pk %}" class="btn btn-outline btn-sm"><i data-lucide="edit-2"></i></a>
+                <a href="{% url 'section_delete' section.pk %}" class="btn btn-danger btn-sm"><i data-lucide="trash-2"></i></a>
+              {% endif %}
             </div>
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6" class="text-center text-muted" style="padding:30px;">No sections yet. <a href="{% url 'section_create' %}">Create one</a></td></tr>
+        <tr>
+          <td colspan="7" class="text-center text-muted" style="padding:30px;">
+            No sections yet.
+            {% if request.user.role == 'admin' %}
+              <a href="{% url 'section_create' %}">Create one</a>
+            {% endif %}
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>

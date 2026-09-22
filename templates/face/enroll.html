@@ -1,7 +1,13 @@
 {% extends 'base.html' %}
 {% block title %}Face Enrollment{% endblock %}
-{% block page_title %}Face Enrollment{% endblock %}
-{% block page_subtitle %}<p>Register your face for automatic attendance recognition</p>{% endblock %}
+{% block page_title %}Face Enrollment — {{ student.user.get_full_name }}{% endblock %}
+{% block page_subtitle %}<p>Student ID: {{ student.student_id }} | {{ student.course }}</p>{% endblock %}
+
+{% block header_actions %}
+  {% if request.user.role in 'admin,teacher' %}
+    <a href="{% url 'enroll_face' %}" class="btn btn-outline btn-sm"><i data-lucide="arrow-left"></i> Back to Student List</a>
+  {% endif %}
+{% endblock %}
 
 {% block content %}
 <div style="display:grid; grid-template-columns:1fr 380px; gap:20px; max-width:1000px;">
