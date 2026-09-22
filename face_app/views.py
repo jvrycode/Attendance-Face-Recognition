@@ -120,6 +120,9 @@ def recognize_faces(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
 
+    if request.user.role not in ['admin', 'teacher']:
+        return JsonResponse({'error': 'Forbidden: Face recognition scanning is restricted to instructors and administrators.'}, status=403)
+
     try:
         data = json.loads(request.body)
         session_id = data.get('session_id')
@@ -133,11 +136,24 @@ def recognize_faces(request):
                 'error': 'Face recognition is not available.',
             }, status=503)
 
-        session = AttendanceSession.objects.filter(pk=session_id).first()
+        session = AttendanceSession.objects.select_related('schedule__section__teacher').prefetch_related('schedule__section__subjects').filter(pk=session_id).first()
         if not session:
             return JsonResponse({'error': f'Attendance session #{session_id} not found.', 'session_closed': True}, status=404)
         if session.status != 'open':
             return JsonResponse({'error': f'Attendance session #{session_id} is closed.', 'session_closed': True}, status=400)
+
+        # Authorization: teacher must be assigned to this session or section
+        if request.user.role == 'teacher':
+            teacher = getattr(request.user, 'teacher_profile', None)
+            if not teacher:
+                return JsonResponse({'error': 'Forbidden: Teacher profile not found.'}, status=403)
+            is_assigned = (
+                (session.started_by == teacher) or
+                (session.schedule.section.teacher == teacher) or
+                session.schedule.section.subjects.filter(teacher=teacher).exists()
+            )
+            if not is_assigned:
+                return JsonResponse({'error': 'Forbidden: You are not assigned to manage this attendance session.'}, status=403)
 
         frame_bytes = base64_to_bytes(frame_b64)
 

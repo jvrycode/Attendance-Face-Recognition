@@ -146,6 +146,11 @@ CSRF_TRUSTED_ORIGINS = [
     if origin.strip()
 ]
 
+# Session & Cookie Hardening
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+
 # ─── Production HTTPS & Security ──────────────────────────────────────────────
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

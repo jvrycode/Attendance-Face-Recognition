@@ -22,6 +22,12 @@ from face_app.services.face_service import FaceService
 from face_app.utils import (
     base64_to_bytes, encode_face_from_frame, FR_AVAILABLE
 )
+from attendance_fr.permissions import (
+    IsAdminRole,
+    IsTeacherOrAdminRole,
+    IsAdminOrReadOnly,
+    IsSessionManager,
+)
 
 
 class CurrentUserAPIView(APIView):
@@ -36,12 +42,12 @@ class CurrentUserAPIView(APIView):
 class SubjectListCreateAPIView(ListCreateAPIView):
     queryset = Subject.objects.all().order_by('code')
     serializer_class = SubjectSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class SectionListCreateAPIView(ListCreateAPIView):
     serializer_class = SectionSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         user = self.request.user
@@ -52,7 +58,7 @@ class SectionListCreateAPIView(ListCreateAPIView):
 
 class ScheduleListCreateAPIView(ListCreateAPIView):
     serializer_class = ScheduleSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         section_id = self.request.query_params.get('section_id')
@@ -88,7 +94,7 @@ class AttendanceSessionListAPIView(APIView):
 
 class AttendanceSessionStartAPIView(APIView):
     """POST /api/attendance/sessions/start/ - Start or resume session today."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsTeacherOrAdminRole]
 
     def post(self, request):
         schedule_id = request.data.get('schedule_id')
@@ -96,6 +102,19 @@ class AttendanceSessionStartAPIView(APIView):
             return Response({'error': 'schedule_id is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         schedule = get_object_or_404(Schedule, pk=schedule_id)
+
+        # Teacher assignment verification
+        if request.user.role == 'teacher':
+            teacher = getattr(request.user, 'teacher_profile', None)
+            if not teacher:
+                return Response({'error': 'Teacher profile not found.'}, status=status.HTTP_403_FORBIDDEN)
+            is_assigned = (
+                (schedule.section.teacher == teacher) or
+                schedule.section.subjects.filter(teacher=teacher).exists()
+            )
+            if not is_assigned:
+                return Response({'error': 'You are not assigned to this class section.'}, status=status.HTTP_403_FORBIDDEN)
+
         today = timezone.localdate()
 
         session = AttendanceSession.objects.filter(schedule=schedule, date=today, status='open').first()
@@ -123,10 +142,11 @@ class AttendanceSessionStartAPIView(APIView):
 
 class AttendanceSessionCloseAPIView(APIView):
     """POST /api/attendance/sessions/<pk>/close/ - Close session."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsSessionManager]
 
     def post(self, request, pk):
         session = get_object_or_404(AttendanceSession, pk=pk)
+        self.check_object_permissions(request, session)
         session.status = 'closed'
         session.closed_at = timezone.now()
         session.save()
@@ -135,10 +155,11 @@ class AttendanceSessionCloseAPIView(APIView):
 
 class AttendanceSessionDetailAPIView(APIView):
     """GET /api/attendance/sessions/<pk>/ - Get session detail and records."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsSessionManager]
 
     def get(self, request, pk):
         session = get_object_or_404(AttendanceSession, pk=pk)
+        self.check_object_permissions(request, session)
         records = session.records.select_related('student__user').order_by('student__user__last_name')
         session_data = AttendanceSessionSerializer(session).data
         records_data = AttendanceRecordSerializer(records, many=True).data
@@ -150,7 +171,7 @@ class AttendanceSessionDetailAPIView(APIView):
 
 class FaceRecognizeAPIView(APIView):
     """POST /api/face/recognize/ - Process camera frame, recognize faces, mark attendance."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsSessionManager]
 
     def post(self, request):
         session_id = request.data.get('session_id')
@@ -163,6 +184,8 @@ class FaceRecognizeAPIView(APIView):
             return Response({'error': 'Face recognition engine unavailable'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         session = get_object_or_404(AttendanceSession, pk=session_id, status='open')
+        self.check_object_permissions(request, session)
+
         frame_bytes = base64_to_bytes(frame_b64)
 
         result = FaceService.recognize_all_faces_in_frame(session, frame_bytes)
@@ -170,8 +193,8 @@ class FaceRecognizeAPIView(APIView):
 
 
 class FaceEnrollAPIView(APIView):
-    """POST /api/face/enroll/ - Enroll student face vector from camera frame."""
-    permission_classes = [permissions.IsAuthenticated]
+    """POST /api/face/enroll/ - Enroll student face vector from camera frame (Admin only)."""
+    permission_classes = [IsAdminRole]
 
     def post(self, request):
         import json
@@ -186,10 +209,6 @@ class FaceEnrollAPIView(APIView):
             return Response({'error': 'student_id and frame are required'}, status=status.HTTP_400_BAD_REQUEST)
 
         student = get_object_or_404(Student, pk=student_id)
-
-        # Check permissions
-        if request.user.role == 'student' and student.user != request.user:
-            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
         frame_bytes = base64_to_bytes(frame_b64)
         encoding, locations = encode_face_from_frame(frame_bytes)
@@ -224,3 +243,4 @@ class FaceEnrollAPIView(APIView):
             'success': True,
             'message': f'Face enrolled successfully for {student.user.get_full_name()}!',
         })
+

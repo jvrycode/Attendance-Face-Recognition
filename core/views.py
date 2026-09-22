@@ -485,14 +485,38 @@ def session_start(request, schedule_pk):
     return render(request, 'core/session_start.html', {'schedule': schedule})
 
 
+def _user_can_manage_session(user, session):
+    """Returns True if user is an admin or the teacher assigned to the session's section/subject."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.role == 'admin':
+        return True
+    if user.role == 'teacher':
+        teacher = getattr(user, 'teacher_profile', None)
+        if not teacher:
+            return False
+        return (
+            (session.started_by == teacher) or
+            (session.schedule.section.teacher == teacher) or
+            session.schedule.section.subjects.filter(teacher=teacher).exists()
+        )
+    return False
+
+
 @login_required
 @teacher_required
 def session_live(request, pk):
     session = get_object_or_404(
         AttendanceSession.objects.select_related(
-            'schedule__section__subject', 'schedule__section__teacher__user'
+            'schedule__section__subject', 'schedule__section__teacher__user', 'started_by__user'
         ), pk=pk
     )
+
+    # Object-level authorization check: Admin or assigned teacher only
+    if not _user_can_manage_session(request.user, session):
+        messages.error(request, "Permission denied: You are not assigned to manage this attendance session.")
+        return redirect('dashboard')
+
     if session.status == 'closed':
         messages.warning(request, f"Attendance session #{pk} is currently closed. You can re-open it below if needed.")
         return redirect('session_report', pk=pk)
@@ -522,6 +546,10 @@ def session_live(request, pk):
 @teacher_required
 def session_close(request, pk):
     session = get_object_or_404(AttendanceSession, pk=pk)
+    if not _user_can_manage_session(request.user, session):
+        messages.error(request, "Permission denied: You cannot close this attendance session.")
+        return redirect('dashboard')
+
     if request.method == 'POST':
         session.status = 'closed'
         session.closed_at = timezone.now()
@@ -535,6 +563,10 @@ def session_close(request, pk):
 @teacher_required
 def session_reopen(request, pk):
     session = get_object_or_404(AttendanceSession, pk=pk)
+    if not _user_can_manage_session(request.user, session):
+        messages.error(request, "Permission denied: You cannot reopen this attendance session.")
+        return redirect('dashboard')
+
     if request.method == 'POST':
         session.status = 'open'
         session.closed_at = None
@@ -551,6 +583,17 @@ def session_report(request, pk):
             'schedule__section__subject', 'schedule__section__teacher__user', 'started_by__user'
         ), pk=pk
     )
+
+    # Students cannot view the full session report roster
+    if request.user.role == 'student':
+        messages.error(request, "Permission denied: Students cannot access section attendance rosters.")
+        return redirect('attendance_history')
+
+    # Teachers can only view reports for their own sections
+    if not _user_can_manage_session(request.user, session):
+        messages.error(request, "Permission denied: You are not assigned to this section's report.")
+        return redirect('dashboard')
+
     records = session.records.select_related('student__user').order_by('student__user__last_name')
 
     # Manual edit (teacher/admin)
@@ -558,7 +601,7 @@ def session_report(request, pk):
         record_id = request.POST.get('record_id')
         status = request.POST.get('status')
         remarks = request.POST.get('remarks', '')
-        record = get_object_or_404(AttendanceRecord, pk=record_id)
+        record = get_object_or_404(AttendanceRecord, pk=record_id, session=session)
         record.status = status
         record.remarks = remarks
         record.save()
@@ -835,17 +878,30 @@ def mark_present_api(request):
     """Called by face recognition to mark a student present."""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
+
+    if request.user.role not in ['admin', 'teacher']:
+        return JsonResponse({'error': 'Forbidden: Only instructors and administrators can mark attendance.'}, status=403)
+
     import json
     from core.services.attendance_service import AttendanceService
-
-    data = json.loads(request.body)
-    session_id = data.get('session_id')
-    student_id = data.get('student_id')
-    confidence = float(data.get('confidence', 1.0))
+    from core.models import StudentSection
 
     try:
-        session = AttendanceSession.objects.get(pk=session_id, status='open')
+        data = json.loads(request.body)
+        session_id = data.get('session_id')
+        student_id = data.get('student_id')
+        confidence = float(data.get('confidence', 1.0))
+
+        session = AttendanceSession.objects.select_related('schedule__section').get(pk=session_id, status='open')
         student = Student.objects.get(pk=student_id)
+
+        # Authorization: teacher must be assigned to this session/section
+        if not _user_can_manage_session(request.user, session):
+            return JsonResponse({'error': 'Forbidden: You are not assigned to manage this attendance session.'}, status=403)
+
+        # Verification: student must be enrolled in this section
+        if not StudentSection.objects.filter(section=session.schedule.section, student=student).exists():
+            return JsonResponse({'error': f'Student {student.student_id} is not enrolled in this section.'}, status=400)
 
         record, is_new = AttendanceService.mark_attendance(
             session=session,
@@ -869,3 +925,4 @@ def mark_present_api(request):
             })
     except (AttendanceSession.DoesNotExist, Student.DoesNotExist) as e:
         return JsonResponse({'error': str(e)}, status=404)
+

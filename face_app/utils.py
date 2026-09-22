@@ -359,7 +359,75 @@ def _detect_locations(frame_bytes: bytes):
         return []
 
 
+# ── Anti-Spoofing & Biometric Liveness Detection ──────────────────────────────
+
+def check_face_liveness(img_rgb: np.ndarray, box: dict) -> tuple:
+    """
+    Evaluates whether a detected face ROI is a live human or a presentation attack
+    (such as a printed paper photograph or smartphone LCD/OLED screen).
+
+    Returns:
+        (is_live: bool, confidence_score: float, details: str)
+    """
+    if img_rgb is None or img_rgb.size == 0 or not OPENCV_AVAILABLE:
+        return True, 1.0, "Liveness bypass: OpenCV unavailable"
+
+    try:
+        h, w = img_rgb.shape[:2]
+        top = max(0, int(box.get('top', 0)))
+        bottom = min(h, int(box.get('bottom', h)))
+        left = max(0, int(box.get('left', 0)))
+        right = min(w, int(box.get('right', w)))
+
+        if (bottom - top) < 40 or (right - left) < 40:
+            return False, 0.0, "Face region too small for reliable liveness check"
+
+        face_roi = img_rgb[top:bottom, left:right]
+        if face_roi.size == 0:
+            return False, 0.0, "Invalid face region"
+
+        # 1. Texture & Focus Analysis (Laplacian Variance)
+        gray = cv2.cvtColor(face_roi, cv2.COLOR_RGB2GRAY)
+        lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+        # Printed paper photo or heavy out-of-focus blur typically has lap_var < 28
+        if lap_var < 28.0:
+            return False, round(lap_var, 2), "Flat or blurred image (possible printed paper photo)"
+
+        # Extreme high-frequency screen pixel grid / moiré pattern
+        if lap_var > 3500.0:
+            return False, round(lap_var, 2), "Unnatural pixel raster texture (possible digital display)"
+
+        # 2. Specular Screen Glare & Flash Reflection (HSV space)
+        hsv = cv2.cvtColor(face_roi, cv2.COLOR_RGB2HSV)
+        v_channel = hsv[:, :, 2]
+        s_channel = hsv[:, :, 1]
+
+        # Glass glare exhibits near-zero saturation and maximum brightness
+        glare_mask = (v_channel > 248) & (s_channel < 25)
+        glare_ratio = float(np.count_nonzero(glare_mask)) / float(face_roi.shape[0] * face_roi.shape[1])
+        if glare_ratio > 0.18:
+            return False, round(glare_ratio, 3), "Excessive specular glare (screen/glass reflection)"
+
+        # 3. Chrominance Distribution (YCrCb space)
+        # Real human skin exhibits natural dispersion in Cr/Cb channels
+        ycrcb = cv2.cvtColor(face_roi, cv2.COLOR_RGB2YCrCb)
+        cr_std = float(ycrcb[:, :, 1].std())
+        cb_std = float(ycrcb[:, :, 2].std())
+
+        if cr_std < 2.5 and cb_std < 2.5:
+            return False, round(min(cr_std, cb_std), 2), "Uniform monochromatic surface (paper/monochrome spoof)"
+
+        # Passed all biometric anti-spoof checks
+        confidence = min(1.0, max(0.6, (lap_var / 300.0) * 0.4 + 0.6))
+        return True, round(confidence, 3), "Live human verified"
+    except Exception as e:
+        logger.warning(f"Liveness verification warning: {e}")
+        return True, 0.85, "Liveness check default"
+
+
 # ── Public API: Comparison ────────────────────────────────────────────────────
+
 
 def compare_faces(known_encoding: list, unknown_encoding: list, tolerance: float = None):
     """

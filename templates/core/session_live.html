@@ -343,7 +343,9 @@ async function captureAndRecognize() {
       if (data.recognized && data.recognized.length > 0) {
         data.recognized.forEach(r => {
           try {
-            if (r.matched) {
+            if (r.status === 'spoof_detected' || r.is_live === false) {
+              handleSpoofDetected(r);
+            } else if (r.matched) {
               handleRecognized(r);
             } else if (r.wrong_section) {
               handleWrongSection(r);
@@ -385,11 +387,17 @@ function drawBoundingBoxes(recognizedList, videoW, videoH) {
     const dispLeft = Math.max(0, videoW - box.right);
     const dispTop = Math.max(0, box.top);
 
-    const isMatch = Boolean(item.matched && item.name && item.name !== 'Unknown');
-    const isWrongSection = Boolean(item.wrong_section);
+    const isSpoof = Boolean(item.status === 'spoof_detected' || item.is_live === false);
+    const isMatch = Boolean(!isSpoof && item.matched && item.name && item.name !== 'Unknown');
+    const isWrongSection = Boolean(!isSpoof && item.wrong_section);
 
-    const color = isMatch ? '#10b981' : (isWrongSection ? '#ef4444' : '#f59e0b');
-    const bgColor = isMatch ? 'rgba(16, 185, 129, 0.95)' : (isWrongSection ? 'rgba(239, 68, 68, 0.95)' : 'rgba(245, 158, 11, 0.95)');
+    let color = isMatch ? '#10b981' : (isWrongSection ? '#ef4444' : '#f59e0b');
+    let bgColor = isMatch ? 'rgba(16, 185, 129, 0.95)' : (isWrongSection ? 'rgba(239, 68, 68, 0.95)' : 'rgba(245, 158, 11, 0.95)');
+
+    if (isSpoof) {
+      color = '#e11d48';
+      bgColor = 'rgba(225, 29, 72, 0.95)';
+    }
 
     // Bounding Box
     ctx.strokeStyle = color;
@@ -420,7 +428,9 @@ function drawBoundingBoxes(recognizedList, videoW, videoH) {
 
     // Floating Label
     let labelText = 'Unknown Face';
-    if (isMatch) {
+    if (isSpoof) {
+      labelText = `⛔ SPOOF DETECTED (${item.liveness_reason || 'Paper/Screen'})`;
+    } else if (isMatch) {
       labelText = `✓ ${item.name} (${item.confidence}%)`;
     } else if (isWrongSection) {
       labelText = `⚠ WRONG SECTION: ${item.name}`;
@@ -453,6 +463,27 @@ function drawBoundingBoxes(recognizedList, videoW, videoH) {
     ctx.textBaseline = 'middle';
     ctx.fillText(labelText, tagX + 10, tagY + (tagH / 2));
   });
+}
+
+const spoofAlertCooldown = { time: 0 };
+
+function handleSpoofDetected(result) {
+  const now = Date.now();
+  if (now - spoofAlertCooldown.time < 3500) return;
+  spoofAlertCooldown.time = now;
+
+  playWarningBuzz();
+
+  const popup = document.getElementById('recognition-popup');
+  if (popup) {
+    popup.style.borderColor = '#e11d48';
+    document.getElementById('rec-name').textContent = '⛔ SPOOF DETECTED';
+    document.getElementById('rec-status').innerHTML = `<span style="color:#e11d48; font-weight:700;">${result.liveness_reason || 'Presentation Attack'}</span> — Attendance NOT marked`;
+    popup.style.display = 'block';
+    setTimeout(() => { popup.style.display = 'none'; }, 4000);
+  }
+
+  if (window.lucide) lucide.createIcons();
 }
 
 function handleWrongSection(result) {
