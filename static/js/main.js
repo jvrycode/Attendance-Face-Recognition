@@ -119,34 +119,48 @@ document.addEventListener('DOMContentLoaded', function() {
       btn.classList.remove('active');
     } else {
       // SMART POPUP POSITIONING:
-      // If the row / button is on the bottom of the table or near the bottom of viewport/container,
-      // show it on top (dropup) so it won't expand the table and cause scrollbars.
+      // If the row / button is on the TOP of the table, it MUST open downwards (dropdown)
+      // to avoid overlapping table headers or clipping at the top.
+      // If the row / button is on the BOTTOM of the table, and there is safe clearance above,
+      // it should open upwards (dropup) so it won't expand the table or cause scrollbars.
       const rect = btn.getBoundingClientRect();
       const tr = btn.closest('tr');
       const tableOrContainer = btn.closest('.table-container') || btn.closest('table') || btn.closest('.card');
       
+      const spaceViewportAbove = rect.top;
       const spaceViewportBelow = window.innerHeight - rect.bottom;
+
+      let spaceContainerAbove = 9999;
       let spaceContainerBelow = 9999;
       if (tableOrContainer) {
         const cRect = tableOrContainer.getBoundingClientRect();
+        spaceContainerAbove = rect.top - cRect.top;
         spaceContainerBelow = cRect.bottom - rect.bottom;
       }
 
-      let isBottomRow = false;
+      let rowIndex = -1;
+      let rowCount = 0;
       if (tr && tr.parentElement) {
         const rows = Array.from(tr.parentElement.querySelectorAll('tr'));
-        const index = rows.indexOf(tr);
-        // If 2 or more rows in table, and this is in the last 2 rows (or bottom half)
-        if (rows.length >= 2 && index >= Math.max(1, rows.length - 2)) {
-          isBottomRow = true;
-        }
+        rowCount = rows.length;
+        rowIndex = rows.indexOf(tr);
       }
 
-      // Check if we should show on top (dropup):
-      // - Either it's on bottom data / rows
-      // - Or space below inside container is tight (< 180px)
-      // - Or space below in viewport is tight (< 200px)
-      const shouldDropup = isBottomRow || spaceContainerBelow < 180 || spaceViewportBelow < 200;
+      // Can we safely open upwards without clipping the top?
+      // 1. Must NOT be the first row of a table (rowIndex > 0)
+      // 2. Must have at least 85px clearance above inside container
+      // 3. Must have at least 110px clearance from top of viewport
+      const canDropupSafely = (rowIndex > 0 || !tr) && spaceContainerAbove >= 85 && spaceViewportAbove >= 110;
+
+      // Do we have a reason to dropup?
+      // - It is one of the bottom rows of a multi-row table
+      // - Or space below inside container is tight (< 140px) AND there's more space above than below
+      // - Or space below in viewport is tight (< 180px) AND there's more space above than below
+      const isBottomRow = rowCount >= 2 && rowIndex >= Math.max(1, rowCount - 2);
+      const isTightBelow = (spaceContainerBelow < 140 && spaceContainerAbove > spaceContainerBelow) ||
+                           (spaceViewportBelow < 180 && spaceViewportAbove > spaceViewportBelow);
+
+      const shouldDropup = canDropupSafely && (isBottomRow || isTightBelow);
 
       if (shouldDropup) {
         menu.classList.add('dropup');
