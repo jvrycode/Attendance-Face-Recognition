@@ -57,14 +57,32 @@ def dashboard_view(request):
     elif user.role == 'teacher':
         try:
             teacher = user.teacher_profile
-            from core.models import Section, AttendanceSession
-            sections = teacher.sections.select_related('subject').prefetch_related('schedules')
+            from core.models import Section, AttendanceSession, StudentSection, Schedule
+            from django.db.models import Q
+
+            sections = Section.objects.filter(
+                Q(teacher=teacher) | Q(subjects__teacher=teacher)
+            ).select_related('program', 'subject', 'teacher__user').prefetch_related(
+                'schedules', 'enrollments__student__user', 'subjects'
+            ).distinct().order_by('program__code', 'name')
+
             recent_sessions = AttendanceSession.objects.filter(
-                started_by=teacher
-            ).select_related('schedule__section__subject').order_by('-date', '-created_at')[:5]
+                Q(started_by=teacher) | Q(schedule__section__in=sections)
+            ).select_related('schedule__section__subject', 'schedule__section__program').distinct().order_by('-date', '-created_at')[:8]
+
+            total_students = StudentSection.objects.filter(section__in=sections).values('student_id').distinct().count()
+            total_schedules = Schedule.objects.filter(section__in=sections).count()
+            open_sessions_count = AttendanceSession.objects.filter(
+                Q(started_by=teacher) | Q(schedule__section__in=sections),
+                status='open'
+            ).distinct().count()
+
             context['teacher'] = teacher
             context['sections'] = sections
             context['recent_sessions'] = recent_sessions
+            context['total_students'] = total_students
+            context['total_schedules'] = total_schedules
+            context['open_sessions_count'] = open_sessions_count
         except Teacher.DoesNotExist:
             messages.warning(request, 'Teacher profile not set up. Contact admin.')
         return render(request, 'accounts/dashboard_teacher.html', context)

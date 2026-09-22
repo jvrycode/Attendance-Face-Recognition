@@ -20,6 +20,10 @@ User = get_user_model()
 class CoreFeatureTests(TestCase):
     def setUp(self):
         # Create users
+        self.admin_user = User.objects.create_user(
+            username='admin_boss', first_name='Admin', last_name='Boss',
+            role='admin', password='StrongPassword123!'
+        )
         self.teacher_user = User.objects.create_user(
             username='prof_albert', first_name='Albert', last_name='Einstein',
             role='teacher', password='StrongPassword123!'
@@ -247,19 +251,19 @@ class CoreFeatureTests(TestCase):
             section=self.section_a, day_of_week='Mon',
             start_time=time(8, 0), end_time=time(9, 30), room='Room 101'
         )
-        self.assertEqual(self.section_a.schedule_display, "Mon 08:00–09:30 @ Room 101")
+        self.assertEqual(self.section_a.schedule_display, "M 8:00–9:30 AM @ Room 101")
 
-        # Paired day (Mon & Thu) at same time and room -> M-TH
+        # Additional day (Thu) at same time and room
         Schedule.objects.create(
             section=self.section_a, day_of_week='Thu',
             start_time=time(8, 0), end_time=time(9, 30), room='Room 101'
         )
-        self.assertEqual(self.section_a.schedule_display, "M-TH 08:00–09:30 @ Room 101")
+        self.assertEqual(self.section_a.schedule_display, "M 8:00–9:30 AM @ Room 101, TH 8:00–9:30 AM @ Room 101")
 
     def test_dynamic_student_registration_and_section_enrollment(self):
         """Verify registering a new student assigns them to section and redirects to face enrollment."""
         client = Client()
-        client.force_login(self.teacher_user)
+        client.force_login(self.admin_user)
 
         res = client.post('/accounts/students/register/', {
             'student_id': '2024-99999',

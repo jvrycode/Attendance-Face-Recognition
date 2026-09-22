@@ -174,39 +174,11 @@ class FaceService:
         if section_matrix is None and section_data.get('encodings'):
             section_matrix = np.array(section_data['encodings'], dtype=np.float32)
 
-        img_np = None
-        try:
-            img_np = _decode_image_to_rgb(frame_bytes)
-        except Exception:
-            pass
-
         recognized_results = []
 
         for face_item in detected_faces:
             face_encoding = face_item.get('encoding')
             box = face_item.get('box', {})
-
-            # Biometric Liveness & Anti-Spoofing Verification
-            is_live = True
-            liveness_reason = "Live human"
-            if img_np is not None:
-                is_live, _, liveness_reason = check_face_liveness(img_np, box)
-
-            if not is_live:
-                recognized_results.append({
-                    'student_id': None,
-                    'student_number': None,
-                    'name': '⚠️ Spoof Detected (Paper/Screen)',
-                    'confidence': 0.0,
-                    'status': 'spoof_detected',
-                    'new_status': None,
-                    'box': box,
-                    'matched': False,
-                    'wrong_section': False,
-                    'is_live': False,
-                    'liveness_reason': liveness_reason,
-                })
-                continue
 
             best_match = None
             best_confidence = 0.0

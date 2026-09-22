@@ -45,23 +45,12 @@
           <span id="status-text">Camera off</span>
         </div>
       </div>
-      <div class="camera-container" style="position: relative; border-radius: var(--radius); overflow: hidden; background: #000; aspect-ratio: 4/3; max-height: 480px; display: flex; align-items: center; justify-content: center;">
+      <div class="camera-container" style="position: relative; border-radius: var(--radius); overflow: hidden; background: #0f172a; aspect-ratio: 4/3; max-height: 480px; display: flex; align-items: center; justify-content: center;">
         <video id="camera-video" class="camera-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block;"></video>
         <!-- Real-Time Bounding Box Canvas Overlay -->
         <canvas id="overlay-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5;"></canvas>
         <!-- Hidden processing canvas for frame captures -->
         <canvas id="camera-canvas" style="display:none;"></canvas>
-        <div class="camera-overlay" style="z-index: 2;">
-          <div class="face-guide" id="face-guide" style="display:none;"></div>
-        </div>
-        <!-- Recognition feedback overlay popup -->
-        <div id="recognition-popup" style="
-          display:none; position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
-          background:rgba(15, 23, 42, 0.92); border:2px solid var(--success); border-radius:12px;
-          padding:12px 24px; text-align:center; min-width:280px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6); backdrop-filter:blur(10px); z-index: 10;">
-          <div id="rec-name" style="font-size:16px; font-weight:700; color:#fff;"></div>
-          <div id="rec-status" style="font-size:13px; margin-top:4px; font-weight: 500;"></div>
-        </div>
       </div>
     </div>
 
@@ -223,7 +212,6 @@ async function startCamera() {
     document.getElementById('btn-toggle-fr').style.display = 'inline-flex';
     document.getElementById('btn-toggle-fr').innerHTML = '<i data-lucide="pause"></i> Pause Recognition';
     document.getElementById('btn-toggle-fr').className = 'btn btn-warning';
-    document.getElementById('face-guide').style.display = 'block';
 
     // Start recognition automatically immediately
     isRecognizing = true;
@@ -254,7 +242,6 @@ function stopCamera() {
   document.getElementById('btn-toggle-fr').style.display = 'none';
   document.getElementById('btn-toggle-fr').innerHTML = '<i data-lucide="search"></i> Start Recognition';
   document.getElementById('btn-toggle-fr').className = 'btn btn-success';
-  document.getElementById('face-guide').style.display = 'none';
   clearOverlayCanvas();
   setStatus('off', 'Camera off');
   if (window.lucide) lucide.createIcons();
@@ -343,9 +330,7 @@ async function captureAndRecognize() {
       if (data.recognized && data.recognized.length > 0) {
         data.recognized.forEach(r => {
           try {
-            if (r.status === 'spoof_detected' || r.is_live === false) {
-              handleSpoofDetected(r);
-            } else if (r.matched) {
+            if (r.matched) {
               handleRecognized(r);
             } else if (r.wrong_section) {
               handleWrongSection(r);
@@ -381,129 +366,77 @@ function drawBoundingBoxes(recognizedList, videoW, videoH) {
     const box = item.box;
     if (!box) return;
 
-    // Coordinate translation for mirrored video (video has CSS scaleX(-1))
+    // Coordinate translation for mirrored video (CSS transform: scaleX(-1))
     const boxW = Math.max(20, box.right - box.left);
     const boxH = Math.max(20, box.bottom - box.top);
     const dispLeft = Math.max(0, videoW - box.right);
     const dispTop = Math.max(0, box.top);
 
-    const isSpoof = Boolean(item.status === 'spoof_detected' || item.is_live === false);
-    const isMatch = Boolean(!isSpoof && item.matched && item.name && item.name !== 'Unknown');
-    const isWrongSection = Boolean(!isSpoof && item.wrong_section);
+    const isMatch = Boolean(item.matched && item.name && item.name !== 'Unknown');
 
-    let color = isMatch ? '#10b981' : (isWrongSection ? '#ef4444' : '#f59e0b');
-    let bgColor = isMatch ? 'rgba(16, 185, 129, 0.95)' : (isWrongSection ? 'rgba(239, 68, 68, 0.95)' : 'rgba(245, 158, 11, 0.95)');
+    // Clean, subtle styling:
+    // Recognized: Emerald 2px border (#10b981)
+    // Scanning / Unknown: Soft white border (rgba(255, 255, 255, 0.45))
+    const strokeColor = isMatch ? '#10b981' : 'rgba(255, 255, 255, 0.45)';
 
-    if (isSpoof) {
-      color = '#e11d48';
-      bgColor = 'rgba(225, 29, 72, 0.95)';
-    }
-
-    // Bounding Box
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 3;
+    // Minimal 2px bounding box
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 2;
     ctx.strokeRect(dispLeft, dispTop, boxW, boxH);
 
-    // Corner accents
-    const corner = Math.min(20, Math.floor(boxW / 4), Math.floor(boxH / 4));
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    // Top-left
-    ctx.moveTo(dispLeft, dispTop + corner);
-    ctx.lineTo(dispLeft, dispTop);
-    ctx.lineTo(dispLeft + corner, dispTop);
-    // Top-right
-    ctx.moveTo(dispLeft + boxW - corner, dispTop);
-    ctx.lineTo(dispLeft + boxW);
-    ctx.lineTo(dispLeft + boxW, dispTop + corner);
-    // Bottom-left
-    ctx.moveTo(dispLeft, dispTop + boxH - corner);
-    ctx.lineTo(dispLeft, dispTop + boxH);
-    ctx.lineTo(dispLeft + corner, dispTop + boxH);
-    // Bottom-right
-    ctx.moveTo(dispLeft + boxW - corner, dispTop + boxH);
-    ctx.lineTo(dispLeft + boxW);
-    ctx.lineTo(dispLeft + boxW, dispTop + boxH - corner);
-    ctx.stroke();
+    // If recognized, display a compact name pill above the head (never obscuring face or chest)
+    if (isMatch) {
+      const displayName = item.name;
+      ctx.font = '600 12px Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
+      const textMetrics = ctx.measureText(displayName);
+      const tagW = textMetrics.width + 16;
+      const tagH = 22;
+      let tagX = Math.max(4, Math.min(dispLeft, videoW - tagW - 4));
+      let tagY = (dispTop > tagH + 6) ? (dispTop - tagH - 4) : (dispTop + boxH + 4);
 
-    // Floating Label
-    let labelText = 'Unknown Face';
-    if (isSpoof) {
-      labelText = `⛔ SPOOF DETECTED (${item.liveness_reason || 'Paper/Screen'})`;
-    } else if (isMatch) {
-      labelText = `✓ ${item.name} (${item.confidence}%)`;
-    } else if (isWrongSection) {
-      labelText = `⚠ WRONG SECTION: ${item.name}`;
-    }
-
-    ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    const textMetrics = ctx.measureText(labelText);
-    const tagW = textMetrics.width + 20;
-    const tagH = 28;
-    
-    // Ensure tag fits within canvas bounds
-    let tagX = Math.max(4, Math.min(dispLeft, videoW - tagW - 4));
-    let tagY = (dispTop > tagH + 8) ? (dispTop - tagH - 4) : (dispTop + boxH + 6);
-
-    ctx.fillStyle = bgColor;
-    // Safe rounded rectangle fallback
-    try {
+      // Pill background
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
       ctx.beginPath();
       if (typeof ctx.roundRect === 'function') {
-        ctx.roundRect(tagX, tagY, tagW, tagH, [6]);
+        ctx.roundRect(tagX, tagY, tagW, tagH, [4]);
       } else {
         ctx.rect(tagX, tagY, tagW, tagH);
       }
       ctx.fill();
-    } catch(e) {
-      ctx.fillRect(tagX, tagY, tagW, tagH);
-    }
 
-    ctx.fillStyle = '#ffffff';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(labelText, tagX + 10, tagY + (tagH / 2));
+      // Pill border
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Name text
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(displayName, tagX + 8, tagY + (tagH / 2));
+    }
   });
 }
 
-const spoofAlertCooldown = { time: 0 };
-
-function handleSpoofDetected(result) {
-  const now = Date.now();
-  if (now - spoofAlertCooldown.time < 3500) return;
-  spoofAlertCooldown.time = now;
-
-  playWarningBuzz();
-
-  const popup = document.getElementById('recognition-popup');
-  if (popup) {
-    popup.style.borderColor = '#e11d48';
-    document.getElementById('rec-name').textContent = '⛔ SPOOF DETECTED';
-    document.getElementById('rec-status').innerHTML = `<span style="color:#e11d48; font-weight:700;">${result.liveness_reason || 'Presentation Attack'}</span> — Attendance NOT marked`;
-    popup.style.display = 'block';
-    setTimeout(() => { popup.style.display = 'none'; }, 4000);
-  }
-
-  if (window.lucide) lucide.createIcons();
-}
+const wrongSectionAlertCooldown = new Map();
 
 function handleWrongSection(result) {
   const now = Date.now();
   const lastAlert = wrongSectionAlertCooldown.get(result.student_id) || 0;
-  if (now - lastAlert < 4000) return; // 4s cooldown per student
+  if (now - lastAlert < 5000) return;
   wrongSectionAlertCooldown.set(result.student_id, now);
 
-  playWarningBuzz();
-
-  const popup = document.getElementById('recognition-popup');
-  if (popup) {
-    popup.style.borderColor = '#ef4444';
-    document.getElementById('rec-name').textContent = `⚠ WRONG SECTION: ${(result.student_number ? result.student_number + ' — ' : '') + result.name}`;
-    document.getElementById('rec-status').innerHTML = `<span style="color:#ef4444; font-weight:700;">Assigned Section: ${result.assigned_sections || 'Different Section'}</span> — Attendance NOT marked`;
-    popup.style.display = 'block';
-    setTimeout(() => { popup.style.display = 'none'; }, 4000);
+  const statusText = document.getElementById('status-text');
+  const statusDot = document.getElementById('status-dot');
+  if (statusText) {
+    statusText.textContent = `Notice: ${result.name} belongs to another section`;
+    if (statusDot) statusDot.style.background = 'var(--warning)';
+    setTimeout(() => {
+      if (isRecognizing && statusText) {
+        statusText.textContent = 'Scanning...';
+        if (statusDot) statusDot.style.background = 'var(--success)';
+      }
+    }, 3500);
   }
-
-  if (window.lucide) lucide.createIcons();
 }
 
 const recognizedAlertCooldown = new Map();
@@ -524,8 +457,6 @@ function findStudentElement(result) {
 function handleRecognized(result) {
   const item = findStudentElement(result);
   if (!item) {
-    console.info('Student item not currently in DOM, syncing session...');
-    window.location.reload();
     return;
   }
 
@@ -533,7 +464,9 @@ function handleRecognized(result) {
   const isCurrentlyMarked = item.classList.contains(targetStatus);
 
   if (!isCurrentlyMarked) {
-    item.className = 'attendance-item ' + targetStatus;
+    item.className = 'attendance-item ' + targetStatus + ' just-marked';
+    setTimeout(() => { item.classList.remove('just-marked'); }, 2000);
+
     const badge = item.querySelector('.badge') || document.getElementById('badge-' + result.student_id);
     if (badge) {
       badge.className = targetStatus === 'present' ? 'badge badge-success' : 'badge badge-warning';
@@ -554,34 +487,32 @@ function handleRecognized(result) {
     refreshCounts();
     playAttendanceChime(targetStatus === 'late');
 
-    // Show celebratory recognition popup
-    const popup = document.getElementById('recognition-popup');
-    if (popup) {
-      popup.style.borderColor = targetStatus === 'present' ? 'var(--success)' : 'var(--warning)';
-      document.getElementById('rec-name').textContent = (result.student_number ? result.student_number + ' — ' : '') + result.name;
-      document.getElementById('rec-status').innerHTML =
-        `${targetStatus === 'present' ? '<span style="color:var(--success); font-weight:700;">✓ Marked Present</span>' : '<span style="color:var(--warning); font-weight:700;">⏰ Marked Late</span>'} — ${result.confidence}% match (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })})`;
-      popup.style.display = 'block';
-      setTimeout(() => { popup.style.display = 'none'; }, 3500);
+    // Scroll smoothly to student in roster
+    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    // Quiet status indicator in header above camera
+    const statusText = document.getElementById('status-text');
+    if (statusText) {
+      statusText.textContent = `Recorded: ${result.name} (${targetStatus.toUpperCase()})`;
+      setTimeout(() => {
+        if (isRecognizing && statusText) statusText.textContent = 'Scanning...';
+      }, 3000);
     }
 
     if (window.lucide) lucide.createIcons();
   } else {
-    // Already recorded: throttle confirmation
+    // Already marked: quiet throttle
     const now = Date.now();
     const lastSeen = recognizedAlertCooldown.get(result.student_id) || 0;
-    if (now - lastSeen > 5000) {
+    if (now - lastSeen > 4000) {
       recognizedAlertCooldown.set(result.student_id, now);
-      const popup = document.getElementById('recognition-popup');
-      if (popup) {
-        popup.style.borderColor = targetStatus === 'present' ? 'var(--success)' : 'var(--warning)';
-        document.getElementById('rec-name').textContent = (result.student_number ? result.student_number + ' — ' : '') + result.name;
-        document.getElementById('rec-status').innerHTML =
-          `<span style="color:${targetStatus === 'present' ? 'var(--success)' : 'var(--warning)'}; font-weight:700;">✓ Already Recorded (${targetStatus.toUpperCase()})</span> — ${result.confidence}% match`;
-        popup.style.display = 'block';
-        setTimeout(() => { popup.style.display = 'none'; }, 2500);
+      const statusText = document.getElementById('status-text');
+      if (statusText) {
+        statusText.textContent = `Already recorded: ${result.name}`;
+        setTimeout(() => {
+          if (isRecognizing && statusText) statusText.textContent = 'Scanning...';
+        }, 2500);
       }
-      if (window.lucide) lucide.createIcons();
     }
   }
 }
