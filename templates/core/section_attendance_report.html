@@ -396,17 +396,17 @@
 
       <div class="filter-divider"></div>
 
-      <!-- Compact Segmented Pill: Daily / Weekly -->
+      <!-- Compact Segmented Pill: Today / This Week -->
       <div class="filter-item">
         <span class="filter-label"><i data-lucide="layout-grid" style="width:13px; height:13px;"></i> View</span>
         <div class="segmented-control">
           <a href="?section_id={{ selected_section.pk }}&report_type=daily&date={{ target_date_str }}" 
-             class="seg-btn {% if report_type == 'daily' %}active{% endif %}" title="Daily Attendance Report">
-            Daily
+             class="seg-btn {% if report_type == 'daily' %}active{% endif %}" title="Today's Attendance Report">
+            Today
           </a>
           <a href="?section_id={{ selected_section.pk }}&report_type=weekly&date={{ target_date_str }}" 
-             class="seg-btn {% if report_type == 'weekly' %}active{% endif %}" title="Weekly Matrix Report">
-            Weekly
+             class="seg-btn {% if report_type == 'weekly' %}active{% endif %}" title="This Week's Matrix Report">
+            This Week
           </a>
         </div>
       </div>
