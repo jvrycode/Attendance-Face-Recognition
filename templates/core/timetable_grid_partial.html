@@ -1,0 +1,46 @@
+<!-- Timetable Grid Component (URIOS / FSUU Exact Style) -->
+<div style="width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; background:#ffffff; border-radius:8px; border:1px solid #7a9cb8; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <table style="width:100%; min-width:880px; border-collapse:collapse; text-align:center; font-family:inherit;">
+    <thead>
+      <tr style="background:#e8edf3; border-bottom:2px solid #7a9cb8;">
+        <th style="width:95px; padding:10px 4px; font-weight:700; font-size:11px; color:#1e293b; border:1px solid #7a9cb8; background:#d4e2ee; text-transform:uppercase;">Time</th>
+        <th style="padding:10px 4px; font-weight:700; font-size:12px; color:#1e293b; border:1px solid #7a9cb8; text-transform:uppercase;">Monday</th>
+        <th style="padding:10px 4px; font-weight:700; font-size:12px; color:#1e293b; border:1px solid #7a9cb8; text-transform:uppercase;">Tuesday</th>
+        <th style="padding:10px 4px; font-weight:700; font-size:12px; color:#1e293b; border:1px solid #7a9cb8; text-transform:uppercase;">Wednesday</th>
+        <th style="padding:10px 4px; font-weight:700; font-size:12px; color:#1e293b; border:1px solid #7a9cb8; text-transform:uppercase;">Thursday</th>
+        <th style="padding:10px 4px; font-weight:700; font-size:12px; color:#1e293b; border:1px solid #7a9cb8; text-transform:uppercase;">Friday</th>
+        <th style="padding:10px 4px; font-weight:700; font-size:12px; color:#1e293b; border:1px solid #7a9cb8; text-transform:uppercase;">Saturday</th>
+        <th style="padding:10px 4px; font-weight:700; font-size:12px; color:#1e293b; border:1px solid #7a9cb8; text-transform:uppercase;">Sunday</th>
+      </tr>
+    </thead>
+    <tbody id="{{ timetable_tbody_id|default:'timetable-tbody' }}">
+      <!-- Rendered dynamically by static/js/timetable.js in exact 30-minute URIOS slots -->
+    </tbody>
+  </table>
+</div>
+
+<!-- Structured data source for timetable.js -->
+<script type="application/json" class="timetable-data-source" data-target-id="{{ timetable_tbody_id|default:'timetable-tbody' }}">
+  {{ timetable.schedules_json|safe }}
+</script>
+
+<script>
+  (function() {
+    function tryRender() {
+      const targetId = '{{ timetable_tbody_id|default:"timetable-tbody" }}';
+      if (window.URIOS_TIMETABLE && typeof window.URIOS_TIMETABLE.render === 'function') {
+        try {
+          const raw = '{{ timetable.schedules_json|escapejs }}';
+          const data = JSON.parse(raw);
+          window.URIOS_TIMETABLE.render(targetId, data);
+        } catch(e) {
+          console.error('Render error:', e);
+        }
+      }
+    }
+    tryRender();
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', tryRender);
+    }
+  })();
+</script>

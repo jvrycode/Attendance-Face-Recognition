@@ -2,34 +2,129 @@
 {% block title %}{{ title }}{% endblock %}
 {% block page_title %}{{ title }}{% endblock %}
 
+{% block header_actions %}
+  <a href="{% url 'subject_list' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to Subjects</a>
+{% endblock %}
+
 {% block content %}
-<div class="card" style="max-width:560px;">
+<div class="card" style="max-width:600px;">
   <div class="card-header"><span class="card-title"><i data-lucide="book-open"></i> {{ title }}</span></div>
   <div class="card-body">
-    <form method="post">
+    <form method="post" id="subject-form">
       {% csrf_token %}
+
+      <!-- Step 1: Program (Highest hierarchy level) -->
       <div class="form-group">
-        <label class="form-label">Subject Code *</label>
-        {{ form.code }}
-        {% if form.code.errors %}<div class="form-error">{{ form.code.errors.0 }}</div>{% endif %}
+        <label class="form-label" style="font-weight:600;">1. Academic Program *</label>
+        {{ form.program }}
+        {% if form.program.errors %}<div class="form-error">{{ form.program.errors.0 }}</div>{% endif %}
+        <div class="form-text">Selecting a program will dynamically filter the available class sections.</div>
       </div>
+
+      <!-- Step 2: Section (Linked dynamically via dropdown) -->
+      <div class="form-group">
+        <label class="form-label" style="font-weight:600;">2. Class Section (Linked via Program)</label>
+        {{ form.section }}
+        {% if form.section.errors %}<div class="form-error">{{ form.section.errors.0 }}</div>{% endif %}
+        <div class="form-text" id="section-helper">Choose the section this subject offering belongs to.</div>
+      </div>
+
+      <!-- Step 3: Assigned Teacher -->
+      <div class="form-group">
+        <label class="form-label">3. Assigned Instructor / Teacher</label>
+        {{ form.teacher }}
+        {% if form.teacher.errors %}<div class="form-error">{{ form.teacher.errors.0 }}</div>{% endif %}
+      </div>
+
+      <!-- Step 4: Subject Details -->
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Subject Code *</label>
+          {{ form.code }}
+          {% if form.code.errors %}<div class="form-error">{{ form.code.errors.0 }}</div>{% endif %}
+          <div class="form-text">e.g. CS101, IT201, ACT101</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Units *</label>
+          {{ form.units }}
+          {% if form.units.errors %}<div class="form-error">{{ form.units.errors.0 }}</div>{% endif %}
+        </div>
+      </div>
+
       <div class="form-group">
         <label class="form-label">Subject Name *</label>
         {{ form.name }}
+        {% if form.name.errors %}<div class="form-error">{{ form.name.errors.0 }}</div>{% endif %}
+        <div class="form-text">e.g. Introduction to Computing</div>
       </div>
+
       <div class="form-group">
-        <label class="form-label">Description</label>
+        <label class="form-label">Description / Syllabus</label>
         {{ form.description }}
       </div>
-      <div class="form-group">
-        <label class="form-label">Units</label>
-        {{ form.units }}
-      </div>
+
       <div class="flex gap-1 mt-2">
-        <button type="submit" class="btn btn-primary"><i data-lucide="save"></i> Save</button>
+        <button type="submit" class="btn btn-primary"><i data-lucide="save"></i> Save Subject</button>
         <a href="{% url 'subject_list' %}" class="btn btn-outline">Cancel</a>
       </div>
     </form>
   </div>
 </div>
+
+<script>
+// Dynamic Dropdown Filtering: Program -> Section
+async function filterSectionsByProgram() {
+  const programSelect = document.getElementById('id_program');
+  const sectionSelect = document.getElementById('id_section');
+  const helper = document.getElementById('section-helper');
+  if (!programSelect || !sectionSelect) return;
+
+  const programId = programSelect.value;
+  const currentSectionVal = sectionSelect.value;
+
+  if (!programId) {
+    helper.textContent = 'Select a program above to see sections.';
+    return;
+  }
+
+  helper.innerHTML = '<i data-lucide="loader" style="width:12px; height:12px;"></i> Loading sections for selected program...';
+  if (window.lucide) lucide.createIcons();
+
+  try {
+    const resp = await fetch(`/api/sections-by-program/${programId}/`);
+    const data = await resp.json();
+
+    sectionSelect.innerHTML = '<option value="">-- Select Section --</option>';
+
+    if (data.sections && data.sections.length > 0) {
+      data.sections.forEach(sec => {
+        const opt = document.createElement('option');
+        opt.value = sec.id;
+        opt.textContent = `${sec.name} (${sec.year_level})`;
+        if (String(sec.id) === String(currentSectionVal)) {
+          opt.selected = true;
+        }
+        sectionSelect.appendChild(opt);
+      });
+      helper.textContent = `${data.sections.length} section(s) available for this program.`;
+    } else {
+      helper.textContent = 'No sections created under this program yet. Create a section first.';
+    }
+  } catch (err) {
+    console.error('Error fetching sections:', err);
+    helper.textContent = 'Failed to load sections dynamically.';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const progSelect = document.getElementById('id_program');
+  if (progSelect && progSelect.value) {
+    // Keep initial selection if editing
+    const currentSec = "{{ form.instance.section_id|default:'' }}";
+    if (!currentSec) {
+      filterSectionsByProgram();
+    }
+  }
+});
+</script>
 {% endblock %}

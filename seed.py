@@ -96,24 +96,73 @@ else:
         print("[OK] Enrolled synthetic face vector for existing student1.")
     print("[INFO] Student already exists.")
 
-# ── Subject ───────────────────────────────────────────────────────────────────
-subject, _ = Subject.objects.get_or_create(
-    code='CS101',
-    defaults={'name': 'Introduction to Computing', 'units': 3}
-)
-print(f"[OK] Subject: {subject}")
+# ── Programs (FSUU Butuan City — Official 2024–2025) ──────────────────────────
+from core.models import Program
+
+fsuu_programs = [
+    ('CITEC',   'College of Information, Technology, Entertainment, and Computing', 'CITEC'),
+    ('CCJE',    'College of Criminal Justice Education',                            'CCJE'),
+    ('CTE',     'College of Teacher Education',                                     'CTE'),
+    ('CoA',     'College of Accountancy',                                           'CoA'),
+    ('CoN',     'College of Nursing',                                               'CoN'),
+    ('CAS',     'College of Arts and Sciences',                                     'CAS'),
+    ('CORE',    'College of Operations, Resources, and Entrepreneurship',           'CORE'),
+    ('CEnTech', 'College of Engineering and Technology',                            'CEnTech'),
+    ('CIHT',    'College of Innovative Hospitality and Tourism',                    'CIHT'),
+]
+
+for p_code, p_name, p_college in fsuu_programs:
+    obj, created = Program.objects.get_or_create(
+        code=p_code,
+        defaults={'name': p_name, 'college': p_college}
+    )
+    if not created:
+        obj.name = p_name
+        obj.college = p_college
+        obj.save()
+
+print(f"[OK] FSUU Academic Colleges initialized ({len(fsuu_programs)} official colleges).")
+prog_citec = Program.objects.get(code='CITEC')
+
 
 # ── Section ───────────────────────────────────────────────────────────────────
 section, _ = Section.objects.get_or_create(
     name='BSCS-2A',
     defaults={
-        'subject': subject,
+        'program': prog_citec,
+        'year_level': 2,
         'teacher': teacher,
         'school_year': '2025-2026',
         'semester': '1st'
     }
 )
+if section.program is None:
+    section.program = prog_citec
+    section.year_level = 2
+    section.save()
 print(f"[OK] Section: {section}")
+
+# ── Subject ───────────────────────────────────────────────────────────────────
+subject, _ = Subject.objects.get_or_create(
+    code='CS101',
+    defaults={
+        'name': 'Introduction to Computing',
+        'units': 3,
+        'program': prog_bscs,
+        'section': section,
+        'teacher': teacher
+    }
+)
+if subject.program is None:
+    subject.program = prog_bscs
+if subject.section is None:
+    subject.section = section
+subject.save()
+
+if section.subject is None:
+    section.subject = subject
+    section.save()
+print(f"[OK] Subject: {subject}")
 
 # ── Schedule ──────────────────────────────────────────────────────────────────
 if not Schedule.objects.filter(section=section, day_of_week='Mon').exists():

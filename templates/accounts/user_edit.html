@@ -2,6 +2,10 @@
 {% block title %}Edit User{% endblock %}
 {% block page_title %}Edit User{% endblock %}
 
+{% block header_actions %}
+  <a href="{% url 'user_list' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to Users</a>
+{% endblock %}
+
 {% block content %}
 <div class="card" style="max-width:600px;">
   <div class="card-header"><span class="card-title"><i data-lucide="edit-2"></i> Edit: {{ target_user.get_full_name|default:target_user.username }}</span></div>

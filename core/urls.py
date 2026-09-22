@@ -2,8 +2,11 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # Dashboard
-    path('dashboard/', views.attendance_history, name='attendance_history'),
+    # Academic Programs
+    path('programs/', views.program_list, name='program_list'),
+    path('programs/add/', views.program_create, name='program_create'),
+    path('programs/<int:pk>/edit/', views.program_edit, name='program_edit'),
+    path('programs/<int:pk>/delete/', views.program_delete, name='program_delete'),
 
     # Subjects
     path('subjects/', views.subject_list, name='subject_list'),
@@ -32,7 +35,16 @@ urlpatterns = [
     path('sessions/<int:pk>/reopen/', views.session_reopen, name='session_reopen'),
     path('sessions/<int:pk>/report/', views.session_report, name='session_report'),
     path('history/', views.attendance_history, name='attendance_history'),
+    path('reports/attendance/', views.section_attendance_report, name='section_attendance_report'),
+
+    # Section Catalog (3NF Master Definitions)
+    path('academic/section-catalog/', views.section_catalog_list, name='section_catalog_list'),
+    path('academic/section-catalog/add/', views.section_catalog_create, name='section_catalog_create'),
+    path('academic/section-catalog/<int:pk>/delete/', views.section_catalog_delete, name='section_catalog_delete'),
 
     # AJAX API
     path('api/mark-present/', views.mark_present_api, name='mark_present_api'),
+    path('api/sections-by-program/<int:program_id>/', views.api_sections_by_program, name='api_sections_by_program'),
+    path('api/program-sections/<int:program_id>/', views.api_program_sections, name='api_program_sections'),
+    path('api/program-sections/create/', views.api_create_program_section, name='api_create_program_section'),
 ]

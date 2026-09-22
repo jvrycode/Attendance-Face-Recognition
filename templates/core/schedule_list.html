@@ -1,37 +1,76 @@
 {% extends 'base.html' %}
 {% block title %}Schedules{% endblock %}
 {% block page_title %}Schedules{% endblock %}
-{% block header_actions %}<a href="{% url 'schedule_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Schedule</a>{% endblock %}
+{% block page_subtitle %}<p>All class meeting schedules and their effective date windows</p>{% endblock %}
+
+{% block header_actions %}
+  {% if request.user.role == 'admin' %}
+    <a href="{% url 'schedule_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Schedule</a>
+  {% endif %}
+{% endblock %}
 
 {% block content %}
 <div class="card">
   <div class="table-container" style="border:none;">
     <table>
       <thead>
-        <tr><th>Section</th><th>Subject</th><th>Teacher</th><th>Day</th><th>Time</th><th>Room</th><th>Actions</th></tr>
+        <tr>
+          <th>Section</th>
+          <th>Subject</th>
+          <th>Teacher</th>
+          <th>Day</th>
+          <th>Time</th>
+          <th>Room</th>
+          <th>Effective Period</th>
+          <th>Actions</th>
+        </tr>
       </thead>
       <tbody>
         {% for sched in schedules %}
         <tr>
           <td><strong>{{ sched.section.name }}</strong></td>
-          <td><span class="badge badge-accent">{{ sched.section.subject.code }}</span></td>
+          <td><span class="badge badge-accent">{{ sched.section.effective_subject.code|default:"—" }}</span></td>
           <td class="text-muted">
             {% if sched.section.teacher %}{{ sched.section.teacher.user.get_full_name }}{% else %}—{% endif %}
           </td>
           <td>
-            <span class="badge badge-info">{{ sched.get_day_of_week_display }}</span>
+            <span class="badge badge-info" style="font-weight:700; letter-spacing:.5px;">{{ sched.days_display }}</span>
           </td>
-          <td>{{ sched.start_time|time:"H:i" }} – {{ sched.end_time|time:"H:i" }}</td>
+          <td>{{ sched.start_time|time:"g:i A" }} – {{ sched.end_time|time:"g:i A" }}</td>
           <td>{{ sched.room }}</td>
           <td>
-            <div class="flex gap-1">
-              <a href="{% url 'schedule_edit' sched.pk %}" class="btn btn-outline btn-sm"><i data-lucide="edit-2"></i></a>
-              <a href="{% url 'schedule_delete' sched.pk %}" class="btn btn-danger btn-sm"><i data-lucide="trash-2"></i></a>
+            {% if sched.effective_from or sched.effective_to %}
+              <div style="display:flex; align-items:center; gap:5px; font-size:12px; color:var(--text-primary);">
+                <i data-lucide="calendar-range" style="width:13px; height:13px; color:var(--primary);"></i>
+                <span>
+                  {% if sched.effective_from %}{{ sched.effective_from|date:"M j, Y" }}{% else %}<em class="text-muted">Any</em>{% endif %}
+                  &rarr;
+                  {% if sched.effective_to %}{{ sched.effective_to|date:"M j, Y" }}{% else %}<em class="text-muted">Ongoing</em>{% endif %}
+                </span>
+              </div>
+            {% else %}
+              <span class="text-muted" style="font-size:12px;"><i data-lucide="infinity" style="width:13px; height:13px;"></i> No restriction</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="action-popover-dropdown">
+              <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="Actions" aria-label="Actions">
+                <i data-lucide="more-vertical"></i>
+              </button>
+              <div class="action-popover-menu">
+                <a href="{% url 'schedule_edit' sched.pk %}" class="action-popover-item">
+                  <i data-lucide="edit-2"></i> Edit Schedule
+                </a>
+                <div class="action-popover-divider"></div>
+                <a href="{% url 'schedule_delete' sched.pk %}" class="action-popover-item text-danger">
+                  <i data-lucide="trash-2"></i> Delete Schedule
+                </a>
+              </div>
             </div>
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="text-center text-muted" style="padding:30px;">No schedules. <a href="{% url 'schedule_create' %}">Add one</a></td></tr>
+        <tr><td colspan="8" class="text-center text-muted" style="padding:30px;">No schedules yet. <a href="{% url 'schedule_create' %}">Add one</a></td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block title %}Academic Programs{% endblock %}
+{% block page_title %}Academic Programs{% endblock %}
+{% block page_subtitle %}<p>Father Saturnino Urios University (FSUU) Academic Programs</p>{% endblock %}
+
+{% block header_actions %}
+  {% if request.user.role == 'admin' %}
+    <a href="{% url 'program_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Program</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="table-container" style="border:none;">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Program Name</th>
+          <th>College / Department</th>
+          <th>Sections</th>
+          <th>Subjects</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for prog in programs %}
+        <tr>
+          <td><span class="badge badge-accent" style="font-size:13px; font-weight:700;">{{ prog.code }}</span></td>
+          <td><strong>{{ prog.name }}</strong></td>
+          <td><span class="text-muted">{{ prog.college }}</span></td>
+          <td><span class="badge badge-info">{{ prog.section_count }}</span></td>
+          <td><span class="badge badge-outline">{{ prog.subject_count }}</span></td>
+          <td>
+            <div class="action-popover-dropdown">
+              <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="Actions" aria-label="Actions">
+                <i data-lucide="more-vertical"></i>
+              </button>
+              <div class="action-popover-menu">
+                {% if request.user.role == 'admin' %}
+                  <a href="{% url 'program_edit' prog.pk %}" class="action-popover-item">
+                    <i data-lucide="edit-2"></i> Edit Program
+                  </a>
+                  <div class="action-popover-divider"></div>
+                  <a href="{% url 'program_delete' prog.pk %}" class="action-popover-item text-danger">
+                    <i data-lucide="trash-2"></i> Delete Program
+                  </a>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center text-muted" style="padding:30px;">
+            No academic programs found.
+            {% if request.user.role == 'admin' %}
+              <a href="{% url 'program_create' %}">Create one</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

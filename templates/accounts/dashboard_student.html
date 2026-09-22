@@ -62,6 +62,115 @@
   </div>
 </div>
 
+<!-- My Class Schedule (URIOS Style with 1-Click Table/Grid Toggle) -->
+<div class="card mb-3">
+  <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+    <span class="card-title">
+      <i data-lucide="calendar"></i> My Class Schedule
+    </span>
+    <div style="display:inline-flex; gap:6px; align-items:center;">
+      <button type="button" class="btn btn-primary btn-sm" id="btn-student-view-table" onclick="setStudentScheduleView('table')" title="View in table list style">
+        <i data-lucide="list"></i> Table View
+      </button>
+      <button type="button" class="btn btn-outline btn-sm" id="btn-student-view-grid" onclick="setStudentScheduleView('grid')" title="View in weekly timetable grid graph (FSUU style)">
+        <i data-lucide="calendar"></i> Timetable Grid
+      </button>
+    </div>
+  </div>
+
+  <!-- View 1: Table View (URIOS Image 1 Style) -->
+  <div id="student-schedule-table-view">
+    {% if enrolled_sections %}
+    <div class="table-container" style="border:none; border-radius:0;">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px;">#</th>
+            <th>Subject Code</th>
+            <th>Description</th>
+            <th>Section</th>
+            <th>Schedule</th>
+            <th>Room</th>
+            <th>Teacher</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sec in enrolled_sections %}
+          <tr>
+            <td class="text-muted">{{ forloop.counter }}</td>
+            <td>
+              {% if sec.effective_subject %}
+                <span class="badge badge-accent" style="font-weight:700;">{{ sec.effective_subject.code }}</span>
+              {% else %}
+                <span class="badge badge-outline">{{ sec.name }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <strong>{{ sec.effective_subject.name|default:sec.name }}</strong>
+            </td>
+            <td>
+              <span class="badge badge-info">{{ sec.name }}</span>
+            </td>
+            <td>
+              {% if sec.schedules.all %}
+                <span class="badge badge-outline" style="font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:4px; color:var(--text-primary); border-color:rgba(99,102,241,0.35); background:rgba(99,102,241,0.06);">
+                  <i data-lucide="clock" style="width:12px; height:12px; color:var(--primary);"></i>
+                  {{ sec.schedule_display }}
+                </span>
+              {% else %}
+                <span class="text-muted" style="font-size:12px;">No schedule set</span>
+              {% endif %}
+            </td>
+            <td>
+              {% for sc in sec.schedules.all %}
+                <span style="font-size:12px; font-weight:500;">{{ sc.room }}</span>{% if not forloop.last %}, {% endif %}
+              {% empty %}
+                <span class="text-muted">—</span>
+              {% endfor %}
+            </td>
+            <td>
+              {% if sec.teacher %}
+                {{ sec.teacher.user.get_full_name|default:sec.teacher.user.username }}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="card-body text-center text-muted" style="padding:28px;">
+        <i data-lucide="calendar-x" style="width:32px; height:32px; margin:0 auto 6px; opacity:.4; display:block;"></i>
+        <div>No enrolled classes found for this semester.</div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- View 2: Timetable Grid (URIOS Image 2 Style) -->
+  <div id="student-schedule-grid-view" style="display:none; padding:16px;">
+    {% include 'core/timetable_grid_partial.html' with timetable_tbody_id='student-timetable-tbody' %}
+  </div>
+</div>
+
+<script>
+  function setStudentScheduleView(mode) {
+    if (typeof switchScheduleView === 'function') {
+      switchScheduleView(mode, 'student-schedule-table-view', 'student-schedule-grid-view', 'btn-student-view-table', 'btn-student-view-grid', 'fsuu_student_view');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    try {
+      const savedMode = localStorage.getItem('fsuu_student_view');
+      if (savedMode === 'grid') {
+        setStudentScheduleView('grid');
+      }
+    } catch(e){}
+  });
+</script>
+
 <!-- Recent Records -->
 <div class="card">
   <div class="card-header">
@@ -87,7 +196,7 @@
             {% else %}<span class="badge badge-danger"><i data-lucide="x-circle"></i> Absent</span>{% endif %}
           </td>
           <td class="text-muted">
-            {% if record.recognized_at %}{{ record.recognized_at|time:"H:i" }}{% else %}—{% endif %}
+            {% if record.recognized_at %}{{ record.recognized_at|time:"g:i A" }}{% else %}—{% endif %}
           </td>
         </tr>
         {% endfor %}

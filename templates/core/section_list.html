@@ -1,22 +1,54 @@
 {% extends 'base.html' %}
-{% block title %}Sections{% endblock %}
-{% block page_title %}Sections{% endblock %}
+{% block title %}
+  {% if request.user.role == 'student' %}My Schedule
+  {% elif request.user.role == 'teacher' %}Sections & Schedules
+  {% else %}Sections & Schedules{% endif %}
+{% endblock %}
+
+{% block page_title %}
+  {% if request.user.role == 'student' %}My Schedule
+  {% elif request.user.role == 'teacher' %}Sections & Schedules
+  {% else %}Sections & Schedules{% endif %}
+{% endblock %}
+
+{% block page_subtitle %}
+  {% if request.user.role == 'student' %}
+    <p>Your enrolled course subjects, room assignments, and weekly class timetable</p>
+  {% elif request.user.role == 'teacher' %}
+    <p>Your assigned teaching sections, course subjects, and class schedules</p>
+  {% else %}
+    <p>Manage school sections, subjects, and weekly timetable schedules</p>
+  {% endif %}
+{% endblock %}
+
 {% block header_actions %}
+  <!-- 1-Click View Switcher (Simple JS + Standard Buttons) -->
+  <div class="view-toggle-group">
+    <button type="button" class="btn btn-primary" id="btn-show-table" onclick="toggleScheduleView('table')" title="View in table list style">
+      <i data-lucide="list"></i> Table View
+    </button>
+    <button type="button" class="btn btn-outline" id="btn-show-grid" onclick="toggleScheduleView('grid')" title="View in weekly timetable grid graph (FSUU style)">
+      <i data-lucide="calendar"></i> Timetable Grid
+    </button>
+  </div>
+
   {% if request.user.role == 'admin' %}
     <a href="{% url 'section_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Section</a>
   {% endif %}
 {% endblock %}
 
 {% block content %}
-<div class="card">
+<!-- ══ VIEW 1: TABLE VIEW (Style 1 - Structured List) ════════════ -->
+<div id="schedule-table-card" class="card mb-3">
   <div class="table-container" style="border:none;">
     <table>
       <thead>
         <tr>
-          <th>Section</th>
-          <th>Subject</th>
+          <th>Program</th>
+          <th>Section & Year</th>
+          <th>Subject Offering</th>
           <th>Schedule (Day & Time)</th>
-          <th>Teacher</th>
+          {% if request.user.role in 'admin,student' %}<th>Assigned Teacher</th>{% endif %}
           <th>School Year</th>
           <th>Students</th>
           <th>Actions</th>
@@ -25,20 +57,45 @@
       <tbody>
         {% for section in sections %}
         <tr>
-          <td><strong>{{ section.name }}</strong></td>
-          <td><span class="badge badge-accent">{{ section.subject.code }}</span> {{ section.subject.name }}</td>
+          <td>
+            {% if section.program %}
+              <span class="badge badge-info" style="font-weight:700;">{{ section.program.code }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <strong>{{ section.name }}</strong>
+            <div style="font-size:12.5px; color:var(--text-muted); margin-top:2px;">
+              {{ section.get_year_level_display }}
+            </div>
+          </td>
+          <td>
+            {% if section.effective_subject %}
+              <div style="display:flex; flex-direction:column; gap:3px; align-items:flex-start;">
+                <span class="badge badge-accent" style="font-size:11.5px; font-weight:700;">{{ section.effective_subject.code }}</span>
+                <span style="font-size:12px; color:var(--text-secondary); line-height:1.35; font-weight:500; max-width:210px;">{{ section.effective_subject.name }}</span>
+              </div>
+            {% else %}
+              <span class="text-muted" style="font-size:12px;">No subject linked yet</span>
+              {% if request.user.role == 'admin' %}
+                <a href="{% url 'subject_create' %}" style="font-size:11.5px; margin-top:2px; display:inline-block;">+ Add Subject</a>
+              {% endif %}
+            {% endif %}
+          </td>
           <td>
             {% if section.schedules.all %}
               <div style="display:flex; flex-direction:column; gap:4px;">
-                <span class="badge badge-outline" style="font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:5px; color:var(--text-primary); border-color:rgba(99,102,241,0.35); background:rgba(99,102,241,0.06);">
-                  <i data-lucide="clock" style="width:13px; height:13px; color:var(--primary);"></i>
+                <span class="badge badge-outline" style="font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; gap:5px; color:var(--text-primary); border-color:rgba(99,102,241,0.35); background:rgba(99,102,241,0.06);">
+                  <i data-lucide="clock" style="width:14px; height:14px; color:var(--primary);"></i>
                   {{ section.schedule_display }}
                 </span>
               </div>
             {% else %}
-              <span class="text-muted" style="font-size:12px;"><i data-lucide="clock"></i> No schedule</span>
+              <span class="text-muted" style="font-size:13px;"><i data-lucide="clock"></i> No schedule set</span>
             {% endif %}
           </td>
+          {% if request.user.role in 'admin,student' %}
           <td>
             {% if section.teacher %}
               {{ section.teacher.user.get_full_name|default:section.teacher.user.username }}
@@ -46,31 +103,65 @@
               <span class="text-muted">— Unassigned</span>
             {% endif %}
           </td>
+          {% endif %}
           <td>{{ section.school_year }} <span class="text-muted">({{ section.semester }})</span></td>
-          <td><span class="badge badge-info">{{ section.student_count }}</span></td>
           <td>
-            <div class="flex gap-1">
-              {% if request.user.role == 'teacher' %}
-                <a href="{% url 'section_detail' section.pk %}" class="btn btn-outline btn-sm"><i data-lucide="users"></i> Roster</a>
-                {% with first_sched=section.schedules.first %}
-                  {% if first_sched %}
-                    <a href="{% url 'session_start' first_sched.pk %}" class="btn btn-success btn-sm"><i data-lucide="play"></i> Attendance</a>
-                  {% endif %}
-                {% endwith %}
-              {% else %}
-                <a href="{% url 'section_detail' section.pk %}" class="btn btn-outline btn-sm"><i data-lucide="eye"></i> View</a>
-                <a href="{% url 'section_edit' section.pk %}" class="btn btn-outline btn-sm"><i data-lucide="edit-2"></i></a>
-                <a href="{% url 'section_delete' section.pk %}" class="btn btn-danger btn-sm"><i data-lucide="trash-2"></i></a>
-              {% endif %}
+            <a href="{% url 'section_detail' section.pk %}" title="View Class List">
+              <span class="badge badge-info" style="cursor:pointer;"><i data-lucide="users" style="width:11px; height:11px;"></i> {{ section.student_count }}</span>
+            </a>
+          </td>
+          <td>
+            <div class="action-popover-dropdown">
+              <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="Actions" aria-label="Actions">
+                <i data-lucide="more-vertical"></i>
+              </button>
+              <div class="action-popover-menu">
+                {% if request.user.role == 'teacher' %}
+                  {% with first_sched=section.schedules.first %}
+                    {% if first_sched %}
+                      <a href="{% url 'session_start' first_sched.pk %}" class="action-popover-item text-success">
+                        <i data-lucide="play"></i> Start Attendance
+                      </a>
+                    {% endif %}
+                  {% endwith %}
+                  <a href="{% url 'section_detail' section.pk %}" class="action-popover-item">
+                    <i data-lucide="users"></i> Class List
+                  </a>
+                  <a href="{% url 'section_attendance_report' %}?section_id={{ section.pk }}" class="action-popover-item">
+                    <i data-lucide="file-text"></i> Attendance Report
+                  </a>
+                {% elif request.user.role == 'student' %}
+                  <a href="{% url 'section_detail' section.pk %}" class="action-popover-item">
+                    <i data-lucide="users"></i> Class List
+                  </a>
+                {% else %}
+                  <a href="{% url 'section_detail' section.pk %}" class="action-popover-item">
+                    <i data-lucide="eye"></i> View Details
+                  </a>
+                  <a href="{% url 'section_attendance_report' %}?section_id={{ section.pk }}" class="action-popover-item">
+                    <i data-lucide="file-text"></i> Attendance Report
+                  </a>
+                  <a href="{% url 'section_edit' section.pk %}" class="action-popover-item">
+                    <i data-lucide="edit-2"></i> Edit Section
+                  </a>
+                  <div class="action-popover-divider"></div>
+                  <a href="{% url 'section_delete' section.pk %}" class="action-popover-item text-danger">
+                    <i data-lucide="trash-2"></i> Delete Section
+                  </a>
+                {% endif %}
+              </div>
             </div>
           </td>
         </tr>
         {% empty %}
         <tr>
-          <td colspan="7" class="text-center text-muted" style="padding:30px;">
-            No sections yet.
-            {% if request.user.role == 'admin' %}
-              <a href="{% url 'section_create' %}">Create one</a>
+          <td colspan="8" class="text-center text-muted" style="padding:36px;">
+            {% if request.user.role == 'teacher' %}
+              You do not have any assigned sections yet. Contact the system administrator.
+            {% elif request.user.role == 'student' %}
+              You are not enrolled in any sections yet. Contact the system administrator.
+            {% else %}
+              No sections created yet. <a href="{% url 'section_create' %}">Add one</a>
             {% endif %}
           </td>
         </tr>
@@ -79,4 +170,37 @@
     </table>
   </div>
 </div>
+
+<!-- ══ VIEW 2: TIMETABLE GRID (Style 2 - URIOS Visual Graph) ══════ -->
+<div id="schedule-grid-card" class="card mb-3" style="display:none;">
+  <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+    <span class="card-title">
+      <i data-lucide="calendar-range"></i> Weekly Class Schedule Graph
+    </span>
+    <span class="badge badge-info" style="font-weight:600;">
+      {{ timetable.total_events }} Scheduled Meeting{% if timetable.total_events != 1 %}s{% endif %} / Week
+    </span>
+  </div>
+  <div class="card-body" style="padding:16px;">
+    {% include 'core/timetable_grid_partial.html' %}
+  </div>
+</div>
+
+<!-- ══ SIMPLE JAVASCRIPT: View Toggle ═════════════════════════════ -->
+<script>
+  function toggleScheduleView(viewType) {
+    if (typeof switchScheduleView === 'function') {
+      switchScheduleView(viewType, 'schedule-table-card', 'schedule-grid-card', 'btn-show-table', 'btn-show-grid', 'fsuu_schedule_view');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    try {
+      const saved = localStorage.getItem('fsuu_schedule_view');
+      if (saved === 'grid') {
+        toggleScheduleView('grid');
+      }
+    } catch(e){}
+  });
+</script>
 {% endblock %}

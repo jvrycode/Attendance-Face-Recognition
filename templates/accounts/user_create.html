@@ -2,6 +2,10 @@
 {% block title %}Create User{% endblock %}
 {% block page_title %}Create User{% endblock %}
 
+{% block header_actions %}
+  <a href="{% url 'user_list' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to Users</a>
+{% endblock %}
+
 {% block content %}
 <div class="card" style="max-width:700px;">
   <div class="card-header"><span class="card-title"><i data-lucide="user"></i> New User</span></div>

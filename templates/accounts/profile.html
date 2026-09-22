@@ -2,6 +2,8 @@
 {% block title %}My Profile{% endblock %}
 {% block page_title %}My Profile{% endblock %}
 
+{% block header_actions %}{% endblock %}
+
 {% block content %}
 <div class="grid-2">
   <div class="card">
@@ -50,7 +52,7 @@
         <tr><td class="text-muted" style="padding:6px 0;">Username</td><td>{{ user.username }}</td></tr>
         <tr><td class="text-muted" style="padding:6px 0;">Role</td><td><span class="role-badge {{ user.role }}">{{ user.get_role_display }}</span></td></tr>
         <tr><td class="text-muted" style="padding:6px 0;">Joined</td><td>{{ user.date_joined|date:"M d, Y" }}</td></tr>
-        <tr><td class="text-muted" style="padding:6px 0;">Last Login</td><td>{{ user.last_login|date:"M d, Y H:i"|default:"Never" }}</td></tr>
+        <tr><td class="text-muted" style="padding:6px 0;">Last Login</td><td>{{ user.last_login|date:"M d, Y g:i A"|default:"Never" }}</td></tr>
       </table>
 
       {% if user.role == 'student' %}

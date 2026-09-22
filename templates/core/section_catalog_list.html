@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block title %}Section Catalog{% endblock %}
+{% block page_title %}Section Catalog (Master List){% endblock %}
+{% block page_subtitle %}<p>Stored section definitions grouped by College / Academic Program</p>{% endblock %}
+
+{% block header_actions %}
+  <a href="{% url 'section_catalog_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Section Definition</a>
+{% endblock %}
+
+{% block content %}
+<!-- Filter by Program Bar -->
+<div class="card mb-3" style="padding:14px 18px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+    <span style="font-weight:600; font-size:13px; color:var(--text-secondary);"><i data-lucide="filter" style="width:14px; height:14px;"></i> Filter College:</span>
+    <a href="{% url 'section_catalog_list' %}" class="btn {% if not selected_program_id %}btn-primary{% else %}btn-outline{% endif %} btn-sm">All Programs</a>
+    {% for prog in programs %}
+      <a href="{% url 'section_catalog_list' %}?program={{ prog.pk }}" class="btn {% if selected_program_id == prog.pk|stringformat:'s' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">
+        {{ prog.code }}
+      </a>
+    {% endfor %}
+  </div>
+  <div style="font-size:12.5px; color:var(--text-muted);">
+    Total Sections: <strong>{{ program_sections.count }}</strong>
+  </div>
+</div>
+
+<!-- Section Catalog Table -->
+<div class="card">
+  <div class="table-container" style="border:none;">
+    <table>
+      <thead>
+        <tr>
+          <th>College / Program</th>
+          <th>Section Name</th>
+          <th>Year Level</th>
+          <th>Description / Track</th>
+          <th>Active Classes</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sec in program_sections %}
+        <tr>
+          <td>
+            <span class="badge badge-accent" style="font-size:12px; font-weight:700;">{{ sec.program.code }}</span>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">{{ sec.program.name }}</div>
+          </td>
+          <td>
+            <strong style="font-size:14.5px;">{{ sec.name }}</strong>
+          </td>
+          <td>
+            <span class="badge badge-info" style="font-weight:600;">{{ sec.get_year_level_display }}</span>
+          </td>
+          <td>
+            {% if sec.description %}
+              <span style="font-size:13px;">{{ sec.description }}</span>
+            {% else %}
+              <span class="text-muted" style="font-size:12px;">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="badge badge-outline" style="font-weight:600;">
+              {{ sec.offerings.count }} class offering(s)
+            </span>
+          </td>
+          <td style="font-size:12px; color:var(--text-muted);">{{ sec.created_at|date:"M j, Y" }}</td>
+          <td>
+            <div class="action-popover-dropdown">
+              <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="Actions" aria-label="Actions">
+                <i data-lucide="more-vertical"></i>
+              </button>
+              <div class="action-popover-menu">
+                <a href="{% url 'section_create' %}" class="action-popover-item">
+                  <i data-lucide="calendar"></i> Open Semester Class
+                </a>
+                <div class="action-popover-divider"></div>
+                <a href="{% url 'section_catalog_delete' sec.pk %}" class="action-popover-item text-danger">
+                  <i data-lucide="trash-2"></i> Delete Definition
+                </a>
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center text-muted" style="padding:36px;">
+            No section definitions stored yet.
+            <div style="margin-top:10px;">
+              <a href="{% url 'section_catalog_create' %}" class="btn btn-primary btn-sm"><i data-lucide="plus"></i> Add First Section</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

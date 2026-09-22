@@ -79,9 +79,18 @@ def dashboard_view(request):
                 'session__schedule__section__subject'
             ).order_by('-session__date')[:10]
             section = student.section if hasattr(student, 'section') else None
+            enrolled_sections = Section.objects.filter(
+                enrollments__student=student
+            ).select_related('program', 'subject', 'teacher__user').prefetch_related('schedules', 'subjects').distinct()
+
+            from core.services import TimetableService
+            timetable_data = TimetableService.build_timetable_data(enrolled_sections)
+
             context['student'] = student
             context['records'] = records
             context['section'] = section
+            context['enrolled_sections'] = enrolled_sections
+            context['timetable'] = timetable_data
         except Student.DoesNotExist:
             messages.warning(request, 'Student profile not set up. Contact admin.')
         return render(request, 'accounts/dashboard_student.html', context)
@@ -143,8 +152,8 @@ def student_register_view(request):
     Creates user, creates student profile, assigns to section, and immediately
     redirects to face enrollment.
     """
-    if request.user.role not in ['admin', 'teacher']:
-        messages.error(request, "Permission denied.")
+    if request.user.role != 'admin':
+        messages.error(request, "Permission denied: Only administrators can register students.")
         return redirect('dashboard')
 
     initial_data = {}

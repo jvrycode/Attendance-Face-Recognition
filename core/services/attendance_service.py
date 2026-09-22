@@ -17,28 +17,26 @@ class AttendanceService:
     def calculate_attendance_status(session, scan_time=None):
         """
         Dynamically determine whether the attendance is 'present' or 'late'.
-        Late condition: scan_time is more than LATE_THRESHOLD_MINUTES past schedule start_time.
-        When live scanning (scan_time is None), students scanning within LATE_THRESHOLD_MINUTES
-        of session creation are also counted as 'present'.
+        When live scanning from camera (scan_time is None), an open session marks as 'present'.
+        When a specific scan_time is provided (e.g. historical checks/tests), computes against schedule start_time.
         """
-        is_live_scan = (scan_time is None)
         if scan_time is None:
-            scan_time = timezone.now()
+            return 'present'
+
+        threshold_seconds = AttendanceService.get_late_threshold_minutes() * 60
+
+        # If session was opened recently (within threshold minutes), always count as present
+        if session.created_at:
+            since_opened = (scan_time - session.created_at).total_seconds()
+            if 0 <= since_opened <= threshold_seconds:
+                return 'present'
 
         # Combine session date with schedule start_time
         schedule = session.schedule
         session_start_dt = timezone.make_aware(
             timezone.datetime.combine(session.date, schedule.start_time)
         )
-
-        threshold_seconds = AttendanceService.get_late_threshold_minutes() * 60
         time_difference = (scan_time - session_start_dt).total_seconds()
-
-        # For live scanning, if session was opened recently (within threshold minutes), count as present
-        if is_live_scan and session.created_at:
-            since_opened = (scan_time - session.created_at).total_seconds()
-            if 0 <= since_opened <= threshold_seconds:
-                return 'present'
 
         if time_difference > threshold_seconds:
             return 'late'

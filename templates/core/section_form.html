@@ -2,26 +2,56 @@
 {% block title %}{{ title }}{% endblock %}
 {% block page_title %}{{ title }}{% endblock %}
 
+{% block header_actions %}
+  <a href="{% url 'section_list' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to Sections</a>
+{% endblock %}
+
 {% block content %}
-<div class="card" style="max-width:560px;">
+<div class="card" style="max-width:580px;">
   <div class="card-header"><span class="card-title"><i data-lucide="building"></i> {{ title }}</span></div>
   <div class="card-body">
-    <form method="post">
+    <form method="post" id="section-form">
       {% csrf_token %}
+      {{ form.name }}
+
+      <!-- Academic Program -->
       <div class="form-group">
-        <label class="form-label">Section Name *</label>
-        {{ form.name }}
-        {% if form.name.errors %}<div class="form-error">{{ form.name.errors.0 }}</div>{% endif %}
+        <label class="form-label" style="font-weight:600;">Academic Program / College *</label>
+        {{ form.program }}
+        {% if form.program.errors %}<div class="form-error">{{ form.program.errors.0 }}</div>{% endif %}
+        <div class="form-text">Choose the FSUU College (e.g. CITEC, CCJE, CTE, CoA)</div>
       </div>
-      <div class="form-group">
-        <label class="form-label">Subject *</label>
-        {{ form.subject }}
+
+      <!-- Section Dropdown + Quick Add Button -->
+      <div class="grid-2">
+        <div class="form-group">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="form-label" style="margin-bottom:0; font-weight:600;">Class Section *</label>
+            <button type="button" class="btn btn-outline btn-sm" id="btn-open-quick-add" onclick="openQuickAddModal()" style="padding:2px 8px; font-size:11.5px; height:24px; min-height:24px;" title="Store and add a new section under this program">
+              <i data-lucide="plus" style="width:12px; height:12px;"></i> New Section
+            </button>
+          </div>
+          {{ form.program_section }}
+          {% if form.program_section.errors %}<div class="form-error">{{ form.program_section.errors.0 }}</div>{% endif %}
+          <div class="form-text" id="section-dropdown-helper" style="font-size:11.5px;">Select program above to load sections.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight:600;">Year Level *</label>
+          {{ form.year_level }}
+          {% if form.year_level.errors %}<div class="form-error">{{ form.year_level.errors.0 }}</div>{% endif %}
+          <div class="form-text" style="font-size:11.5px;">Auto-synchronized with section</div>
+        </div>
       </div>
+
+      <!-- Assigned Teacher -->
       <div class="form-group">
-        <label class="form-label">Assigned Teacher</label>
+        <label class="form-label">Assigned Teacher / Adviser</label>
         {{ form.teacher }}
-        <div class="form-text">One teacher can be assigned to multiple sections.</div>
+        <div class="form-text">One teacher can handle multiple sections.</div>
       </div>
+
+      <!-- School Year & Semester -->
       <div class="grid-2">
         <div class="form-group">
           <label class="form-label">School Year</label>
@@ -32,11 +62,229 @@
           {{ form.semester }}
         </div>
       </div>
+
       <div class="flex gap-1 mt-2">
-        <button type="submit" class="btn btn-primary"><i data-lucide="save"></i> Save</button>
+        <button type="submit" class="btn btn-primary"><i data-lucide="save"></i> Save Section</button>
         <a href="{% url 'section_list' %}" class="btn btn-outline">Cancel</a>
       </div>
     </form>
   </div>
 </div>
+
+<!-- ══ Quick-Add Section Modal (Store New Section to Program) ══ -->
+<div id="quick-add-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.5); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); z-index:1100; align-items:center; justify-content:center; padding:16px;">
+  <div class="card" style="width:100%; max-width:420px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.25);">
+    <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+      <span class="card-title" style="font-size:14px; font-weight:700;"><i data-lucide="plus-circle"></i> Add Section to Program</span>
+      <button type="button" onclick="closeQuickAddModal()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:22px; line-height:1;">&times;</button>
+    </div>
+    <div class="card-body">
+      <div id="modal-error-box" class="alert alert-danger" style="display:none; padding:8px 12px; font-size:12.5px; margin-bottom:12px;"></div>
+      
+      <div class="form-group">
+        <label class="form-label" style="font-size:12.5px;">Target Academic Program</label>
+        <input type="text" id="modal-program-display" class="form-control" readonly style="background:#f8fafc; font-weight:600;">
+        <input type="hidden" id="modal-program-id">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" style="font-size:12.5px;">Section Name *</label>
+        <input type="text" id="modal-section-name" class="form-control" placeholder="e.g. BSCS-3A or IT 44" required>
+        <div class="form-text" style="font-size:11px;">Official section code under this college (3NF definition)</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" style="font-size:12.5px;">Year Level *</label>
+        <select id="modal-year-level" class="form-select">
+          <option value="1">1st Year</option>
+          <option value="2">2nd Year</option>
+          <option value="3">3rd Year</option>
+          <option value="4">4th Year</option>
+        </select>
+      </div>
+
+      <div class="flex gap-1" style="justify-content:flex-end; margin-top:16px;">
+        <button type="button" class="btn btn-outline" onclick="closeQuickAddModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-save-modal-section" onclick="submitQuickAddSection()">
+          <i data-lucide="save"></i> Save & Select
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Dynamic Dropdown & 3NF Section Management Logic
+async function onProgramChanged(selectedSectionIdToKeep) {
+  const progSelect = document.getElementById('id_program');
+  const secSelect = document.getElementById('id_section_select');
+  const helper = document.getElementById('section-dropdown-helper');
+  const btnQuickAdd = document.getElementById('btn-open-quick-add');
+  if (!progSelect || !secSelect) return;
+
+  const programId = progSelect.value;
+  if (!programId) {
+    secSelect.innerHTML = '<option value="">-- Select Academic Program First --</option>';
+    secSelect.disabled = true;
+    if (helper) helper.textContent = 'Select program above to load sections.';
+    if (btnQuickAdd) btnQuickAdd.disabled = true;
+    return;
+  }
+
+  secSelect.disabled = false;
+  if (btnQuickAdd) btnQuickAdd.disabled = false;
+  if (helper) helper.innerHTML = '<i data-lucide="loader" style="width:12px; height:12px;"></i> Loading sections...';
+  if (window.lucide) lucide.createIcons();
+
+  try {
+    const resp = await fetch(`/api/program-sections/${programId}/`);
+    const data = await resp.json();
+
+    secSelect.innerHTML = '<option value="">-- Select Section --</option>';
+
+    if (data.sections && data.sections.length > 0) {
+      data.sections.forEach(sec => {
+        const opt = document.createElement('option');
+        opt.value = sec.id;
+        opt.textContent = sec.name;
+        opt.dataset.yearLevel = sec.year_level;
+        opt.dataset.name = sec.name;
+
+        if (selectedSectionIdToKeep && String(sec.id) === String(selectedSectionIdToKeep)) {
+          opt.selected = true;
+        }
+        secSelect.appendChild(opt);
+      });
+      if (helper) helper.textContent = `${data.sections.length} stored section(s) available for this college.`;
+    } else {
+      if (helper) helper.innerHTML = 'No sections stored under this program yet. Click <strong>+ New Section</strong> to add one.';
+    }
+
+    onSectionChanged();
+  } catch(err) {
+    console.error('Error loading program sections:', err);
+    if (helper) helper.textContent = 'Failed to load sections dynamically.';
+  }
+}
+
+function onSectionChanged() {
+  const secSelect = document.getElementById('id_section_select');
+  const yearSelect = document.getElementById('id_year_level');
+  const nameHidden = document.getElementById('id_name_hidden');
+  if (!secSelect || !yearSelect) return;
+
+  const selectedOpt = secSelect.options[secSelect.selectedIndex];
+  if (selectedOpt && selectedOpt.value) {
+    if (nameHidden) nameHidden.value = selectedOpt.dataset.name || selectedOpt.textContent;
+    if (selectedOpt.dataset.yearLevel) {
+      yearSelect.value = selectedOpt.dataset.yearLevel;
+    }
+  }
+}
+
+// Quick-Add Modal
+function openQuickAddModal() {
+  const progSelect = document.getElementById('id_program');
+  if (!progSelect || !progSelect.value) {
+    alert('Please select an Academic Program / College first.');
+    if (progSelect) progSelect.focus();
+    return;
+  }
+
+  const modal = document.getElementById('quick-add-modal');
+  const modalProgDisplay = document.getElementById('modal-program-display');
+  const modalProgId = document.getElementById('modal-program-id');
+  const modalSecName = document.getElementById('modal-section-name');
+  const modalErr = document.getElementById('modal-error-box');
+
+  const selectedProgText = progSelect.options[progSelect.selectedIndex].textContent;
+  modalProgDisplay.value = selectedProgText;
+  modalProgId.value = progSelect.value;
+  modalSecName.value = '';
+  if (modalErr) modalErr.style.display = 'none';
+
+  modal.style.display = 'flex';
+  modalSecName.focus();
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeQuickAddModal() {
+  const modal = document.getElementById('quick-add-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function submitQuickAddSection() {
+  const progId = document.getElementById('modal-program-id').value;
+  const secName = document.getElementById('modal-section-name').value.trim();
+  const yearLevel = document.getElementById('modal-year-level').value;
+  const modalErr = document.getElementById('modal-error-box');
+  const btnSave = document.getElementById('btn-save-modal-section');
+
+  if (!secName) {
+    if (modalErr) {
+      modalErr.textContent = 'Please enter a Section Name (e.g. BSCS-3A).';
+      modalErr.style.display = 'block';
+    }
+    return;
+  }
+
+  btnSave.disabled = true;
+  btnSave.innerHTML = '<i data-lucide="loader" style="width:14px; height:14px;"></i> Saving...';
+  if (window.lucide) lucide.createIcons();
+
+  try {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const resp = await fetch('/api/program-sections/create/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken,
+      },
+      body: JSON.stringify({
+        program_id: progId,
+        name: secName,
+        year_level: yearLevel
+      })
+    });
+
+    const result = await resp.json();
+    if (resp.ok && result.success) {
+      closeQuickAddModal();
+      // Reload sections and select the newly created section!
+      await onProgramChanged(result.section.id);
+      const secSelect = document.getElementById('id_section_select');
+      secSelect.value = result.section.id;
+      onSectionChanged();
+    } else {
+      if (modalErr) {
+        modalErr.textContent = result.error || 'Failed to create section.';
+        modalErr.style.display = 'block';
+      }
+    }
+  } catch (err) {
+    console.error('Error submitting section:', err);
+    if (modalErr) {
+      modalErr.textContent = 'Network error saving section.';
+      modalErr.style.display = 'block';
+    }
+  } finally {
+    btnSave.disabled = false;
+    btnSave.innerHTML = '<i data-lucide="save"></i> Save & Select';
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+// Initial page load handling
+document.addEventListener('DOMContentLoaded', () => {
+  const progSelect = document.getElementById('id_program');
+  const secSelect = document.getElementById('id_section_select');
+  const initialSecId = "{{ form.instance.program_section_id|default:'' }}";
+
+  if (progSelect && progSelect.value) {
+    onProgramChanged(initialSecId);
+  } else if (secSelect) {
+    secSelect.disabled = true;
+  }
+});
+</script>
 {% endblock %}

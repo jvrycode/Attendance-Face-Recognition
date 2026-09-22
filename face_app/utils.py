@@ -50,20 +50,22 @@ FR_AVAILABLE = FACE_RECOGNITION_AVAILABLE or LBPH_AVAILABLE
 # ── Haar Cascade setup ────────────────────────────────────────────────────────
 
 FACE_CASCADE = None
+FACE_CASCADE_ALT = None
 if OPENCV_AVAILABLE:
-    if hasattr(cv2, 'data') and cv2.data:
+    _data_dir = os.path.join(os.path.dirname(__file__), 'data')
+    _local_default = os.path.join(_data_dir, 'haarcascade_frontalface_default.xml')
+    _local_alt = os.path.join(_data_dir, 'haarcascade_frontalface_alt2.xml')
+
+    if os.path.exists(_local_default):
+        FACE_CASCADE = cv2.CascadeClassifier(_local_default)
+    if os.path.exists(_local_alt):
+        FACE_CASCADE_ALT = cv2.CascadeClassifier(_local_alt)
+
+    # OpenCV default fallback path
+    if (FACE_CASCADE is None or FACE_CASCADE.empty()) and hasattr(cv2, 'data') and cv2.data:
         _cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         if os.path.exists(_cascade_path):
             FACE_CASCADE = cv2.CascadeClassifier(_cascade_path)
-    # OpenCV 5 may have moved the data path
-    if FACE_CASCADE is None:
-        import cv2 as _cv2
-        for _attr in dir(_cv2):
-            if 'haarcascades' in _attr.lower():
-                _p = getattr(_cv2, _attr, '') + 'haarcascade_frontalface_default.xml'
-                if os.path.exists(_p):
-                    FACE_CASCADE = _cv2.CascadeClassifier(_p)
-                    break
 
 
 def _decode_image_to_rgb(data: bytes) -> np.ndarray:
@@ -78,18 +80,29 @@ def _to_gray(rgb_np: np.ndarray) -> np.ndarray:
 
 
 def _detect_faces_cv(gray_np: np.ndarray):
-    """Detect faces using Haar cascade. Returns list of (x, y, w, h)."""
-    if FACE_CASCADE is None:
-        # Fallback: DNN-based detector or assume full frame is face
+    """Detect faces using Haar cascade with CLAHE/equalization. Returns list of (x, y, w, h)."""
+    if not OPENCV_AVAILABLE:
         h, w = gray_np.shape[:2]
         return [(int(w * 0.1), int(h * 0.1), int(w * 0.8), int(h * 0.8))]
-    faces = FACE_CASCADE.detectMultiScale(
-        gray_np,
-        scaleFactor=1.1,
-        minNeighbors=5,
-        minSize=(60, 60),
-    )
-    return faces if len(faces) > 0 else []
+
+    gray_eq = cv2.equalizeHist(gray_np)
+    faces = ()
+    if FACE_CASCADE and not FACE_CASCADE.empty():
+        faces = FACE_CASCADE.detectMultiScale(
+            gray_eq,
+            scaleFactor=1.1,
+            minNeighbors=4,
+            minSize=(50, 50),
+        )
+    if (len(faces) == 0) and FACE_CASCADE_ALT and not FACE_CASCADE_ALT.empty():
+        faces = FACE_CASCADE_ALT.detectMultiScale(
+            gray_eq,
+            scaleFactor=1.1,
+            minNeighbors=4,
+            minSize=(50, 50),
+        )
+
+    return list(faces) if len(faces) > 0 else []
 
 
 # ── Public API: Encoding ──────────────────────────────────────────────────────
@@ -161,15 +174,52 @@ def detect_and_encode_all_faces(frame_bytes: bytes, downscale: float = 0.5):
                 scale_factor = 1.0
 
             # Fallback 3: For backlit scenes (e.g. bright window behind student), enhance contrast using CLAHE
+            enhanced_frame = None
             if not small_locations and OPENCV_AVAILABLE:
                 try:
                     lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
                     l, a, b = cv2.split(lab)
-                    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+                    clahe = cv2.createCLAHE(clipLimit=3.5, tileGridSize=(8, 8))
                     cl = clahe.apply(l)
-                    enhanced = cv2.cvtColor(cv2.merge((cl, a, b)), cv2.COLOR_LAB2RGB)
-                    small_locations = fr.face_locations(enhanced, number_of_times_to_upsample=0, model='hog')
+                    enhanced_frame = cv2.cvtColor(cv2.merge((cl, a, b)), cv2.COLOR_LAB2RGB)
+                    small_locations = fr.face_locations(enhanced_frame, number_of_times_to_upsample=0, model='hog')
+                    if not small_locations:
+                        small_locations = fr.face_locations(enhanced_frame, number_of_times_to_upsample=1, model='hog')
                     scale_factor = 1.0
+                except Exception:
+                    pass
+
+            # Fallback 4: Gamma correction (brightens underexposed faces in backlit conditions)
+            if not small_locations and OPENCV_AVAILABLE:
+                try:
+                    table = np.array([((i / 255.0) ** 0.55) * 255 for i in range(256)]).astype("uint8")
+                    gamma_img = cv2.LUT(img_np, table)
+                    small_locations = fr.face_locations(gamma_img, number_of_times_to_upsample=0, model='hog')
+                    if not small_locations:
+                        small_locations = fr.face_locations(gamma_img, number_of_times_to_upsample=1, model='hog')
+                    scale_factor = 1.0
+                except Exception:
+                    pass
+
+            # Fallback 5: dlib frontal face detector with lowered confidence threshold (-0.4)
+            if not small_locations:
+                try:
+                    dlib_det = dlib.get_frontal_face_detector()
+                    dets, _, _ = dlib_det.run(img_np, 1, -0.4)
+                    if dets:
+                        small_locations = [(d.top(), d.right(), d.bottom(), d.left()) for d in dets]
+                        scale_factor = 1.0
+                except Exception:
+                    pass
+
+            # Fallback 6: OpenCV Haar Cascade detector
+            if not small_locations and OPENCV_AVAILABLE:
+                try:
+                    gray = _to_gray(img_np)
+                    haar_faces = _detect_faces_cv(gray)
+                    if len(haar_faces) > 0:
+                        small_locations = [(y, x + fw, y + fh, x) for (x, y, fw, fh) in haar_faces]
+                        scale_factor = 1.0
                 except Exception:
                     pass
 
@@ -184,13 +234,26 @@ def detect_and_encode_all_faces(frame_bytes: bytes, downscale: float = 0.5):
                 ))
 
             if upscaled_locations:
-                encodings = fr.face_encodings(img_np, upscaled_locations)
+                try:
+                    encodings = fr.face_encodings(img_np, upscaled_locations)
+                except Exception:
+                    encodings = []
+
+                if (not encodings or len(encodings) < len(upscaled_locations)) and enhanced_frame is not None:
+                    try:
+                        enhanced_encodings = fr.face_encodings(enhanced_frame, upscaled_locations)
+                        if enhanced_encodings:
+                            encodings = enhanced_encodings
+                    except Exception:
+                        pass
+
                 for enc, (top, right, bottom, left) in zip(encodings, upscaled_locations):
                     results.append({
                         'encoding': enc.tolist(),
                         'box': {'top': top, 'right': right, 'bottom': bottom, 'left': left}
                     })
-            return results
+            if results:
+                return results
 
         if LBPH_AVAILABLE:
             gray = _to_gray(img_np)

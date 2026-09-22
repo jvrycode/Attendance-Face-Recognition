@@ -4,10 +4,61 @@ from django.utils import timezone
 from accounts.models import Teacher, Student
 
 
-class Subject(models.Model):
-    """Academic subject."""
-    name = models.CharField(max_length=150)
+class Program(models.Model):
+    """Academic Program (e.g. BSCS, BSIT, BSA at FSUU)."""
     code = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=150)
+    college = models.CharField(max_length=150, blank=True, default='')
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+    class Meta:
+        ordering = ['code']
+        verbose_name = 'Program'
+        verbose_name_plural = 'Programs'
+
+
+class ProgramSection(models.Model):
+    """
+    Master Section Definition (3NF Entity).
+    Represents an official academic class section belonging to a Program/College
+    (e.g., 'BSCS-2A' or 'IT 43' under CITEC).
+    """
+    YEAR_LEVEL_CHOICES = [
+        (1, '1st Year'),
+        (2, '2nd Year'),
+        (3, '3rd Year'),
+        (4, '4th Year'),
+    ]
+
+    program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name='standard_sections')
+    name = models.CharField(max_length=50)
+    year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, default=1)
+    description = models.CharField(max_length=150, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Program Section'
+        verbose_name_plural = 'Program Sections'
+        unique_together = ['program', 'name']
+        ordering = ['program__code', 'year_level', 'name']
+
+    def __str__(self):
+        return f"{self.program.code} - {self.name} ({self.get_year_level_display()})"
+
+
+class Subject(models.Model):
+    """Academic subject linked to a Program and Section."""
+    program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name='subjects', null=True, blank=True)
+    section = models.ForeignKey('Section', on_delete=models.SET_NULL, null=True, blank=True, related_name='subjects')
+    teacher = models.ForeignKey(
+        Teacher, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_subjects'
+    )
+    code = models.CharField(max_length=20)
+    name = models.CharField(max_length=150)
     description = models.TextField(blank=True)
     units = models.PositiveSmallIntegerField(default=3)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -22,10 +73,28 @@ class Subject(models.Model):
 
 
 class Section(models.Model):
-    """A class section for a subject, assigned to a teacher."""
+    """
+    A class section offering for an academic term (School Year + Semester).
+    3NF Compliant: Links directly to ProgramSection master definition,
+    while maintaining 'name', 'program', and 'year_level' for full backward compatibility.
+    """
+    YEAR_LEVEL_CHOICES = [
+        (1, '1st Year'),
+        (2, '2nd Year'),
+        (3, '3rd Year'),
+        (4, '4th Year'),
+    ]
+
+    program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name='sections', null=True, blank=True)
+    program_section = models.ForeignKey(
+        ProgramSection, on_delete=models.SET_NULL, null=True, blank=True, related_name='offerings'
+    )
     name = models.CharField(max_length=50)
-    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='sections')
-    # One teacher can handle many sections
+    year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, default=1)
+    subject = models.ForeignKey(
+        Subject, on_delete=models.SET_NULL, null=True, blank=True, related_name='sections'
+    )
+    # Teacher handling this section
     teacher = models.ForeignKey(
         Teacher, on_delete=models.SET_NULL, null=True, blank=True, related_name='sections'
     )
@@ -37,35 +106,36 @@ class Section(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def save(self, *args, **kwargs):
+        if self.program_section:
+            self.name = self.program_section.name
+            self.program = self.program_section.program
+            self.year_level = self.program_section.year_level
+        super().save(*args, **kwargs)
+
+    @property
+    def effective_subject(self):
+        """Returns the primary subject for this section."""
+        return self.subject or self.subjects.first()
+
     def __str__(self):
-        return f"{self.name} - {self.subject.code} ({self.school_year} {self.semester})"
+        sub_code = self.effective_subject.code if self.effective_subject else "No Subject"
+        prog_code = f" [{self.program.code}]" if self.program else ""
+        return f"{self.name}{prog_code} - {sub_code} ({self.school_year} {self.semester})"
 
     @property
     def schedule_display(self):
-        """Returns concise summary of schedules, e.g. 'M-TH 08:00–09:30 @ Room 101' or 'Mon 08:00–09:30 @ Room 101'."""
+        """Returns concise summary of schedules, e.g. 'T–TH 18:00–20:30 @ Room 226 (LAB-7)'."""
         schedules = list(self.schedules.all())
         if not schedules:
             return "No schedule set"
 
         day_order = {'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7}
-        day_short = {'Mon': 'M', 'Tue': 'T', 'Wed': 'W', 'Thu': 'TH', 'Fri': 'F', 'Sat': 'S', 'Sun': 'Su'}
-
-        # Sort chronologically by day
         schedules.sort(key=lambda s: (day_order.get(s.day_of_week, 99), s.start_time))
 
-        grouped = {}
-        for s in schedules:
-            time_room = (s.start_time.strftime("%H:%M"), s.end_time.strftime("%H:%M"), s.room)
-            grouped.setdefault(time_room, []).append(s.day_of_week)
-
         parts = []
-        for (start, end, room), days in grouped.items():
-            if len(days) > 1:
-                short_days = [day_short.get(d, d) for d in days]
-                day_str = "-".join(short_days)
-            else:
-                day_str = days[0]
-            parts.append(f"{day_str} {start}–{end} @ {room}")
+        for s in schedules:
+            parts.append(f"{s.days_display} {s.time_display} @ {s.room}")
 
         return ", ".join(parts)
 
@@ -101,13 +171,50 @@ class Schedule(models.Model):
     ]
 
     section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name='schedules')
-    day_of_week = models.CharField(max_length=3, choices=DAY_CHOICES)
+    day_of_week = models.CharField(max_length=3, choices=DAY_CHOICES, verbose_name='Day 1')
+    day_2 = models.CharField(
+        max_length=3, choices=DAY_CHOICES, null=True, blank=True,
+        verbose_name='Day 2',
+        help_text='Second meeting day (e.g. Thu for a Tue–Thu pattern). Leave blank for single-day classes.'
+    )
     start_time = models.TimeField()
     end_time = models.TimeField()
     room = models.CharField(max_length=50)
+    # Validity window — allows admin to adjust schedule dates due to
+    # suspensions, climate events, semester changes, etc.
+    effective_from = models.DateField(null=True, blank=True, help_text='First date this schedule is active (leave blank = no start restriction)')
+    effective_to = models.DateField(null=True, blank=True, help_text='Last date this schedule is active (leave blank = no end restriction)')
+
+    DAY_SHORT = {'Mon': 'M', 'Tue': 'T', 'Wed': 'W', 'Thu': 'TH', 'Fri': 'F', 'Sat': 'S', 'Sun': 'Su'}
+
+    @property
+    def days_display(self):
+        """Returns e.g. 'T–TH', 'M–W', or 'Sat' for display."""
+        d1 = self.DAY_SHORT.get(self.day_of_week, self.day_of_week)
+        if self.day_2:
+            d2 = self.DAY_SHORT.get(self.day_2, self.day_2)
+            return f"{d1}–{d2}"
+        return d1
+
+    @property
+    def meeting_days(self):
+        """Returns list of all days this schedule meets on."""
+        days = [self.day_of_week]
+        if self.day_2:
+            days.append(self.day_2)
+        return days
+
+    @property
+    def time_display(self):
+        """Returns e.g. '6:00–8:30 PM' or '8:00–9:30 AM'."""
+        def fmt(t):
+            h = t.hour % 12 or 12
+            return f"{h}:{t.minute:02d}"
+        period = 'PM' if self.end_time.hour >= 12 else 'AM'
+        return f"{fmt(self.start_time)}–{fmt(self.end_time)} {period}"
 
     def __str__(self):
-        return f"{self.section.name} | {self.get_day_of_week_display()} {self.start_time:%H:%M}–{self.end_time:%H:%M} @ {self.room}"
+        return f"{self.section.name} | {self.days_display} {self.time_display} @ {self.room}"
 
     def clean(self):
         """Validate no schedule conflicts (room or teacher) via ScheduleService."""

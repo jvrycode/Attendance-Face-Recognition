@@ -1,34 +1,89 @@
 {% extends 'base.html' %}
 {% block title %}Subjects{% endblock %}
 {% block page_title %}Subjects{% endblock %}
-{% block header_actions %}<a href="{% url 'subject_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Subject</a>{% endblock %}
+{% block page_subtitle %}<p>Academic course subjects and section assignments</p>{% endblock %}
+
+{% block header_actions %}
+  {% if request.user.role == 'admin' %}
+    <a href="{% url 'subject_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Subject</a>
+  {% endif %}
+{% endblock %}
 
 {% block content %}
 <div class="card">
   <div class="table-container" style="border:none;">
     <table>
       <thead>
-        <tr><th>Code</th><th>Name</th><th>Units</th><th>Sections</th><th>Actions</th></tr>
+        <tr>
+          <th>Code</th>
+          <th>Subject Name</th>
+          <th>Program</th>
+          <th>Linked Section</th>
+          <th>Instructor</th>
+          <th>Units</th>
+          <th>Actions</th>
+        </tr>
       </thead>
       <tbody>
         {% for subject in subjects %}
         <tr>
-          <td><span class="badge badge-accent">{{ subject.code }}</span></td>
+          <td><span class="badge badge-accent" style="font-weight:700;">{{ subject.code }}</span></td>
           <td>
             <div class="font-bold">{{ subject.name }}</div>
             {% if subject.description %}<div class="text-muted" style="font-size:11px;">{{ subject.description|truncatechars:60 }}</div>{% endif %}
           </td>
-          <td>{{ subject.units }}</td>
-          <td><span class="badge badge-info">{{ subject.section_count }}</span></td>
           <td>
-            <div class="flex gap-1">
-              <a href="{% url 'subject_edit' subject.pk %}" class="btn btn-outline btn-sm"><i data-lucide="edit-2"></i> Edit</a>
-              <a href="{% url 'subject_delete' subject.pk %}" class="btn btn-danger btn-sm"><i data-lucide="trash-2"></i></a>
+            {% if subject.program %}
+              <span class="badge badge-info">{{ subject.program.code }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if subject.section %}
+              <span class="badge badge-outline" style="font-weight:600;"><i data-lucide="building" style="width:12px; height:12px;"></i> {{ subject.section.name }}</span>
+            {% else %}
+              <span class="text-muted">Unlinked</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if subject.teacher %}
+              {{ subject.teacher.user.get_full_name|default:subject.teacher.user.username }}
+            {% elif subject.section and subject.section.teacher %}
+              {{ subject.section.teacher.user.get_full_name|default:subject.section.teacher.user.username }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>{{ subject.units }}</td>
+          <td>
+            <div class="action-popover-dropdown">
+              <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="Actions" aria-label="Actions">
+                <i data-lucide="more-vertical"></i>
+              </button>
+              <div class="action-popover-menu">
+                {% if request.user.role == 'admin' %}
+                  <a href="{% url 'subject_edit' subject.pk %}" class="action-popover-item">
+                    <i data-lucide="edit-2"></i> Edit Subject
+                  </a>
+                  <div class="action-popover-divider"></div>
+                  <a href="{% url 'subject_delete' subject.pk %}" class="action-popover-item text-danger">
+                    <i data-lucide="trash-2"></i> Delete Subject
+                  </a>
+                {% endif %}
+              </div>
             </div>
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="text-center text-muted" style="padding:30px;">No subjects found. <a href="{% url 'subject_create' %}">Add one</a></td></tr>
+        <tr>
+          <td colspan="7" class="text-center text-muted" style="padding:30px;">
+            No subjects found.
+            {% if request.user.role == 'admin' %}
+              <a href="{% url 'subject_create' %}">Add one</a>
+            {% endif %}
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>

@@ -48,3 +48,6 @@ db.sqlite3-journal
 # Frontend SPA Archive & Node
 frontend_spa_archive/
 node_modules/
+
+# Local backups
+backups/

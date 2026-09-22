@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @login_required
 def enroll_face(request):
-    """Student face enrollment view."""
+    """Face enrollment — Admin only."""
     user = request.user
 
     if user.role == 'admin':
@@ -30,27 +30,8 @@ def enroll_face(request):
         else:
             students = Student.objects.select_related('user').all()
             return render(request, 'face/enroll_select.html', {'students': students})
-    elif user.role == 'teacher':
-        # Teacher can enroll for students in their assigned sections
-        student_id = request.GET.get('student_id')
-        teacher = getattr(user, 'teacher_profile', None)
-        if student_id:
-            student = get_object_or_404(Student, pk=student_id)
-            if teacher and not student.enrollments.filter(section__teacher=teacher).exists():
-                messages.error(request, "Permission denied: Student is not in your assigned sections.")
-                return redirect('dashboard')
-        else:
-            if teacher:
-                students = Student.objects.filter(
-                    enrollments__section__teacher=teacher
-                ).select_related('user').distinct()
-            else:
-                students = Student.objects.none()
-            return render(request, 'face/enroll_select.html', {'students': students})
-    elif user.role == 'student':
-        student = get_object_or_404(Student, user=user)
     else:
-        messages.error(request, "Permission denied.")
+        messages.error(request, "Permission denied. Face enrollment is managed by the administrator.")
         return redirect('dashboard')
 
     return render(request, 'face/enroll.html', {
@@ -75,16 +56,10 @@ def enroll_face_capture(request):
 
         student = get_object_or_404(Student, pk=student_id)
 
-        # Check permissions
+        # Check permissions — admin only
         user = request.user
-        if user.role == 'student' and student.user != user:
-            return JsonResponse({'error': 'Permission denied'}, status=403)
-        elif user.role == 'teacher':
-            teacher = getattr(user, 'teacher_profile', None)
-            if not teacher or not student.enrollments.filter(section__teacher=teacher).exists():
-                return JsonResponse({'error': 'Permission denied: Student is not in your assigned sections'}, status=403)
-        elif user.role != 'admin' and user.role != 'student':
-            return JsonResponse({'error': 'Permission denied'}, status=403)
+        if user.role != 'admin':
+            return JsonResponse({'error': 'Permission denied. Face enrollment is for admin only.'}, status=403)
 
         if not FR_AVAILABLE:
             return JsonResponse({
@@ -185,19 +160,11 @@ def delete_face(request):
     user = request.user
     student_id = request.POST.get('student_id')
 
-    # Admins can delete any student's face; teachers can delete for their students; students delete their own
+    # Admin only
     if user.role == 'admin' and student_id:
         student = get_object_or_404(Student, pk=student_id)
-    elif user.role == 'teacher' and student_id:
-        teacher = getattr(user, 'teacher_profile', None)
-        student = get_object_or_404(Student, pk=student_id)
-        if not teacher or not student.enrollments.filter(section__teacher=teacher).exists():
-            messages.error(request, 'Permission denied: Student is not in your assigned sections.')
-            return redirect('dashboard')
-    elif user.role == 'student':
-        student = get_object_or_404(Student, user=user)
     else:
-        messages.error(request, 'Permission denied.')
+        messages.error(request, 'Permission denied. Face enrollment is managed by the administrator.')
         return redirect('dashboard')
 
     # Delete the face image file from disk
@@ -217,7 +184,4 @@ def delete_face(request):
     FaceService.invalidate_cache()
 
     messages.success(request, 'Face data has been deleted successfully.')
-
-    if user.role in ('admin', 'teacher') and student_id:
-        return redirect(f'/face/enroll/?student_id={student.pk}')
     return redirect('enroll_face')

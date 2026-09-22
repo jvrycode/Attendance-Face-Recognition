@@ -2,9 +2,10 @@
 {% block title %}Session Report{% endblock %}
 {% block page_title %}Attendance Report{% endblock %}
 {% block page_subtitle %}
-  <p>{{ session.schedule.section.name }} | {{ session.schedule.section.subject.code }} | {{ session.date }}</p>
+  <p>{{ session.schedule.section.name }} | {{ session.schedule.section.effective_subject.code|default:"—" }} | {{ session.date }}</p>
 {% endblock %}
 {% block header_actions %}
+  <a href="{% url 'attendance_history' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to History</a>
   <button onclick="window.print()" class="btn btn-outline"><i data-lucide="printer"></i> Print</button>
   {% if session.status == 'open' %}
     <a href="{% url 'session_live' session.pk %}" class="btn btn-primary"><i data-lucide="camera"></i> Live Scanner</a>
@@ -61,7 +62,7 @@
         <span class="badge badge-success"><i data-lucide="circle-dot"></i> Session Open</span>
         <a href="{% url 'session_live' session.pk %}" class="btn btn-primary btn-sm" style="margin-left:8px;">Go Live</a>
       {% else %}
-        <span class="badge badge-muted">Closed at {{ session.closed_at|time:"H:i" }}</span>
+        <span class="badge badge-muted">Closed at {{ session.closed_at|time:"g:i A" }}</span>
       {% endif %}
     </div>
   </div>
@@ -89,7 +90,7 @@
             {% elif record.status == 'excused' %}<span class="badge badge-info"><i data-lucide="file-text"></i> Excused</span>
             {% else %}<span class="badge badge-danger"><i data-lucide="x-circle"></i> Absent</span>{% endif %}
           </td>
-          <td class="text-muted">{{ record.recognized_at|time:"H:i:s"|default:"—" }}</td>
+          <td class="text-muted">{{ record.recognized_at|time:"g:i:s A"|default:"—" }}</td>
           <td class="text-muted">
             {% if record.confidence_score %}{{ record.confidence_score|floatformat:1 }}%{% else %}—{% endif %}
           </td>

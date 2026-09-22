@@ -1,10 +1,19 @@
 {% extends 'base.html' %}
 {% block title %}{{ section.name }} Detail{% endblock %}
 {% block page_title %}{{ section.name }}{% endblock %}
-{% block page_subtitle %}<p>{{ section.subject.code }} – {{ section.subject.name }} | {{ section.school_year }} {{ section.semester }}</p>{% endblock %}
+{% block page_subtitle %}
+  <p>
+    {% if section.program %}<span class="badge badge-info" style="margin-right:6px; font-weight:700;">{{ section.program.code }}</span>{% endif %}
+    {{ section.effective_subject.code|default:"No Subject" }} – {{ section.effective_subject.name|default:"General Section" }} | {{ section.get_year_level_display }} | {{ section.school_year }} {{ section.semester }}
+  </p>
+{% endblock %}
 
 {% block header_actions %}
-  <a href="{% url 'section_edit' section.pk %}" class="btn btn-outline"><i data-lucide="edit-2"></i> Edit</a>
+  <a href="{% url 'section_list' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to Sections</a>
+  <a href="{% url 'section_attendance_report' %}?section_id={{ section.pk }}" class="btn btn-primary"><i data-lucide="file-text"></i> Attendance Report</a>
+  {% if request.user.role == 'admin' %}
+    <a href="{% url 'section_edit' section.pk %}" class="btn btn-outline"><i data-lucide="edit-2"></i> Edit Section</a>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -21,13 +30,20 @@
     <div class="card-body" style="padding:0;">
       {% if section.schedules.all %}
         <table>
-          <thead><tr><th>Day</th><th>Time</th><th>Room</th><th></th></tr></thead>
+          <thead><tr><th>Day</th><th>Time</th><th>Room</th><th>Effective Period</th><th></th></tr></thead>
           <tbody>
             {% for sched in section.schedules.all %}
             <tr>
-              <td>{{ sched.get_day_of_week_display }}</td>
-              <td>{{ sched.start_time|time:"H:i" }} – {{ sched.end_time|time:"H:i" }}</td>
+              <td><span class="badge badge-info" style="font-weight:700;">{{ sched.days_display }}</span></td>
+              <td>{{ sched.start_time|time:"g:i A" }} – {{ sched.end_time|time:"g:i A" }}</td>
               <td>{{ sched.room }}</td>
+              <td style="font-size:12px; color:var(--text-muted);">
+                {% if sched.effective_from or sched.effective_to %}
+                  {{ sched.effective_from|date:"M j, Y"|default:"Any" }} &rarr; {{ sched.effective_to|date:"M j, Y"|default:"Ongoing" }}
+                {% else %}
+                  <span style="opacity:.5;">No restriction</span>
+                {% endif %}
+              </td>
               <td>
                 {% if request.user.role == 'teacher' %}
                   <a href="{% url 'session_start' sched.pk %}" class="btn btn-success btn-sm"><i data-lucide="play"></i> Start Session</a>
@@ -68,18 +84,18 @@
   </div>
 </div>
 
-<!-- Students -->
+<!-- Class List (Students) -->
 <div class="card">
   <div class="card-header">
-    <span class="card-title"><i data-lucide="graduation-cap"></i> Enrolled Students ({{ section.enrollments.count }})</span>
+    <span class="card-title"><i data-lucide="graduation-cap"></i> Class List ({{ section.enrollments.count }} Enrolled)</span>
   </div>
   <div class="card-body">
-    {% if request.user.role in 'admin,teacher' %}
+    {% if request.user.role == 'admin' %}
     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
       <form method="post" style="display:flex; gap:10px; flex:1; max-width:500px; margin:0;">
         {% csrf_token %}
         {{ enroll_form.student }}
-        <button type="submit" class="btn btn-primary" style="white-space:nowrap;"><i data-lucide="user-check"></i> Add Existing</button>
+        <button type="submit" class="btn btn-primary" style="white-space:nowrap;"><i data-lucide="user-check"></i> Add Student to Section</button>
       </form>
       <a href="{% url 'student_register' %}?section_id={{ section.pk }}" class="btn btn-success">
         <i data-lucide="user-plus"></i> Register New Student to Section
@@ -89,7 +105,7 @@
     {% if section.enrollments.all %}
     <div class="table-container">
       <table>
-        <thead><tr><th>Student</th><th>Student ID</th><th>Course</th><th>Face</th>{% if request.user.role in 'admin,teacher' %}<th>Actions</th>{% endif %}</tr></thead>
+        <thead><tr><th>Student</th><th>Student ID</th><th>Course</th><th>Face Status</th>{% if request.user.role in 'admin,teacher' %}<th>Actions</th>{% endif %}</tr></thead>
         <tbody>
           {% for enrollment in section.enrollments.all %}
           <tr>
@@ -110,13 +126,15 @@
             </td>
             {% if request.user.role in 'admin,teacher' %}
             <td>
-              <div style="display:flex; gap:6px; align-items:center;">
-                <a href="{% url 'enroll_face' %}?student_id={{ enrollment.student.pk }}" class="btn btn-outline btn-sm">
-                  <i data-lucide="camera"></i> {% if enrollment.student.is_face_enrolled %}Re-enroll{% else %}Enroll Face{% endif %}
-                </a>
-                <form method="post" action="{% url 'student_unenroll' section.pk enrollment.student.pk %}" onsubmit="return confirm('Remove this student from section?')" style="margin:0;">
+              <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                {% if request.user.role == 'admin' %}
+                  <a href="{% url 'enroll_face' %}?student_id={{ enrollment.student.pk }}" class="btn btn-outline btn-sm">
+                    <i data-lucide="camera"></i> {% if enrollment.student.is_face_enrolled %}Re-enroll Face{% else %}Enroll Face{% endif %}
+                  </a>
+                {% endif %}
+                <form method="post" action="{% url 'student_unenroll' section.pk enrollment.student.pk %}" onsubmit="return confirm('Drop this student from the section?')" style="margin:0;">
                   {% csrf_token %}
-                  <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                  <button type="submit" class="btn btn-danger btn-sm"><i data-lucide="user-minus"></i> Drop Student</button>
                 </form>
               </div>
             </td>
@@ -127,7 +145,15 @@
       </table>
     </div>
     {% else %}
-      <p class="text-muted text-center">No students enrolled yet.</p>
+      <div style="text-align:center; padding:36px 16px; color:var(--text-muted);">
+        <i data-lucide="users" style="width:36px; height:36px; margin:0 auto 8px; opacity:.4; display:block;"></i>
+        <div style="font-weight:600; font-size:14px;">No students enrolled yet.</div>
+        {% if request.user.role == 'teacher' %}
+          <div style="font-size:12px; margin-top:4px; opacity:.75;">The administrator registers and assigns students to this class list.</div>
+        {% else %}
+          <div style="font-size:12px; margin-top:4px; opacity:.75;">Use the form above to add or register students into this class.</div>
+        {% endif %}
+      </div>
     {% endif %}
   </div>
 </div>

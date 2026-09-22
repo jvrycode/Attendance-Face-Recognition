@@ -22,10 +22,10 @@
   </div>
 </div>
 
-<!-- My Sections -->
+<!-- My Sections & Schedules -->
 <div class="card mb-3">
   <div class="card-header">
-    <span class="card-title"><i data-lucide="building"></i> My Sections</span>
+    <span class="card-title"><i data-lucide="calendar"></i> My Sections & Schedules</span>
   </div>
   {% if sections %}
   <div class="table-container" style="border:none; border-radius:0;">
@@ -46,7 +46,10 @@
           <td><span class="badge badge-accent">{{ section.subject.code }}</span> {{ section.subject.name }}</td>
           <td>
             {% for sched in section.schedules.all %}
-              <div style="font-size:12px;">{{ sched.get_day_of_week_display }} {{ sched.start_time|time:"H:i" }}–{{ sched.end_time|time:"H:i" }} @ {{ sched.room }}</div>
+              <div style="font-size:12px; display:flex; align-items:center; gap:5px;">
+                <span class="badge badge-info" style="font-size:11.5px; font-weight:700;">{{ sched.days_display }}</span>
+                {{ sched.start_time|time:"g:i A" }}–{{ sched.end_time|time:"g:i A" }} @ {{ sched.room }}
+              </div>
             {% empty %}
               <span class="text-muted">No schedule</span>
             {% endfor %}
@@ -55,14 +58,17 @@
           <td>
             <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
               {% for sched in section.schedules.all %}
-                <a href="{% url 'session_start' sched.pk %}" class="btn btn-success btn-sm" title="Start attendance session for {{ sched.get_day_of_week_display }} {{ sched.start_time|time:'H:i' }}">
+                <a href="{% url 'session_start' sched.pk %}" class="btn btn-success btn-sm" title="Start attendance for {{ sched.days_display }} {{ sched.start_time|time:'g:i A' }}">
                   <i data-lucide="play"></i> Start Attendance
                 </a>
               {% empty %}
                 <span class="text-muted" style="font-size:12px;">No schedule</span>
               {% endfor %}
-              <a href="{% url 'section_detail' section.pk %}" class="btn btn-outline btn-sm" title="View enrolled students">
-                <i data-lucide="users"></i> Roster
+              <a href="{% url 'section_detail' section.pk %}" class="btn btn-outline btn-sm" title="View Class List">
+                <i data-lucide="users"></i> Class List
+              </a>
+              <a href="{% url 'section_attendance_report' %}?section_id={{ section.pk }}" class="btn btn-outline btn-sm" title="Daily or Weekly Attendance Report">
+                <i data-lucide="file-text"></i> Report
               </a>
             </div>
           </td>
@@ -80,7 +86,7 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title"><i data-lucide="clock"></i> Recent Sessions</span>
-    <a href="{% url 'attendance_history' %}" class="btn btn-outline btn-sm">View All</a>
+    <a href="{% url 'section_attendance_report' %}" class="btn btn-outline btn-sm"><i data-lucide="file-text"></i> Attendance Reports</a>
   </div>
   {% if recent_sessions %}
   <div class="table-container" style="border:none; border-radius:0;">

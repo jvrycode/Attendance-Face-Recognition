@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block page_subtitle %}<p>Define a standard section code under an Academic Program / College</p>{% endblock %}
+
+{% block header_actions %}
+  <a href="{% url 'section_catalog_list' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to Catalog</a>
+{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:560px;">
+  <div class="card-header"><span class="card-title"><i data-lucide="layers"></i> {{ title }}</span></div>
+  <div class="card-body">
+    <form method="post">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Academic Program / College *</label>
+        {{ form.program }}
+        {% if form.program.errors %}<div class="form-error">{{ form.program.errors.0 }}</div>{% endif %}
+        <div class="form-text">e.g. CITEC, CCJE, CTE, CoA</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Section Name / Code *</label>
+        {{ form.name }}
+        {% if form.name.errors %}<div class="form-error">{{ form.name.errors.0 }}</div>{% endif %}
+        <div class="form-text">e.g. BSCS-3A, IT 44, Crim-1B</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Year Level *</label>
+        {{ form.year_level }}
+        {% if form.year_level.errors %}<div class="form-error">{{ form.year_level.errors.0 }}</div>{% endif %}
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Description / Track (Optional)</label>
+        {{ form.description }}
+        {% if form.description.errors %}<div class="form-error">{{ form.description.errors.0 }}</div>{% endif %}
+        <div class="form-text">e.g. Major in Data Science, Morning Shift, etc.</div>
+      </div>
+
+      <div class="flex gap-1 mt-2">
+        <button type="submit" class="btn btn-primary"><i data-lucide="save"></i> Save Section Definition</button>
+        <a href="{% url 'section_catalog_list' %}" class="btn btn-outline">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

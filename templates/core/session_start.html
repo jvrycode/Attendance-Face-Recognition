@@ -2,15 +2,19 @@
 {% block title %}Start Attendance{% endblock %}
 {% block page_title %}Start Attendance Session{% endblock %}
 
+{% block header_actions %}
+  <a href="{% url 'section_list' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to Sections</a>
+{% endblock %}
+
 {% block content %}
 <div class="card" style="max-width:560px;">
   <div class="card-header"><span class="card-title"><i data-lucide="play"></i> Start Attendance</span></div>
   <div class="card-body">
     <table style="width:100%; margin-bottom:20px;">
       <tr><td class="text-muted" style="padding:6px 0; width:140px;">Section</td><td><strong>{{ schedule.section.name }}</strong></td></tr>
-      <tr><td class="text-muted" style="padding:6px 0;">Subject</td><td>{{ schedule.section.subject.code }} – {{ schedule.section.subject.name }}</td></tr>
-      <tr><td class="text-muted" style="padding:6px 0;">Day</td><td>{{ schedule.get_day_of_week_display }}</td></tr>
-      <tr><td class="text-muted" style="padding:6px 0;">Time</td><td>{{ schedule.start_time|time:"H:i" }} – {{ schedule.end_time|time:"H:i" }}</td></tr>
+      <tr><td class="text-muted" style="padding:6px 0;">Subject</td><td>{{ schedule.section.effective_subject.code|default:"—" }} – {{ schedule.section.effective_subject.name|default:"General" }}</td></tr>
+      <tr><td class="text-muted" style="padding:6px 0;">Day</td><td><strong>{{ schedule.days_display }}</strong></td></tr>
+      <tr><td class="text-muted" style="padding:6px 0;">Time</td><td>{{ schedule.start_time|time:"g:i A" }} – {{ schedule.end_time|time:"g:i A" }}</td></tr>
       <tr><td class="text-muted" style="padding:6px 0;">Room</td><td>{{ schedule.room }}</td></tr>
       <tr><td class="text-muted" style="padding:6px 0;">Students</td><td>{{ schedule.section.enrollments.count }}</td></tr>
     </table>
@@ -24,7 +28,7 @@
       {% csrf_token %}
       <div class="flex gap-1">
         <button type="submit" class="btn btn-success btn-lg"><i data-lucide="play"></i> Start Session</button>
-        <a href="{% url 'dashboard' %}" class="btn btn-outline">Cancel</a>
+        <a href="{% url 'section_list' %}" class="btn btn-outline">Cancel</a>
       </div>
     </form>
   </div>

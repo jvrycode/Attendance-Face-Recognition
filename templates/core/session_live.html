@@ -2,14 +2,17 @@
 {% block title %}Live Attendance{% endblock %}
 {% block page_title %}Live Attendance – {{ session.schedule.section.name }}{% endblock %}
 {% block page_subtitle %}
-  <p>{{ session.schedule.section.subject.code }} | {{ session.date }} | {{ session.schedule.start_time|time:"H:i" }}–{{ session.schedule.end_time|time:"H:i" }} @ {{ session.schedule.room }}</p>
+  <p>{{ session.schedule.section.effective_subject.code|default:"—" }} | {{ session.date }} | {{ session.schedule.start_time|time:"g:i A" }}–{{ session.schedule.end_time|time:"g:i A" }} @ {{ session.schedule.room }}</p>
 {% endblock %}
 
 {% block header_actions %}
-  <form method="post" action="{% url 'session_close' session.pk %}" onsubmit="return confirm('Close this session?')">
-    {% csrf_token %}
-    <button type="submit" class="btn btn-danger"><i data-lucide="square"></i> Close Session</button>
-  </form>
+  <div style="display:flex; align-items:center; gap:8px;">
+    <a href="{% url 'section_list' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to Sections</a>
+    <form method="post" action="{% url 'session_close' session.pk %}" onsubmit="return confirm('Close this session?')" style="margin:0;">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger"><i data-lucide="square"></i> Close Session</button>
+    </form>
+  </div>
 {% endblock %}
 
 {% block content %}
@@ -42,8 +45,8 @@
           <span id="status-text">Camera off</span>
         </div>
       </div>
-      <div class="camera-container" style="position: relative; border-radius: var(--radius); overflow: hidden; background: #000; min-height: 380px; display: flex; align-items: center; justify-content: center;">
-        <video id="camera-video" class="camera-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1); display: block;"></video>
+      <div class="camera-container" style="position: relative; border-radius: var(--radius); overflow: hidden; background: #000; aspect-ratio: 4/3; max-height: 480px; display: flex; align-items: center; justify-content: center;">
+        <video id="camera-video" class="camera-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block;"></video>
         <!-- Real-Time Bounding Box Canvas Overlay -->
         <canvas id="overlay-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5;"></canvas>
         <!-- Hidden processing canvas for frame captures -->
@@ -78,18 +81,18 @@
       <div class="card-header">
         <span class="card-title"><i data-lucide="clipboard-list"></i> Students ({{ records.count }})</span>
         <div>
-          <span class="badge badge-success" id="present-count">
-            <i data-lucide="check-circle"></i> {{ records|dictsort:"status"|first|default:"0" }}
+          <span class="badge badge-success">
+            <i data-lucide="check-circle"></i> Present: <span id="cnt-present-badge">0</span>
           </span>
         </div>
       </div>
       <div style="overflow-y:auto; flex:1; padding:12px;">
         <div class="attendance-list" id="attendance-list">
           {% for record in records %}
-          <div class="attendance-item {{ record.status }}" id="record-{{ record.student.pk }}" data-student-id="{{ record.student.pk }}">
-            <div class="student-avatar-sm">{{ record.student.user.first_name|first|upper }}</div>
+          <div class="attendance-item {{ record.status }}" id="record-{{ record.student.pk }}" data-student-id="{{ record.student.pk }}" data-student-number="{{ record.student.student_id }}">
+            <div class="student-avatar-sm">{{ record.student.user.first_name|first|default:record.student.user.username|first|upper }}</div>
             <div style="flex:1; min-width:0;">
-              <div class="font-bold truncate">{{ record.student.user.get_full_name }}</div>
+              <div class="font-bold truncate">{{ record.student.user.get_full_name|default:record.student.user.username }}</div>
               <div class="text-muted" style="font-size:11px;">{{ record.student.student_id }}</div>
             </div>
             <div style="text-align:right; flex-shrink:0;">
@@ -101,7 +104,7 @@
                 <span class="badge badge-muted" id="badge-{{ record.student.pk }}">Absent</span>
               {% endif %}
               <div id="rec-time-{{ record.student.pk }}" style="font-size:10px; color:var(--text-muted); margin-top:2px;">
-                {% if record.recognized_at %}{{ record.recognized_at|time:"H:i:s" }}{% endif %}
+                {% if record.recognized_at %}{{ record.recognized_at|time:"g:i:s A" }}{% endif %}
               </div>
             </div>
             <!-- Manual mark buttons (shown when absent) -->
@@ -196,9 +199,14 @@ function refreshCounts() {
     else if (el.classList.contains('late')) l++;
     else a++;
   });
-  document.getElementById('cnt-present').textContent = p;
-  document.getElementById('cnt-late').textContent = l;
-  document.getElementById('cnt-absent').textContent = a;
+  const cp = document.getElementById('cnt-present');
+  const cl = document.getElementById('cnt-late');
+  const ca = document.getElementById('cnt-absent');
+  const cpb = document.getElementById('cnt-present-badge');
+  if (cp) cp.textContent = p;
+  if (cl) cl.textContent = l;
+  if (ca) ca.textContent = a;
+  if (cpb) cpb.textContent = p;
 }
 
 async function startCamera() {
@@ -213,8 +221,16 @@ async function startCamera() {
     document.getElementById('btn-start-cam').style.display = 'none';
     document.getElementById('btn-stop-cam').style.display = 'inline-flex';
     document.getElementById('btn-toggle-fr').style.display = 'inline-flex';
+    document.getElementById('btn-toggle-fr').innerHTML = '<i data-lucide="pause"></i> Pause Recognition';
+    document.getElementById('btn-toggle-fr').className = 'btn btn-warning';
     document.getElementById('face-guide').style.display = 'block';
-    setStatus('ready', 'Camera ready');
+
+    // Start recognition automatically immediately
+    isRecognizing = true;
+    setStatus('scanning', 'Scanning...');
+    captureAndRecognize();
+    recognitionInterval = setInterval(captureAndRecognize, 600);
+
     if (window.lucide) lucide.createIcons();
   } catch (e) {
     alert('Camera error: ' + e.message);
@@ -319,13 +335,21 @@ async function captureAndRecognize() {
     }
 
     if (data.success) {
-      drawBoundingBoxes(data.recognized, targetW, targetH);
+      try {
+        drawBoundingBoxes(data.recognized, targetW, targetH);
+      } catch (boxErr) {
+        console.warn('drawBoundingBoxes warning:', boxErr);
+      }
       if (data.recognized && data.recognized.length > 0) {
         data.recognized.forEach(r => {
-          if (r.matched) {
-            handleRecognized(r);
-          } else if (r.wrong_section) {
-            handleWrongSection(r);
+          try {
+            if (r.matched) {
+              handleRecognized(r);
+            } else if (r.wrong_section) {
+              handleWrongSection(r);
+            }
+          } catch (recErr) {
+            console.warn('handleRecognized warning:', recErr);
           }
         });
       }
@@ -356,24 +380,24 @@ function drawBoundingBoxes(recognizedList, videoW, videoH) {
     if (!box) return;
 
     // Coordinate translation for mirrored video (video has CSS scaleX(-1))
-    const boxW = Math.max(10, box.right - box.left);
-    const boxH = Math.max(10, box.bottom - box.top);
-    const dispLeft = videoW - box.right;
-    const dispTop = box.top;
+    const boxW = Math.max(20, box.right - box.left);
+    const boxH = Math.max(20, box.bottom - box.top);
+    const dispLeft = Math.max(0, videoW - box.right);
+    const dispTop = Math.max(0, box.top);
 
-    const isMatch = item.matched && item.name && item.name !== 'Unknown';
-    const isWrongSection = item.wrong_section;
+    const isMatch = Boolean(item.matched && item.name && item.name !== 'Unknown');
+    const isWrongSection = Boolean(item.wrong_section);
 
-    let color = isMatch ? '#10b981' : (isWrongSection ? '#ef4444' : '#f59e0b');
-    let bgColor = isMatch ? 'rgba(16, 185, 129, 0.92)' : (isWrongSection ? 'rgba(239, 68, 68, 0.95)' : 'rgba(245, 158, 11, 0.92)');
+    const color = isMatch ? '#10b981' : (isWrongSection ? '#ef4444' : '#f59e0b');
+    const bgColor = isMatch ? 'rgba(16, 185, 129, 0.95)' : (isWrongSection ? 'rgba(239, 68, 68, 0.95)' : 'rgba(245, 158, 11, 0.95)');
 
     // Bounding Box
     ctx.strokeStyle = color;
-    ctx.lineWidth = isWrongSection ? 4 : 3;
+    ctx.lineWidth = 3;
     ctx.strokeRect(dispLeft, dispTop, boxW, boxH);
 
     // Corner accents
-    const corner = Math.min(18, boxW / 4, boxH / 4);
+    const corner = Math.min(20, Math.floor(boxW / 4), Math.floor(boxH / 4));
     ctx.lineWidth = 5;
     ctx.beginPath();
     // Top-left
@@ -394,30 +418,40 @@ function drawBoundingBoxes(recognizedList, videoW, videoH) {
     ctx.lineTo(dispLeft + boxW, dispTop + boxH - corner);
     ctx.stroke();
 
-    // Floating Label with Student ID and Name
-    let labelText = 'Unknown / Face Not Enrolled';
+    // Floating Label
+    let labelText = 'Unknown Face';
     if (isMatch) {
-      labelText = `${item.student_number ? item.student_number + ' · ' : ''}${item.name} (${item.confidence}%)`;
+      labelText = `✓ ${item.name} (${item.confidence}%)`;
     } else if (isWrongSection) {
-      labelText = `⚠ WRONG SECTION: ${item.student_number ? item.student_number + ' · ' : ''}${item.name} (Assigned: ${item.assigned_sections || 'Other'})`;
+      labelText = `⚠ WRONG SECTION: ${item.name}`;
     }
 
-    ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
-    const tagW = ctx.measureText(labelText).width + 16;
-    const tagH = 26;
-    const tagY = dispTop > tagH + 6 ? dispTop - tagH - 6 : dispTop + boxH + 6;
+    ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const textMetrics = ctx.measureText(labelText);
+    const tagW = textMetrics.width + 20;
+    const tagH = 28;
+    
+    // Ensure tag fits within canvas bounds
+    let tagX = Math.max(4, Math.min(dispLeft, videoW - tagW - 4));
+    let tagY = (dispTop > tagH + 8) ? (dispTop - tagH - 4) : (dispTop + boxH + 6);
 
     ctx.fillStyle = bgColor;
-    if (ctx.roundRect) {
+    // Safe rounded rectangle fallback
+    try {
       ctx.beginPath();
-      ctx.roundRect(dispLeft, tagY, tagW, tagH, 6);
+      if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(tagX, tagY, tagW, tagH, [6]);
+      } else {
+        ctx.rect(tagX, tagY, tagW, tagH);
+      }
       ctx.fill();
-    } else {
-      ctx.fillRect(dispLeft, tagY, tagW, tagH);
+    } catch(e) {
+      ctx.fillRect(tagX, tagY, tagW, tagH);
     }
 
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(labelText, dispLeft + 8, tagY + 18);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(labelText, tagX + 10, tagY + (tagH / 2));
   });
 }
 
@@ -430,30 +464,46 @@ function handleWrongSection(result) {
   playWarningBuzz();
 
   const popup = document.getElementById('recognition-popup');
-  popup.style.borderColor = '#ef4444';
-  document.getElementById('rec-name').textContent = `⚠ WRONG SECTION: ${(result.student_number ? result.student_number + ' — ' : '') + result.name}`;
-  document.getElementById('rec-status').innerHTML = `<span style="color:#ef4444; font-weight:700;">Assigned Section: ${result.assigned_sections || 'Different Section'}</span> — Attendance NOT marked`;
-  popup.style.display = 'block';
-  setTimeout(() => { popup.style.display = 'none'; }, 4000);
+  if (popup) {
+    popup.style.borderColor = '#ef4444';
+    document.getElementById('rec-name').textContent = `⚠ WRONG SECTION: ${(result.student_number ? result.student_number + ' — ' : '') + result.name}`;
+    document.getElementById('rec-status').innerHTML = `<span style="color:#ef4444; font-weight:700;">Assigned Section: ${result.assigned_sections || 'Different Section'}</span> — Attendance NOT marked`;
+    popup.style.display = 'block';
+    setTimeout(() => { popup.style.display = 'none'; }, 4000);
+  }
 
   if (window.lucide) lucide.createIcons();
 }
 
 const recognizedAlertCooldown = new Map();
 
+function findStudentElement(result) {
+  if (result.student_id) {
+    const el = document.getElementById('record-' + result.student_id)
+      || document.querySelector(`[data-student-id="${result.student_id}"]`);
+    if (el) return el;
+  }
+  if (result.student_number) {
+    const el = document.querySelector(`[data-student-number="${result.student_number}"]`);
+    if (el) return el;
+  }
+  return null;
+}
+
 function handleRecognized(result) {
-  const item = document.getElementById('record-' + result.student_id);
-  if (!item) return;
+  const item = findStudentElement(result);
+  if (!item) {
+    console.info('Student item not currently in DOM, syncing session...');
+    window.location.reload();
+    return;
+  }
 
-  const targetStatus = result.new_status || result.status;
-  if (!targetStatus) return;
+  const targetStatus = result.new_status || result.status || 'present';
+  const isCurrentlyMarked = item.classList.contains(targetStatus);
 
-  const isCurrentlyAbsent = item.classList.contains('absent');
-
-  // Update DOM if it's newly marked OR if DOM is currently showing absent
-  if (result.new_status || isCurrentlyAbsent) {
+  if (!isCurrentlyMarked) {
     item.className = 'attendance-item ' + targetStatus;
-    const badge = document.getElementById('badge-' + result.student_id);
+    const badge = item.querySelector('.badge') || document.getElementById('badge-' + result.student_id);
     if (badge) {
       badge.className = targetStatus === 'present' ? 'badge badge-success' : 'badge badge-warning';
       badge.innerHTML = targetStatus === 'present'
@@ -461,41 +511,45 @@ function handleRecognized(result) {
         : '<i data-lucide="alarm-clock"></i> Late';
     }
 
-    const timeEl = document.getElementById('rec-time-' + result.student_id);
+    const timeEl = document.getElementById('rec-time-' + result.student_id) || item.querySelector('[id^="rec-time-"]');
     if (timeEl) {
       const now = new Date();
       timeEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
 
-    const manualBtns = document.getElementById('manual-btns-' + result.student_id);
+    const manualBtns = document.getElementById('manual-btns-' + result.student_id) || item.querySelector('[id^="manual-btns-"]');
     if (manualBtns) manualBtns.remove();
 
     refreshCounts();
     playAttendanceChime(targetStatus === 'late');
 
-    // Show popup
+    // Show celebratory recognition popup
     const popup = document.getElementById('recognition-popup');
-    popup.style.borderColor = targetStatus === 'present' ? 'var(--success)' : 'var(--warning)';
-    document.getElementById('rec-name').textContent = (result.student_number ? result.student_number + ' — ' : '') + result.name;
-    document.getElementById('rec-status').innerHTML =
-      `${targetStatus === 'present' ? '<span style="color:var(--success); font-weight:700;">✓ Marked Present</span>' : '<span style="color:var(--warning); font-weight:700;">⏰ Marked Late</span>'} — ${result.confidence}% match (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })})`;
-    popup.style.display = 'block';
-    setTimeout(() => { popup.style.display = 'none'; }, 3500);
+    if (popup) {
+      popup.style.borderColor = targetStatus === 'present' ? 'var(--success)' : 'var(--warning)';
+      document.getElementById('rec-name').textContent = (result.student_number ? result.student_number + ' — ' : '') + result.name;
+      document.getElementById('rec-status').innerHTML =
+        `${targetStatus === 'present' ? '<span style="color:var(--success); font-weight:700;">✓ Marked Present</span>' : '<span style="color:var(--warning); font-weight:700;">⏰ Marked Late</span>'} — ${result.confidence}% match (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })})`;
+      popup.style.display = 'block';
+      setTimeout(() => { popup.style.display = 'none'; }, 3500);
+    }
 
     if (window.lucide) lucide.createIcons();
   } else {
-    // If student is already marked present/late, show occasional gentle confirmation when scanned again
+    // Already recorded: throttle confirmation
     const now = Date.now();
     const lastSeen = recognizedAlertCooldown.get(result.student_id) || 0;
     if (now - lastSeen > 5000) {
       recognizedAlertCooldown.set(result.student_id, now);
       const popup = document.getElementById('recognition-popup');
-      popup.style.borderColor = targetStatus === 'present' ? 'var(--success)' : 'var(--warning)';
-      document.getElementById('rec-name').textContent = (result.student_number ? result.student_number + ' — ' : '') + result.name;
-      document.getElementById('rec-status').innerHTML =
-        `<span style="color:${targetStatus === 'present' ? 'var(--success)' : 'var(--warning)'}; font-weight:700;">✓ Already Recorded (${targetStatus.toUpperCase()})</span> — ${result.confidence}% match`;
-      popup.style.display = 'block';
-      setTimeout(() => { popup.style.display = 'none'; }, 2500);
+      if (popup) {
+        popup.style.borderColor = targetStatus === 'present' ? 'var(--success)' : 'var(--warning)';
+        document.getElementById('rec-name').textContent = (result.student_number ? result.student_number + ' — ' : '') + result.name;
+        document.getElementById('rec-status').innerHTML =
+          `<span style="color:${targetStatus === 'present' ? 'var(--success)' : 'var(--warning)'}; font-weight:700;">✓ Already Recorded (${targetStatus.toUpperCase()})</span> — ${result.confidence}% match`;
+        popup.style.display = 'block';
+        setTimeout(() => { popup.style.display = 'none'; }, 2500);
+      }
       if (window.lucide) lucide.createIcons();
     }
   }
