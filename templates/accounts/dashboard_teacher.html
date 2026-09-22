@@ -107,19 +107,9 @@
               {% endfor %}
 
               <!-- Action Popover -->
-              <div class="action-popover-dropdown">
-                <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="More Actions" aria-label="More Actions">
-                  <i data-lucide="more-vertical"></i>
-                </button>
-                <div class="action-popover-menu">
-                  <a href="{% url 'section_detail' section.pk %}" class="action-popover-item">
-                    <i data-lucide="users"></i> View Class Roster
-                  </a>
-                  <a href="{% url 'section_attendance_report' %}?section_id={{ section.pk }}" class="action-popover-item">
-                    <i data-lucide="file-text"></i> Section Attendance Report
-                  </a>
-                </div>
-              </div>
+              {% url 'section_detail' section.pk as sec_detail %}
+              {% url 'section_attendance_report' as sec_report %}
+              {% include 'components/action_popover.html' with trigger_title="More Actions" detail_url=sec_detail detail_label="View Class Roster" detail_icon="users" report_url=sec_report|add:"?section_id="|add:section.pk %}
             </div>
           </td>
         </tr>

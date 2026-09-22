@@ -1,0 +1,68 @@
+{# Reusable Action Popover Component (3-Dots Menu) #}
+{# Parameters: #}
+{#   trigger_title: tooltip for 3-dots button (default: 'Actions') #}
+{#   trigger_icon: lucide icon name (default: 'more-vertical') #}
+{#   start_url, start_label, start_icon: green success action (e.g. Start Attendance) #}
+{#   primary_url, primary_label, primary_icon: general primary action #}
+{#   detail_url, detail_label, detail_icon: view details / class list action #}
+{#   report_url, report_label, report_icon: attendance report action #}
+{#   secondary_url, secondary_label, secondary_icon: secondary action #}
+{#   edit_url, edit_label, edit_icon: edit action #}
+{#   custom_items: optional iterable of dicts with url, label, icon, is_danger, is_success, is_divider #}
+{#   delete_url, delete_label, delete_icon: red danger action (automatically preceded by divider if other items exist) #}
+<div class="action-popover-dropdown">
+  <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="{{ trigger_title|default:'Actions' }}" aria-label="{{ trigger_title|default:'Actions' }}">
+    <i data-lucide="{{ trigger_icon|default:'more-vertical' }}"></i>
+  </button>
+  <div class="action-popover-menu">
+    {% if start_url %}
+      <a href="{{ start_url }}" class="action-popover-item text-success">
+        <i data-lucide="{{ start_icon|default:'play' }}"></i> {{ start_label|default:"Start Attendance" }}
+      </a>
+    {% endif %}
+    {% if primary_url %}
+      <a href="{{ primary_url }}" class="action-popover-item">
+        <i data-lucide="{{ primary_icon|default:'plus' }}"></i> {{ primary_label }}
+      </a>
+    {% endif %}
+    {% if detail_url %}
+      <a href="{{ detail_url }}" class="action-popover-item">
+        <i data-lucide="{{ detail_icon|default:'users' }}"></i> {{ detail_label|default:"View Details" }}
+      </a>
+    {% endif %}
+    {% if report_url %}
+      <a href="{{ report_url }}" class="action-popover-item">
+        <i data-lucide="{{ report_icon|default:'file-text' }}"></i> {{ report_label|default:"Attendance Report" }}
+      </a>
+    {% endif %}
+    {% if secondary_url %}
+      <a href="{{ secondary_url }}" class="action-popover-item">
+        <i data-lucide="{{ secondary_icon|default:'link' }}"></i> {{ secondary_label }}
+      </a>
+    {% endif %}
+    {% if edit_url %}
+      <a href="{{ edit_url }}" class="action-popover-item">
+        <i data-lucide="{{ edit_icon|default:'edit-2' }}"></i> {{ edit_label|default:"Edit" }}
+      </a>
+    {% endif %}
+    {% if custom_items %}
+      {% for item in custom_items %}
+        {% if item.is_divider %}
+          <div class="action-popover-divider"></div>
+        {% else %}
+          <a href="{{ item.url }}" class="action-popover-item {% if item.is_danger %}text-danger{% elif item.is_success %}text-success{% endif %}">
+            {% if item.icon %}<i data-lucide="{{ item.icon }}"></i>{% endif %} {{ item.label }}
+          </a>
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+    {% if delete_url %}
+      {% if start_url or primary_url or detail_url or report_url or secondary_url or edit_url or custom_items %}
+        <div class="action-popover-divider"></div>
+      {% endif %}
+      <a href="{{ delete_url }}" class="action-popover-item text-danger">
+        <i data-lucide="{{ delete_icon|default:'trash-2' }}"></i> {{ delete_label|default:"Delete" }}
+      </a>
+    {% endif %}
+  </div>
+</div>

@@ -84,22 +84,13 @@
             {% else %}<span class="badge badge-danger">Inactive</span>{% endif %}
           </td>
           <td style="text-align:right;">
-            <div class="action-popover-dropdown">
-              <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="Actions" aria-label="Actions">
-                <i data-lucide="more-vertical"></i>
-              </button>
-              <div class="action-popover-menu">
-                <a href="{% url 'user_edit' u.pk %}" class="action-popover-item">
-                  <i data-lucide="edit-2"></i> Edit User
-                </a>
-                {% if u != request.user %}
-                  <div class="action-popover-divider"></div>
-                  <a href="{% url 'user_delete' u.pk %}" class="action-popover-item text-danger">
-                    <i data-lucide="trash-2"></i> Delete User
-                  </a>
-                {% endif %}
-              </div>
-            </div>
+            {% url 'user_edit' u.pk as u_edit %}
+            {% if u != request.user %}
+              {% url 'user_delete' u.pk as u_del %}
+              {% include 'components/action_popover.html' with edit_url=u_edit edit_label="Edit User" delete_url=u_del delete_label="Delete User" %}
+            {% else %}
+              {% include 'components/action_popover.html' with edit_url=u_edit edit_label="Edit User" %}
+            {% endif %}
           </td>
         </tr>
         {% empty %}

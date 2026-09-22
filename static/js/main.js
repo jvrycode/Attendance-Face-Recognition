@@ -103,6 +103,9 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.action-popover-menu.open').forEach(function(m) {
       if (m !== menu) {
         m.classList.remove('open');
+        m.classList.remove('dropup');
+        m.style.top = '';
+        m.style.bottom = '';
         const trig = m.closest('.action-popover-dropdown')?.querySelector('.action-popover-trigger');
         if (trig) trig.classList.remove('active');
       }
@@ -110,18 +113,51 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (isOpen) {
       menu.classList.remove('open');
+      menu.classList.remove('dropup');
+      menu.style.top = '';
+      menu.style.bottom = '';
       btn.classList.remove('active');
     } else {
-      // Flip upwards if close to bottom of viewport
+      // SMART POPUP POSITIONING:
+      // If the row / button is on the bottom of the table or near the bottom of viewport/container,
+      // show it on top (dropup) so it won't expand the table and cause scrollbars.
       const rect = btn.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      if (spaceBelow < 200 && rect.top > 200) {
+      const tr = btn.closest('tr');
+      const tableOrContainer = btn.closest('.table-container') || btn.closest('table') || btn.closest('.card');
+      
+      const spaceViewportBelow = window.innerHeight - rect.bottom;
+      let spaceContainerBelow = 9999;
+      if (tableOrContainer) {
+        const cRect = tableOrContainer.getBoundingClientRect();
+        spaceContainerBelow = cRect.bottom - rect.bottom;
+      }
+
+      let isBottomRow = false;
+      if (tr && tr.parentElement) {
+        const rows = Array.from(tr.parentElement.querySelectorAll('tr'));
+        const index = rows.indexOf(tr);
+        // If 2 or more rows in table, and this is in the last 2 rows (or bottom half)
+        if (rows.length >= 2 && index >= Math.max(1, rows.length - 2)) {
+          isBottomRow = true;
+        }
+      }
+
+      // Check if we should show on top (dropup):
+      // - Either it's on bottom data / rows
+      // - Or space below inside container is tight (< 180px)
+      // - Or space below in viewport is tight (< 200px)
+      const shouldDropup = isBottomRow || spaceContainerBelow < 180 || spaceViewportBelow < 200;
+
+      if (shouldDropup) {
+        menu.classList.add('dropup');
         menu.style.top = 'auto';
         menu.style.bottom = 'calc(100% + 4px)';
       } else {
+        menu.classList.remove('dropup');
         menu.style.top = 'calc(100% + 4px)';
         menu.style.bottom = 'auto';
       }
+
       menu.classList.add('open');
       btn.classList.add('active');
       if (window.lucide && typeof window.lucide.createIcons === 'function') {
@@ -135,6 +171,9 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!e.target.closest('.action-popover-dropdown')) {
       document.querySelectorAll('.action-popover-menu.open').forEach(function(m) {
         m.classList.remove('open');
+        m.classList.remove('dropup');
+        m.style.top = '';
+        m.style.bottom = '';
         const trig = m.closest('.action-popover-dropdown')?.querySelector('.action-popover-trigger');
         if (trig) trig.classList.remove('active');
       });

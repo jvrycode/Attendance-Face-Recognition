@@ -32,22 +32,11 @@
           <td><span class="badge badge-info">{{ prog.section_count }}</span></td>
           <td><span class="badge badge-outline">{{ prog.subject_count }}</span></td>
           <td>
-            <div class="action-popover-dropdown">
-              <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="Actions" aria-label="Actions">
-                <i data-lucide="more-vertical"></i>
-              </button>
-              <div class="action-popover-menu">
-                {% if request.user.role == 'admin' %}
-                  <a href="{% url 'program_edit' prog.pk %}" class="action-popover-item">
-                    <i data-lucide="edit-2"></i> Edit Program
-                  </a>
-                  <div class="action-popover-divider"></div>
-                  <a href="{% url 'program_delete' prog.pk %}" class="action-popover-item text-danger">
-                    <i data-lucide="trash-2"></i> Delete Program
-                  </a>
-                {% endif %}
-              </div>
-            </div>
+            {% if request.user.role == 'admin' %}
+              {% url 'program_edit' prog.pk as p_edit %}
+              {% url 'program_delete' prog.pk as p_del %}
+              {% include 'components/action_popover.html' with edit_url=p_edit edit_label="Edit Program" delete_url=p_del delete_label="Delete Program" %}
+            {% endif %}
           </td>
         </tr>
         {% empty %}

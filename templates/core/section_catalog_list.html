@@ -66,20 +66,9 @@
           </td>
           <td style="font-size:12px; color:var(--text-muted);">{{ sec.created_at|date:"M j, Y" }}</td>
           <td>
-            <div class="action-popover-dropdown">
-              <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="Actions" aria-label="Actions">
-                <i data-lucide="more-vertical"></i>
-              </button>
-              <div class="action-popover-menu">
-                <a href="{% url 'section_create' %}" class="action-popover-item">
-                  <i data-lucide="calendar"></i> Open Semester Class
-                </a>
-                <div class="action-popover-divider"></div>
-                <a href="{% url 'section_catalog_delete' sec.pk %}" class="action-popover-item text-danger">
-                  <i data-lucide="trash-2"></i> Delete Definition
-                </a>
-              </div>
-            </div>
+            {% url 'section_create' as sec_create_url %}
+            {% url 'section_catalog_delete' sec.pk as sec_del_url %}
+            {% include 'components/action_popover.html' with primary_url=sec_create_url primary_label="Open Semester Class" primary_icon="calendar" delete_url=sec_del_url delete_label="Delete Definition" %}
           </td>
         </tr>
         {% empty %}

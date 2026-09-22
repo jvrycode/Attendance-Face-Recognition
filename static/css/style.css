@@ -619,16 +619,30 @@ tbody tr:hover { background: var(--bg-primary); }
   border-radius: var(--radius);
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
   padding: 6px;
-  z-index: 120;
+  z-index: 500;
   text-align: left;
+}
+.action-popover-menu.dropup {
+  top: auto !important;
+  bottom: calc(100% + 4px) !important;
+  transform-origin: bottom right;
 }
 .action-popover-menu.open {
   display: block;
   animation: popoverFadeIn 0.12s ease-out;
 }
+.action-popover-menu.dropup.open {
+  display: block;
+  animation: popoverFadeInUp 0.12s ease-out;
+}
 
 @keyframes popoverFadeIn {
   from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes popoverFadeInUp {
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 

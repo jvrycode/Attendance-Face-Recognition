@@ -111,46 +111,23 @@
             </a>
           </td>
           <td>
-            <div class="action-popover-dropdown">
-              <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="Actions" aria-label="Actions">
-                <i data-lucide="more-vertical"></i>
-              </button>
-              <div class="action-popover-menu">
-                {% if request.user.role == 'teacher' %}
-                  {% with first_sched=section.schedules.first %}
-                    {% if first_sched %}
-                      <a href="{% url 'session_start' first_sched.pk %}" class="action-popover-item text-success">
-                        <i data-lucide="play"></i> Start Attendance
-                      </a>
-                    {% endif %}
-                  {% endwith %}
-                  <a href="{% url 'section_detail' section.pk %}" class="action-popover-item">
-                    <i data-lucide="users"></i> Class List
-                  </a>
-                  <a href="{% url 'section_attendance_report' %}?section_id={{ section.pk }}" class="action-popover-item">
-                    <i data-lucide="file-text"></i> Attendance Report
-                  </a>
-                {% elif request.user.role == 'student' %}
-                  <a href="{% url 'section_detail' section.pk %}" class="action-popover-item">
-                    <i data-lucide="users"></i> Class List
-                  </a>
-                {% else %}
-                  <a href="{% url 'section_detail' section.pk %}" class="action-popover-item">
-                    <i data-lucide="eye"></i> View Details
-                  </a>
-                  <a href="{% url 'section_attendance_report' %}?section_id={{ section.pk }}" class="action-popover-item">
-                    <i data-lucide="file-text"></i> Attendance Report
-                  </a>
-                  <a href="{% url 'section_edit' section.pk %}" class="action-popover-item">
-                    <i data-lucide="edit-2"></i> Edit Section
-                  </a>
-                  <div class="action-popover-divider"></div>
-                  <a href="{% url 'section_delete' section.pk %}" class="action-popover-item text-danger">
-                    <i data-lucide="trash-2"></i> Delete Section
-                  </a>
-                {% endif %}
-              </div>
-            </div>
+            {% if request.user.role == 'teacher' %}
+              {% with first_sched=section.schedules.first %}
+                {% if first_sched %}{% url 'session_start' first_sched.pk as s_start %}{% endif %}
+                {% url 'section_detail' section.pk as s_det %}
+                {% url 'section_attendance_report' as s_rep %}
+                {% include 'components/action_popover.html' with start_url=s_start start_label="Start Attendance" detail_url=s_det detail_label="Class List" detail_icon="users" report_url=s_rep|add:"?section_id="|add:section.pk %}
+              {% endwith %}
+            {% elif request.user.role == 'student' %}
+              {% url 'section_detail' section.pk as s_det %}
+              {% include 'components/action_popover.html' with detail_url=s_det detail_label="Class List" detail_icon="users" %}
+            {% else %}
+              {% url 'section_detail' section.pk as s_det %}
+              {% url 'section_attendance_report' as s_rep %}
+              {% url 'section_edit' section.pk as s_edit %}
+              {% url 'section_delete' section.pk as s_del %}
+              {% include 'components/action_popover.html' with detail_url=s_det detail_label="View Details" detail_icon="eye" report_url=s_rep|add:"?section_id="|add:section.pk edit_url=s_edit edit_label="Edit Section" delete_url=s_del delete_label="Delete Section" %}
+            {% endif %}
           </td>
         </tr>
         {% empty %}

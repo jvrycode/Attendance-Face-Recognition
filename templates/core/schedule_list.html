@@ -53,20 +53,9 @@
             {% endif %}
           </td>
           <td>
-            <div class="action-popover-dropdown">
-              <button type="button" class="action-popover-trigger" onclick="toggleActionPopover(this, event)" title="Actions" aria-label="Actions">
-                <i data-lucide="more-vertical"></i>
-              </button>
-              <div class="action-popover-menu">
-                <a href="{% url 'schedule_edit' sched.pk %}" class="action-popover-item">
-                  <i data-lucide="edit-2"></i> Edit Schedule
-                </a>
-                <div class="action-popover-divider"></div>
-                <a href="{% url 'schedule_delete' sched.pk %}" class="action-popover-item text-danger">
-                  <i data-lucide="trash-2"></i> Delete Schedule
-                </a>
-              </div>
-            </div>
+            {% url 'schedule_edit' sched.pk as sc_edit %}
+            {% url 'schedule_delete' sched.pk as sc_del %}
+            {% include 'components/action_popover.html' with edit_url=sc_edit edit_label="Edit Schedule" delete_url=sc_del delete_label="Delete Schedule" %}
           </td>
         </tr>
         {% empty %}
