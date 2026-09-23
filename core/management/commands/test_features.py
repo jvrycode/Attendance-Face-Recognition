@@ -139,6 +139,11 @@ class Command(BaseCommand):
             type=str,
             help='Run specific test suite (accounts, core, or face_app)',
         )
+        parser.add_argument(
+            '--api',
+            action='store_true',
+            help='Run REST API test suite only',
+        )
 
     def handle(self, *args, **options):
         # Reset counters
@@ -152,12 +157,18 @@ class Command(BaseCommand):
             os.system('')
 
         tag = options.get('tag')
-        test_labels = ['accounts', 'core', 'face_app']
-        if tag:
-            test_labels = [tag]
+        is_api = options.get('api')
 
-        self.stdout.write(f"\n{BOLD}{CYAN}AttendFR Test Suite{RESET}")
-        self.stdout.write(f"{DIM}Running automated feature checks against test database...{RESET}\n")
+        if is_api:
+            test_labels = ['attendance_fr.tests_api']
+            self.stdout.write(f"\n{BOLD}{CYAN}AttendFR REST API Test Suite{RESET}")
+            self.stdout.write(f"{DIM}Running automated endpoints & contract checks...{RESET}\n")
+        else:
+            test_labels = ['accounts', 'core', 'face_app']
+            if tag:
+                test_labels = [tag]
+            self.stdout.write(f"\n{BOLD}{CYAN}AttendFR Test Suite{RESET}")
+            self.stdout.write(f"{DIM}Running automated feature checks against test database...{RESET}\n")
 
         start_total = time.time()
         runner = ArtisanTestRunner(verbosity=0, interactive=False, keepdb=True)
@@ -170,10 +181,11 @@ class Command(BaseCommand):
         total_tests = total_passed + total_failed + total_errors
 
         self.stdout.write("\n" + LINE_CHAR * 70)
+        success_label = "All API endpoints verified!" if is_api else "All tests passed!"
         if failures == 0:
             badge = f" {BG_GREEN_BLACK}{BOLD} PASS {RESET} "
             self.stdout.write(
-                f"{badge} {BOLD}{GREEN}All tests passed! ({total_tests} total){RESET} "
+                f"{badge} {BOLD}{GREEN}{success_label} ({total_tests} total){RESET} "
                 f"{DIM}(Duration: {total_duration:.2f}s){RESET}\n"
             )
         else:
