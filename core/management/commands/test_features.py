@@ -131,7 +131,7 @@ class ArtisanTestRunner(DiscoverRunner):
 
 
 class Command(BaseCommand):
-    help = "Runs all feature tests with Laravel `php artisan test` style formatting"
+    help = "Runs all feature tests with AttendFR Test Suite formatting"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -156,8 +156,8 @@ class Command(BaseCommand):
         if tag:
             test_labels = [tag]
 
-        self.stdout.write(f"\n{BOLD}{CYAN}AttendFR Test Suite{RESET} {DIM}(Laravel artisan test style){RESET}")
-        self.stdout.write(f"{DIM}Running automated feature checks against local MySQL database...{RESET}\n")
+        self.stdout.write(f"\n{BOLD}{CYAN}AttendFR Test Suite{RESET}")
+        self.stdout.write(f"{DIM}Running automated feature checks against test database...{RESET}\n")
 
         start_total = time.time()
         runner = ArtisanTestRunner(verbosity=0, interactive=False, keepdb=True)

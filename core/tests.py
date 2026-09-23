@@ -434,4 +434,17 @@ class CoreFeatureTests(TestCase):
         self.assertEqual(res_sched.status_code, 200)
         self.assertContains(res_sched, 'action-popover-dropdown')
 
+    def test_section_attendance_report_view_today_and_week(self):
+        """Verify section attendance report view renders with Today and This Week periods."""
+        client = Client()
+        client.force_login(self.admin_user)
+
+        res_today = client.get(f'/reports/attendance/?section_id={self.section_a.pk}&period=today')
+        self.assertEqual(res_today.status_code, 200)
+        self.assertContains(res_today, 'Today')
+        self.assertContains(res_today, 'This Week')
+
+        res_week = client.get(f'/reports/attendance/?section_id={self.section_a.pk}&period=week')
+        self.assertEqual(res_week.status_code, 200)
+
 
