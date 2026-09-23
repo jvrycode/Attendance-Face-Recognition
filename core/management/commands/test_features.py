@@ -50,15 +50,17 @@ BG_RED_WHITE = "\033[41m\033[37m"
 
 
 class ArtisanStyleTestResult(unittest.TextTestResult):
+    global_passed = []
+    global_failed = []
+    global_errors = []
+
     def __init__(self, stream, descriptions, verbosity):
         super().__init__(stream, descriptions, verbosity)
         self.current_class = None
         self.test_start_time = 0.0
-        self.passed_tests = []
-        self.failed_tests = []
-        self.error_tests = []
 
     def startTest(self, test):
+        super().startTest(test)
         self.test_start_time = time.time()
         test_class = test.__class__.__name__
         module_name = test.__class__.__module__
@@ -81,7 +83,7 @@ class ArtisanStyleTestResult(unittest.TextTestResult):
         prefix = f"  {GREEN}{GLYPH_OK}{RESET} {readable_name}"
         pad = max(1, 60 - len(readable_name))
         self.stream.writeln(f"{prefix}{' ' * pad}{DIM}{elapsed:.2f}s{RESET}")
-        self.passed_tests.append((test, elapsed))
+        ArtisanStyleTestResult.global_passed.append(test)
 
     def addFailure(self, test, err):
         super().addFailure(test, err)
@@ -90,7 +92,7 @@ class ArtisanStyleTestResult(unittest.TextTestResult):
         readable_name = method_name.replace('test_', '').replace('_', ' ')
         pad = max(1, 60 - len(readable_name))
         self.stream.writeln(f"  {RED}{GLYPH_FAIL}{RESET} {BOLD}{readable_name}{RESET}{' ' * pad}{RED}{elapsed:.2f}s{RESET}")
-        self.failed_tests.append((test, err))
+        ArtisanStyleTestResult.global_failed.append((test, err))
 
     def addError(self, test, err):
         super().addError(test, err)
@@ -99,14 +101,31 @@ class ArtisanStyleTestResult(unittest.TextTestResult):
         readable_name = method_name.replace('test_', '').replace('_', ' ')
         pad = max(1, 60 - len(readable_name))
         self.stream.writeln(f"  {RED}! ERROR: {readable_name}{RESET}{' ' * pad}{RED}{elapsed:.2f}s{RESET}")
-        self.error_tests.append((test, err))
+        ArtisanStyleTestResult.global_errors.append((test, err))
 
     def printErrors(self):
-        # Suppress standard Python unittest dots and default summaries
         pass
 
 
+class ArtisanTextTestRunner(unittest.TextTestRunner):
+    """Custom runner that suppresses standard unittest dots and footer text."""
+    def run(self, test):
+        result = self._makeResult()
+        startTestRun = getattr(result, 'startTestRun', None)
+        if startTestRun is not None:
+            startTestRun()
+        try:
+            test(result)
+        finally:
+            stopTestRun = getattr(result, 'stopTestRun', None)
+            if stopTestRun is not None:
+                stopTestRun()
+        return result
+
+
 class ArtisanTestRunner(DiscoverRunner):
+    test_runner = ArtisanTextTestRunner
+
     def get_resultclass(self):
         return ArtisanStyleTestResult
 
@@ -122,6 +141,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        # Reset counters
+        ArtisanStyleTestResult.global_passed = []
+        ArtisanStyleTestResult.global_failed = []
+        ArtisanStyleTestResult.global_errors = []
+
         # Enable ANSI colors on Windows terminals
         if sys.platform == 'win32':
             import os
@@ -140,17 +164,23 @@ class Command(BaseCommand):
         failures = runner.run_tests(test_labels)
         total_duration = time.time() - start_total
 
+        total_passed = len(ArtisanStyleTestResult.global_passed)
+        total_failed = len(ArtisanStyleTestResult.global_failed)
+        total_errors = len(ArtisanStyleTestResult.global_errors)
+        total_tests = total_passed + total_failed + total_errors
+
         self.stdout.write("\n" + LINE_CHAR * 70)
         if failures == 0:
             badge = f" {BG_GREEN_BLACK}{BOLD} PASS {RESET} "
             self.stdout.write(
-                f"{badge} {BOLD}{GREEN}All tests passed! (19 total){RESET} "
+                f"{badge} {BOLD}{GREEN}All tests passed! ({total_tests} total){RESET} "
                 f"{DIM}(Duration: {total_duration:.2f}s){RESET}\n"
             )
         else:
             badge = f" {BG_RED_WHITE}{BOLD} FAIL {RESET} "
             self.stdout.write(
-                f"{badge} {BOLD}{RED}{failures} test(s) failed.{RESET} "
+                f"{badge} {BOLD}{RED}{failures} test(s) failed out of {total_tests}.{RESET} "
                 f"{DIM}(Duration: {total_duration:.2f}s){RESET}\n"
             )
             sys.exit(1)
+
