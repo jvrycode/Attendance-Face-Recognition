@@ -209,3 +209,48 @@ class FaceAppFeatureTests(TestCase):
 
             # Verify NO attendance record was created for Charlie in Section A's session
             self.assertFalse(self.session.records.filter(student=student_b).exists())
+
+    def test_face_enroll_select_view(self):
+        """Verify admin can view student list on /face/enroll/."""
+        from django.test import Client
+        admin = User.objects.create_user(username='face_admin', role='admin', password='StrongPassword123!')
+        client = Client()
+        client.force_login(admin)
+
+        res = client.get('/face/enroll/')
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'Alice Smith')
+        self.assertContains(res, 'Bob Jones')
+
+    def test_face_enroll_capture_endpoint_ajax(self):
+        """Verify AJAX endpoint saves face vector and timestamp."""
+        import io
+        import base64
+        from PIL import Image
+        from django.test import Client
+        from unittest.mock import patch
+        admin = User.objects.create_user(username='face_admin2', role='admin', password='StrongPassword123!')
+        client = Client()
+        client.force_login(admin)
+
+        # Generate a real mini JPEG
+        buf = io.BytesIO()
+        im = Image.new('RGB', (40, 40), color='white')
+        im.save(buf, format='JPEG')
+        valid_b64 = 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode('utf-8')
+
+        mock_vector = [0.42] * 128
+        with patch('face_app.views.encode_face_from_frame', return_value=(mock_vector, [(10, 100, 100, 10)])):
+            payload = {
+                'student_id': self.student1.pk,
+                'frame': valid_b64
+            }
+            res = client.post('/face/enroll/capture/', json.dumps(payload), content_type='application/json')
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            self.assertTrue(data.get('success'))
+
+            self.student1.refresh_from_db()
+            self.assertTrue(self.student1.is_face_enrolled)
+            self.assertIsNotNone(self.student1.face_enrolled_at)
+

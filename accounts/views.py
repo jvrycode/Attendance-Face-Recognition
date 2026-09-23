@@ -85,6 +85,7 @@ def dashboard_view(request):
             context['open_sessions_count'] = open_sessions_count
         except Teacher.DoesNotExist:
             messages.warning(request, 'Teacher profile not set up. Contact admin.')
+            context['teacher'] = None
         return render(request, 'accounts/dashboard_teacher.html', context)
 
     elif user.role == 'student':

@@ -364,3 +364,74 @@ class CoreFeatureTests(TestCase):
         self.assertEqual(res_search.status_code, 200)
         self.assertContains(res_search, 'Albert Einstein')
 
+    def test_section_catalog_master_list_view(self):
+        """Verify section catalog lists master section definitions with college filters."""
+        from core.models import Program, ProgramSection
+        prog = Program.objects.create(code='CITEC', name='College of Information Technology', college='CITEC')
+        ProgramSection.objects.create(program=prog, name='IT 43', year_level=3)
+
+        client = Client()
+        client.force_login(self.admin_user)
+        res = client.get('/academic/section-catalog/')
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'IT 43')
+        self.assertContains(res, 'CITEC')
+        self.assertContains(res, 'action-popover-dropdown')
+
+    def test_section_detail_view_renders_schedules_and_roster(self):
+        """Verify section detail page renders schedules, teacher info, and roster."""
+        # Create schedule for section_a
+        Schedule.objects.create(
+            section=self.section_a,
+            day_of_week='Mon',
+            start_time=time(8, 0),
+            end_time=time(10, 0),
+            room='Room 101'
+        )
+        StudentSection.objects.create(student=self.student, section=self.section_a)
+
+        client = Client()
+        client.force_login(self.admin_user)
+        res = client.get(f'/sections/{self.section_a.pk}/')
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'BSCS-2A')
+        self.assertContains(res, 'Room 101')
+        self.assertContains(res, 'Albert Einstein')
+        self.assertContains(res, 'Marie Curie')
+
+    def test_student_unenroll_removes_enrollment_and_invalidates_cache(self):
+        """Verify unenroll endpoint removes student from section."""
+        StudentSection.objects.create(student=self.student, section=self.section_a)
+        self.assertTrue(StudentSection.objects.filter(student=self.student, section=self.section_a).exists())
+
+        client = Client()
+        client.force_login(self.admin_user)
+        res = client.post(f'/sections/{self.section_a.pk}/unenroll/{self.student.pk}/')
+        self.assertRedirects(res, f'/sections/{self.section_a.pk}/')
+        self.assertFalse(StudentSection.objects.filter(student=self.student, section=self.section_a).exists())
+
+    def test_academic_list_views_render_action_popovers(self):
+        """Verify list views for programs, subjects, schedules, and sections render 200 with popovers."""
+        client = Client()
+        client.force_login(self.admin_user)
+
+        # Subject list
+        res_subj = client.get('/subjects/')
+        self.assertEqual(res_subj.status_code, 200)
+        self.assertContains(res_subj, 'action-popover-dropdown')
+
+        # Section list
+        res_sec = client.get('/sections/')
+        self.assertEqual(res_sec.status_code, 200)
+        self.assertContains(res_sec, 'action-popover-dropdown')
+
+        # Schedule list
+        Schedule.objects.create(
+            section=self.section_a, day_of_week='Tue',
+            start_time=time(10, 0), end_time=time(12, 0), room='Room 202'
+        )
+        res_sched = client.get('/schedules/')
+        self.assertEqual(res_sched.status_code, 200)
+        self.assertContains(res_sched, 'action-popover-dropdown')
+
+

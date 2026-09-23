@@ -90,11 +90,22 @@ def enroll_face_capture(request):
         if face_locations:
             loc = face_locations[0]
             pad = 30
-            left = max(0, loc['left'] - pad)
-            top = max(0, loc['top'] - pad)
-            right = min(img.width, loc['right'] + pad)
-            bottom = min(img.height, loc['bottom'] + pad)
-            img = img.crop((left, top, right, bottom))
+            if isinstance(loc, dict):
+                left = max(0, loc.get('left', 0) - pad)
+                top = max(0, loc.get('top', 0) - pad)
+                right = min(img.width, loc.get('right', img.width) + pad)
+                bottom = min(img.height, loc.get('bottom', img.height) + pad)
+            elif isinstance(loc, (list, tuple)) and len(loc) >= 4:
+                # Format: (top, right, bottom, left)
+                t, r, b, l = loc[:4]
+                left = max(0, l - pad)
+                top = max(0, t - pad)
+                right = min(img.width, r + pad)
+                bottom = min(img.height, b + pad)
+            else:
+                left, top, right, bottom = 0, 0, img.width, img.height
+            if right > left and bottom > top:
+                img = img.crop((left, top, right, bottom))
 
         img_io = BytesIO()
         img.save(img_io, format='JPEG', quality=90)

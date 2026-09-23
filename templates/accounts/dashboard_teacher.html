@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Teacher Portal{% endblock %}
 {% block page_title %}Instructor Dashboard{% endblock %}
-{% block page_subtitle %}<p>Welcome back, {{ teacher.user.get_full_name|default:teacher.user.username }} &bull; Department: {{ teacher.department|default:"Faculty" }}</p>{% endblock %}
+{% block page_subtitle %}<p>Welcome back, {% if teacher %}{{ teacher.user.get_full_name|default:teacher.user.username }}{% else %}{{ user.get_full_name|default:user.username }}{% endif %} &bull; Department: {{ teacher.department|default:"Faculty" }}</p>{% endblock %}
 
 {% block header_actions %}
   <a href="{% url 'section_attendance_report' %}" class="btn btn-outline"><i data-lucide="file-text"></i> Attendance Reports</a>
