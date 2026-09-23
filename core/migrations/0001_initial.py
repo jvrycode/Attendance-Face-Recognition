@@ -15,21 +15,6 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='Schedule',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('day_of_week', models.CharField(choices=[('Mon', 'Monday'), ('Tue', 'Tuesday'), ('Wed', 'Wednesday'), ('Thu', 'Thursday'), ('Fri', 'Friday'), ('Sat', 'Saturday')], max_length=3)),
-                ('start_time', models.TimeField()),
-                ('end_time', models.TimeField()),
-                ('room', models.CharField(max_length=50)),
-            ],
-            options={
-                'verbose_name': 'Schedule',
-                'verbose_name_plural': 'Schedules',
-                'ordering': ['day_of_week', 'start_time'],
-            },
-        ),
-        migrations.CreateModel(
             name='Subject',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
@@ -43,23 +28,6 @@ class Migration(migrations.Migration):
                 'verbose_name': 'Subject',
                 'verbose_name_plural': 'Subjects',
                 'ordering': ['code'],
-            },
-        ),
-        migrations.CreateModel(
-            name='AttendanceSession',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('date', models.DateField(default=django.utils.timezone.localdate)),
-                ('status', models.CharField(choices=[('open', 'Open'), ('closed', 'Closed')], default='open', max_length=10)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('closed_at', models.DateTimeField(blank=True, null=True)),
-                ('started_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='sessions_started', to='accounts.teacher')),
-                ('schedule', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='sessions', to='core.schedule')),
-            ],
-            options={
-                'verbose_name': 'Attendance Session',
-                'verbose_name_plural': 'Attendance Sessions',
-                'ordering': ['-date', '-created_at'],
             },
         ),
         migrations.CreateModel(
@@ -79,10 +47,38 @@ class Migration(migrations.Migration):
                 'ordering': ['name'],
             },
         ),
-        migrations.AddField(
-            model_name='schedule',
-            name='section',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='schedules', to='core.section'),
+        migrations.CreateModel(
+            name='Schedule',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('section', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='schedules', to='core.section')),
+                ('day_of_week', models.CharField(choices=[('Mon', 'Monday'), ('Tue', 'Tuesday'), ('Wed', 'Wednesday'), ('Thu', 'Thursday'), ('Fri', 'Friday'), ('Sat', 'Saturday')], max_length=3)),
+                ('start_time', models.TimeField()),
+                ('end_time', models.TimeField()),
+                ('room', models.CharField(max_length=50)),
+            ],
+            options={
+                'verbose_name': 'Schedule',
+                'verbose_name_plural': 'Schedules',
+                'ordering': ['day_of_week', 'start_time'],
+            },
+        ),
+        migrations.CreateModel(
+            name='AttendanceSession',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('date', models.DateField(default=django.utils.timezone.localdate)),
+                ('status', models.CharField(choices=[('open', 'Open'), ('closed', 'Closed')], default='open', max_length=10)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('closed_at', models.DateTimeField(blank=True, null=True)),
+                ('started_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='sessions_started', to='accounts.teacher')),
+                ('schedule', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='sessions', to='core.schedule')),
+            ],
+            options={
+                'verbose_name': 'Attendance Session',
+                'verbose_name_plural': 'Attendance Sessions',
+                'ordering': ['-date', '-created_at'],
+            },
         ),
         migrations.CreateModel(
             name='AttendanceRecord',

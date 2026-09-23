@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import Subject, Section, Schedule, AttendanceSession, AttendanceRecord, StudentSection
+from core.models import Subject, Section, Schedule, AttendanceSession, AttendanceRecord
 from accounts.serializers import TeacherSerializer, StudentSerializer
 
 

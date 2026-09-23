@@ -2,12 +2,17 @@
 {% block title %}Section Attendance Report{% endblock %}
 {% block page_title %}Section Attendance Report{% endblock %}
 {% block page_subtitle %}
-  <p>Official daily and weekly attendance records for your assigned class section</p>
+  <p class="header-subtitle">Official daily and weekly attendance records for your assigned class section</p>
+{% endblock %}
+
+{% block page_back %}
+<div class="page-back-wrapper">
+  <a href="{% url 'section_list' %}" class="page-back-link"><i data-lucide="arrow-left"></i> <span>Back to Sections</span></a>
+</div>
 {% endblock %}
 
 {% block header_actions %}
   <div class="no-print" style="display:flex; gap:8px; align-items:center;">
-    <a href="{% url 'section_list' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to Sections</a>
     <button onclick="window.print()" class="btn btn-primary"><i data-lucide="printer"></i> Print / Save PDF</button>
   </div>
 {% endblock %}
@@ -561,7 +566,15 @@
           {% if target_date == today and request.user.role in 'admin,teacher' %}
             {% with first_sched=selected_section.schedules.first %}
               {% if first_sched %}
-                <a href="{% url 'session_start' first_sched.pk %}" class="btn btn-success btn-sm"><i data-lucide="play"></i> Start Session for Today</a>
+                {% if has_sessions %}
+                  {% for sess in sessions %}
+                    {% if sess.status == 'open' %}
+                      <a href="{% url 'session_live' sess.pk %}" class="btn btn-primary btn-sm"><i data-lucide="camera"></i> Resume Live Session</a>
+                    {% endif %}
+                  {% endfor %}
+                {% else %}
+                  <a href="{% url 'session_start' first_sched.pk %}" class="btn btn-success btn-sm"><i data-lucide="play"></i> Start Session for Today</a>
+                {% endif %}
               {% endif %}
             {% endwith %}
           {% endif %}
@@ -578,8 +591,7 @@
               <th>Program / Course</th>
               <th>Status</th>
               <th>Time Recognized</th>
-              <th>Method / Confidence</th>
-              <th>Remarks</th>
+              <th>Notes</th>
             </tr>
           </thead>
           <tbody>
@@ -616,20 +628,11 @@
                   <span class="text-muted">—</span>
                 {% endif %}
               </td>
-              <td style="font-size:12px;">
-                {% if row.confidence %}
-                  <span class="text-muted" style="font-size:11px;">Face Match ({{ row.confidence|floatformat:1 }}%)</span>
-                {% elif row.status in 'present,late' %}
-                  <span class="text-muted" style="font-size:11px;">Manual Verification</span>
-                {% else %}
-                  <span class="text-muted">—</span>
-                {% endif %}
-              </td>
               <td style="font-size:12px; color:var(--text-muted);">{{ row.remarks|default:"—" }}</td>
             </tr>
             {% empty %}
             <tr>
-              <td colspan="8" class="text-center text-muted" style="padding:24px;">No students enrolled in this section.</td>
+              <td colspan="7" class="text-center text-muted" style="padding:24px;">No students enrolled in this section.</td>
             </tr>
             {% endfor %}
           </tbody>

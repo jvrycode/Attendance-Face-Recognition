@@ -23,6 +23,8 @@ from django.utils import timezone
 
 print("[INFO] Seeding database...")
 
+admin_only = '--admin-only' in sys.argv or '-a' in sys.argv or os.getenv('SEED_ADMIN_ONLY', 'False').lower() in ('true', '1')
+
 # ── Admin ─────────────────────────────────────────────────────────────────────
 if not CustomUser.objects.filter(username='admin').exists():
     admin = CustomUser.objects.create_superuser(
@@ -36,6 +38,35 @@ if not CustomUser.objects.filter(username='admin').exists():
     print("[OK] Admin created: username=admin, password=admin123")
 else:
     print("[INFO] Admin already exists.")
+
+if admin_only:
+    # Initialize academic programs for dropdown selections
+    from core.models import Program
+    fsuu_programs = [
+        ('CITEC',   'College of Information, Technology, Entertainment, and Computing', 'CITEC'),
+        ('CCJE',    'College of Criminal Justice Education',                            'CCJE'),
+        ('CTE',     'College of Teacher Education',                                     'CTE'),
+        ('CoA',     'College of Accountancy',                                           'CoA'),
+        ('CoN',     'College of Nursing',                                               'CoN'),
+        ('CAS',     'College of Arts and Sciences',                                     'CAS'),
+        ('CORE',    'College of Operations, Resources, and Entrepreneurship',           'CORE'),
+        ('CEnTech', 'College of Engineering and Technology',                            'CEnTech'),
+        ('CIHT',    'College of Innovative Hospitality and Tourism',                    'CIHT'),
+    ]
+    for p_code, p_name, p_college in fsuu_programs:
+        obj, created = Program.objects.get_or_create(
+            code=p_code,
+            defaults={'name': p_name, 'college': p_college}
+        )
+        if not created:
+            obj.name = p_name
+            obj.college = p_college
+            obj.save()
+    print(f"[OK] FSUU Academic Colleges initialized ({len(fsuu_programs)} official colleges).")
+    print("\n[SUCCESS] Admin-only seed complete!")
+    print("  Created Administrator: username=admin, password=admin123")
+    print("  Skipped: Zero teachers, zero students, and zero test records created.")
+    sys.exit(0)
 
 # ── Teacher ───────────────────────────────────────────────────────────────────
 if not CustomUser.objects.filter(username='teacher1').exists():
@@ -148,13 +179,13 @@ subject, _ = Subject.objects.get_or_create(
     defaults={
         'name': 'Introduction to Computing',
         'units': 3,
-        'program': prog_bscs,
+        'program': prog_citec,
         'section': section,
         'teacher': teacher
     }
 )
 if subject.program is None:
-    subject.program = prog_bscs
+    subject.program = prog_citec
 if subject.section is None:
     subject.section = section
 subject.save()

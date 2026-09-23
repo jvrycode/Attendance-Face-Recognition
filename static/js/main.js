@@ -204,8 +204,138 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  // 4. Initialize Lucide icons
+  // 4. Global Button & Form Loading State Handler
+  window.setButtonLoading = function(btn, loadingText) {
+    if (!btn || btn.classList.contains('is-loading')) return;
+
+    if (!btn.dataset.origHtml) {
+      btn.dataset.origHtml = btn.innerHTML;
+    }
+
+    let text = loadingText || btn.getAttribute('data-loading-text');
+    if (!text) {
+      const btnText = btn.textContent.trim().toLowerCase();
+      if (btnText.includes('sign in') || btnText.includes('login') || btnText.includes('log in')) {
+        text = 'Signing in...';
+      } else if (btnText.includes('view attendance')) {
+        text = 'Loading Attendance...';
+      } else if (btnText.includes('save') || btnText.includes('update')) {
+        text = 'Saving...';
+      } else if (btnText.includes('create') || btnText.includes('add')) {
+        text = 'Creating...';
+      } else if (btnText.includes('delete') || btnText.includes('remove')) {
+        text = 'Processing...';
+      } else if (btnText.includes('enroll')) {
+        text = 'Enrolling...';
+      } else if (btnText.includes('start')) {
+        text = 'Starting...';
+      } else {
+        text = 'Loading...';
+      }
+    }
+
+    btn.classList.add('is-loading');
+    btn.innerHTML = '<span class="btn-spinner"></span> <span>' + text + '</span>';
+  };
+
+  // Attach to all standard form submissions (e.g. login, edit forms)
+  document.addEventListener('submit', function(e) {
+    const form = e.target;
+    if (!form || form.hasAttribute('data-no-loading')) return;
+    const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+    if (submitBtn && !submitBtn.classList.contains('is-loading')) {
+      window.setButtonLoading(submitBtn);
+    }
+  });
+
+  // Attach to special action buttons and links with .btn-view-attendance or data-loading
+  document.addEventListener('click', function(e) {
+    const trigger = e.target.closest('.btn-view-attendance, [data-loading]');
+    if (trigger && !trigger.classList.contains('is-loading')) {
+      window.setButtonLoading(trigger);
+    }
+  });
+
+  // 5. Accessible Modal Management System
+  window.openModal = function(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('modal-open');
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+      window.lucide.createIcons();
+    }
+    // Update select placeholder styles inside opened modal
+    modal.querySelectorAll('select.form-select').forEach(syncSelectPlaceholder);
+    const autoFocusEl = modal.querySelector('input:not([type="hidden"]):not([disabled]), select, button.modal-close-btn');
+    if (autoFocusEl) {
+      setTimeout(function() { autoFocusEl.focus(); }, 60);
+    }
+  };
+
+  window.closeModal = function(modalId) {
+    if (modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+    } else {
+      document.querySelectorAll('.modal-backdrop.open').forEach(function(m) {
+        m.classList.remove('open');
+        m.setAttribute('aria-hidden', 'true');
+      });
+    }
+    if (!document.querySelector('.modal-backdrop.open')) {
+      document.body.classList.remove('modal-open');
+    }
+  };
+
+  // Close modals on backdrop click or close button
+  document.addEventListener('click', function(e) {
+    const closeBtn = e.target.closest('[data-close-modal], .modal-close-btn');
+    if (closeBtn) {
+      const modal = closeBtn.closest('.modal-backdrop');
+      if (modal) window.closeModal(modal.id);
+      return;
+    }
+    if (e.target.classList.contains('modal-backdrop')) {
+      window.closeModal(e.target.id);
+    }
+  });
+
+  // Close modals on Escape key
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      const openModalEl = document.querySelector('.modal-backdrop.open');
+      if (openModalEl) {
+        window.closeModal(openModalEl.id);
+      }
+    }
+  });
+
+  // 6. Dynamic Select Placeholder Styling
+  function syncSelectPlaceholder(sel) {
+    if (!sel || !sel.tagName || sel.tagName.toLowerCase() !== 'select') return;
+    if (sel.value === '' || sel.value === null) {
+      sel.classList.add('is-placeholder');
+    } else {
+      sel.classList.remove('is-placeholder');
+    }
+  }
+  window.syncSelectPlaceholder = syncSelectPlaceholder;
+
+  document.querySelectorAll('select.form-select').forEach(syncSelectPlaceholder);
+  document.addEventListener('change', function(e) {
+    if (e.target && e.target.matches('select.form-select')) {
+      syncSelectPlaceholder(e.target);
+    }
+  });
+
+  // 7. Initialize Lucide icons
   if (window.lucide && typeof window.lucide.createIcons === 'function') {
     window.lucide.createIcons();
   }
 });
+

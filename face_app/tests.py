@@ -5,7 +5,7 @@ multi-face recognition in a single frame, and bounding box formatting.
 """
 import json
 import numpy as np
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from accounts.models import Student
@@ -150,14 +150,14 @@ class FaceAppFeatureTests(TestCase):
         known_matrix = np.array([self.mock_vector1, self.mock_vector2], dtype=np.float32)
 
         # Match student 1
-        is_match1, idx1, dist1, conf1 = batch_compare_faces(known_matrix, self.mock_vector1, tolerance=0.5)
+        is_match1, idx1, dist1, conf1, margin1 = batch_compare_faces(known_matrix, self.mock_vector1, tolerance=0.5)
         self.assertTrue(is_match1)
         self.assertEqual(idx1, 0)
         self.assertAlmostEqual(dist1, 0.0, places=3)
         self.assertGreater(conf1, 0.95)
 
         # Match student 2
-        is_match2, idx2, dist2, conf2 = batch_compare_faces(known_matrix, self.mock_vector2, tolerance=0.5)
+        is_match2, idx2, dist2, conf2, margin2 = batch_compare_faces(known_matrix, self.mock_vector2, tolerance=0.5)
         self.assertTrue(is_match2)
         self.assertEqual(idx2, 1)
         self.assertAlmostEqual(dist2, 0.0, places=3)
@@ -165,8 +165,106 @@ class FaceAppFeatureTests(TestCase):
 
         # Rejection: distinct vector (centered at 0.5) with distance ~4.5 > 0.5
         unknown_vec = [0.5] * 128
-        is_match_rej, idx_rej, dist_rej, conf_rej = batch_compare_faces(known_matrix, unknown_vec, tolerance=0.5)
+        is_match_rej, idx_rej, dist_rej, conf_rej, _ = batch_compare_faces(known_matrix, unknown_vec, tolerance=0.5)
         self.assertFalse(is_match_rej)
+
+    def test_match_margin_rejects_ambiguous_face(self):
+        """Verify a look-alike vector between two enrolled students is rejected by margin gate."""
+        from face_app.utils import batch_compare_faces
+        vec_a = [0.0] * 128
+        vec_b = [0.06] * 128
+        ambiguous_vec = [0.03] * 128
+        known_matrix = np.array([vec_a, vec_b], dtype=np.float32)
+        is_match, idx, dist, conf, margin = batch_compare_faces(
+            known_matrix, ambiguous_vec, tolerance=0.38, min_margin=0.08
+        )
+        self.assertFalse(is_match)
+        self.assertLess(margin, 0.08)
+
+    def test_pick_face_prefers_unmarked_student_in_queue(self):
+        """When two faces are visible, prefer the one matching a not-yet-marked student."""
+        from face_app.utils import pick_face_for_next_attendance
+        import numpy as np
+
+        faces = [
+            {'encoding': self.mock_vector1, 'box': {'top': 10, 'right': 380, 'bottom': 340, 'left': 140}},
+            {'encoding': self.mock_vector2, 'box': {'top': 10, 'right': 60, 'bottom': 60, 'left': 10}},
+        ]
+        data = FaceService.get_section_student_encodings(self.section)
+        matrix = data['matrix']
+        students = data['students']
+        marked = {self.student1.pk}
+
+        picked = pick_face_for_next_attendance(
+            faces, matrix, students, marked, 640, 480, tolerance=0.5
+        )
+        self.assertEqual(len(picked), 1)
+        self.assertEqual(picked[0]['encoding'][0], 0.9)
+
+    def test_pick_primary_face_selects_largest_centered(self):
+        """Verify single-face mode picks the most prominent face."""
+        from face_app.utils import pick_primary_face
+        faces = [
+            {'encoding': [0.1]*128, 'box': {'top': 10, 'right': 60, 'bottom': 60, 'left': 10}},
+            {'encoding': [0.2]*128, 'box': {'top': 80, 'right': 380, 'bottom': 340, 'left': 140}},
+        ]
+        primary = pick_primary_face(faces, 640, 480)
+        self.assertEqual(len(primary), 1)
+        self.assertEqual(primary[0]['encoding'][0], 0.2)
+
+    def test_consensus_required_before_marking(self):
+        """Verify attendance is not marked until consensus frames are reached."""
+        from unittest.mock import patch
+        simulated_detected = [
+            {'encoding': self.mock_vector1, 'box': {'top': 10, 'right': 100, 'bottom': 100, 'left': 10}}
+        ]
+        with patch('face_app.services.face_service.detect_and_encode_all_faces', return_value=simulated_detected), \
+             patch('face_app.services.face_service.check_face_liveness', return_value=(True, 1.0, 'ok')):
+            # Strong match (0.1 vs 0.1) marks on first frame via FACE_INSTANT_MARK_CONFIDENCE
+            res = FaceService.recognize_all_faces_in_frame(self.session, b'dummy', tolerance=0.5)
+            rec = res['recognized'][0]
+            self.assertTrue(rec.get('matched'))
+            self.assertTrue(self.session.records.filter(student=self.student1).exists())
+
+    @override_settings(FACE_INSTANT_MARK_CONFIDENCE=2.0, FACE_CONSENSUS_FRAMES=2)
+    def test_second_student_marked_after_first_in_queue(self):
+        """After student 1 is marked, student 2 in front should still be recognized."""
+        from unittest.mock import patch
+
+        face_one = {'encoding': self.mock_vector1, 'box': {'top': 10, 'right': 100, 'bottom': 100, 'left': 10}}
+        face_two = {'encoding': self.mock_vector2, 'box': {'top': 20, 'right': 120, 'bottom': 120, 'left': 20}}
+
+        with patch('face_app.services.face_service.detect_and_encode_all_faces') as mock_detect, \
+             patch('face_app.services.face_service.check_face_liveness', return_value=(True, 1.0, 'ok')):
+            mock_detect.return_value = [face_one]
+            FaceService.recognize_all_faces_in_frame(self.session, b'dummy', tolerance=0.5)
+            FaceService.recognize_all_faces_in_frame(self.session, b'dummy', tolerance=0.5)
+            self.assertTrue(self.session.records.filter(student=self.student1).exclude(status='absent').exists())
+
+            mock_detect.return_value = [face_two]
+            res = FaceService.recognize_all_faces_in_frame(self.session, b'dummy', tolerance=0.5)
+            rec = res['recognized'][0]
+            self.assertEqual(rec['student_id'], self.student2.pk)
+            self.assertTrue(rec.get('verifying'))
+
+            res = FaceService.recognize_all_faces_in_frame(self.session, b'dummy', tolerance=0.5)
+            rec = res['recognized'][0]
+            self.assertTrue(rec.get('matched'))
+            self.assertTrue(self.session.records.filter(student=self.student2).exclude(status='absent').exists())
+
+    def test_instant_mark_on_strong_confidence(self):
+        """High-confidence matches should not wait for multi-frame consensus."""
+        from unittest.mock import patch
+
+        simulated_detected = [
+            {'encoding': self.mock_vector1, 'box': {'top': 10, 'right': 100, 'bottom': 100, 'left': 10}}
+        ]
+        with patch('face_app.services.face_service.detect_and_encode_all_faces', return_value=simulated_detected), \
+             patch('face_app.services.face_service.check_face_liveness', return_value=(True, 1.0, 'ok')):
+            res = FaceService.recognize_all_faces_in_frame(self.session, b'dummy', tolerance=0.5)
+            rec = res['recognized'][0]
+            self.assertTrue(rec.get('matched'))
+            self.assertFalse(rec.get('verifying'))
 
     def test_wrong_section_detection(self):
         """Verify student enrolled in Section B scanning in Section A is detected as wrong_section."""

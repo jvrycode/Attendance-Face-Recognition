@@ -4,7 +4,7 @@
 {% block page_subtitle %}<p>Manage all system users</p>{% endblock %}
 {% block header_actions %}
   <a href="{% url 'student_register' %}" class="btn btn-primary"><i data-lucide="user-plus"></i> Add Student (Face Enroll)</a>
-  <a href="{% url 'user_create' %}" class="btn btn-outline"><i data-lucide="shield"></i> Add Staff / Teacher</a>
+  <button type="button" class="btn btn-outline" onclick="openAddStaffModal();"><i data-lucide="shield"></i> Add Staff / Teacher</button>
 {% endblock %}
 
 {% block content %}
@@ -70,7 +70,7 @@
               <div>
                 <div class="font-bold">{{ u.get_full_name|default:u.username }}</div>
                 {% if u.role == 'teacher' and u.teacher_profile %}
-                  <div class="text-muted" style="font-size:11px;">Emp ID: {{ u.teacher_profile.employee_id }} &bull; {{ u.teacher_profile.department|default:"Faculty" }}</div>
+                  <div class="text-muted" style="font-size:11px;">Faculty ID: {{ u.teacher_profile.employee_id }} &bull; {{ u.teacher_profile.department|default:"Faculty" }}</div>
                 {% elif u.role == 'student' and u.student_profile %}
                   <div class="text-muted" style="font-size:11px;">Student ID: {{ u.student_profile.student_id }} &bull; {{ u.student_profile.course|default:"Student" }}</div>
                 {% endif %}
@@ -102,6 +102,95 @@
   </div>
 </div>
 
+<!-- Add Staff / Faculty Modal -->
+<div class="modal-backdrop" id="add-staff-modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-card modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title"><i data-lucide="shield" style="color:var(--primary);"></i> Add Staff / Faculty Account</h3>
+      <button type="button" class="btn btn-outline btn-sm modal-close-btn" data-close-modal aria-label="Close modal">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <form method="post" action="{% url 'user_create' %}" id="create-user-modal-form">
+      {% csrf_token %}
+      <div class="modal-body" style="padding:22px; display:flex; flex-direction:column; gap:14px;">
+        <div class="alert" style="background:rgba(99, 102, 241, 0.08); border:1px solid rgba(99, 102, 241, 0.25); border-radius:10px; padding:10px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0;">
+          <div style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:8px;">
+            <i data-lucide="graduation-cap" style="color:var(--primary); width:18px; height:18px; flex-shrink:0;"></i>
+            <span>Registering a student instead? Students require facial biometric enrollment.</span>
+          </div>
+          <a href="{% url 'student_register' %}" class="btn btn-outline btn-sm" style="white-space:nowrap; padding:4px 10px; font-size:12px;">Student Enroll &rarr;</a>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Username *</label>
+            {{ user_form.username }}
+            {% if user_form.username.errors %}<div class="form-error">{{ user_form.username.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Role *</label>
+            {{ user_form.role }}
+            {% if user_form.role.errors %}<div class="form-error">{{ user_form.role.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">First Name *</label>
+            {{ user_form.first_name }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Last Name *</label>
+            {{ user_form.last_name }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email *</label>
+            {{ user_form.email }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            {{ user_form.phone }}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password *</label>
+            {{ user_form.password1 }}
+            {% if user_form.password1.errors %}<div class="form-error">{{ user_form.password1.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirm Password *</label>
+            {{ user_form.password2 }}
+            {% if user_form.password2.errors %}<div class="form-error">{{ user_form.password2.errors.0 }}</div>{% endif %}
+          </div>
+        </div>
+
+        <!-- Teacher-specific fields -->
+        <div id="modal-teacher-fields" style="display:none; border-top:1px solid var(--border); margin-top:8px; padding-top:14px;">
+          <h4 style="margin-bottom:10px; color:var(--text-secondary); font-size:12.5px; text-transform:uppercase; letter-spacing:.5px; font-weight:700;">Faculty Profile</h4>
+          <div class="grid-2">
+            <div class="form-group">
+              <label class="form-label">Faculty ID (FAC-ID) *</label>
+              {{ teacher_form.employee_id }}
+            </div>
+            <div class="form-group">
+              <label class="form-label">Department</label>
+              {{ teacher_form.department }}
+            </div>
+            <div class="form-group" style="grid-column:1 / -1;">
+              <label class="form-label">Specialization</label>
+              {{ teacher_form.specialization }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding:14px 22px; background:var(--bg-secondary); border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" class="btn btn-outline" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-primary" data-loading-text="Creating Account...">
+          <i data-lucide="check-circle"></i> Create Staff User
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
 function filterUsersTable(val) {
   const q = val.toLowerCase().trim();
@@ -115,5 +204,38 @@ function filterUsersTable(val) {
     }
   });
 }
+
+function openAddStaffModal() {
+  updateModalRoleFields();
+  if (typeof window.openModal === 'function') {
+    window.openModal('add-staff-modal');
+  }
+}
+
+function closeAddStaffModal() {
+  if (typeof window.closeModal === 'function') {
+    window.closeModal('add-staff-modal');
+  }
+}
+
+function updateModalRoleFields() {
+  const roleSelect = document.querySelector('#add-staff-modal select[name="role"]');
+  const role = roleSelect ? roleSelect.value : 'teacher';
+  const teacherFields = document.getElementById('modal-teacher-fields');
+  if (teacherFields) {
+    teacherFields.style.display = (role === 'teacher') ? 'block' : 'none';
+  }
+  const empId = document.querySelector('#add-staff-modal input[name="employee_id"]');
+  if (empId) {
+    empId.required = (role === 'teacher');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const roleSelect = document.querySelector('#add-staff-modal select[name="role"]');
+  if (roleSelect) {
+    roleSelect.addEventListener('change', updateModalRoleFields);
+  }
+});
 </script>
 {% endblock %}

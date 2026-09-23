@@ -5,7 +5,6 @@ This approach requires NO dlib, NO CMake, and NO C++ compilation.
 Falls back gracefully if opencv-contrib is not available.
 """
 import os
-import json
 import base64
 import logging
 import numpy as np
@@ -43,6 +42,13 @@ try:
 except ImportError:
     FACE_RECOGNITION_AVAILABLE = False
     fr = None
+
+try:
+    import dlib
+    DLIB_AVAILABLE = True
+except ImportError:
+    dlib = None
+    DLIB_AVAILABLE = False
 
 # Determine overall capability
 FR_AVAILABLE = FACE_RECOGNITION_AVAILABLE or LBPH_AVAILABLE
@@ -140,11 +146,12 @@ def encode_face_from_path(image_path: str):
         return None
 
 
-def detect_and_encode_all_faces(frame_bytes: bytes, downscale: float = 0.5):
+def detect_and_encode_all_faces(frame_bytes: bytes, downscale: float = 0.5, fast: bool = False):
     """
     Lightning-fast multi-face detection and encoding.
     Downscales the frame for rapid face localization (omni-directional, catches off-center faces),
     then extracts 128-D encodings for ALL detected faces.
+    When fast=True (live attendance), skips slow enhancement fallbacks for lower latency.
     Returns list of dicts: [{'encoding': list_of_floats, 'box': {'top', 'right', 'bottom', 'left'}}, ...]
     """
     results = []
@@ -169,13 +176,13 @@ def detect_and_encode_all_faces(frame_bytes: bytes, downscale: float = 0.5):
                 scale_factor = 1.0
 
             # Fallback 2: Upsample by 1 to detect smaller or distant faces
-            if not small_locations:
+            if not small_locations and not fast:
                 small_locations = fr.face_locations(img_np, number_of_times_to_upsample=1, model='hog')
                 scale_factor = 1.0
 
             # Fallback 3: For backlit scenes (e.g. bright window behind student), enhance contrast using CLAHE
             enhanced_frame = None
-            if not small_locations and OPENCV_AVAILABLE:
+            if not fast and not small_locations and OPENCV_AVAILABLE:
                 try:
                     lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
                     l, a, b = cv2.split(lab)
@@ -190,7 +197,7 @@ def detect_and_encode_all_faces(frame_bytes: bytes, downscale: float = 0.5):
                     pass
 
             # Fallback 4: Gamma correction (brightens underexposed faces in backlit conditions)
-            if not small_locations and OPENCV_AVAILABLE:
+            if not fast and not small_locations and OPENCV_AVAILABLE:
                 try:
                     table = np.array([((i / 255.0) ** 0.55) * 255 for i in range(256)]).astype("uint8")
                     gamma_img = cv2.LUT(img_np, table)
@@ -202,7 +209,7 @@ def detect_and_encode_all_faces(frame_bytes: bytes, downscale: float = 0.5):
                     pass
 
             # Fallback 5: dlib frontal face detector with lowered confidence threshold (-0.4)
-            if not small_locations:
+            if not fast and not small_locations and DLIB_AVAILABLE and dlib is not None:
                 try:
                     dlib_det = dlib.get_frontal_face_detector()
                     dets, _, _ = dlib_det.run(img_np, 1, -0.4)
@@ -213,7 +220,7 @@ def detect_and_encode_all_faces(frame_bytes: bytes, downscale: float = 0.5):
                     pass
 
             # Fallback 6: OpenCV Haar Cascade detector
-            if not small_locations and OPENCV_AVAILABLE:
+            if not fast and not small_locations and OPENCV_AVAILABLE:
                 try:
                     gray = _to_gray(img_np)
                     haar_faces = _detect_faces_cv(gray)
@@ -379,7 +386,7 @@ def check_face_liveness(img_rgb: np.ndarray, box: dict) -> tuple:
         left = max(0, int(box.get('left', 0)))
         right = min(w, int(box.get('right', w)))
 
-        if (bottom - top) < 40 or (right - left) < 40:
+        if (bottom - top) < 28 or (right - left) < 28:
             return False, 0.0, "Face region too small for reliable liveness check"
 
         face_roi = img_rgb[top:bottom, left:right]
@@ -391,7 +398,7 @@ def check_face_liveness(img_rgb: np.ndarray, box: dict) -> tuple:
         lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
         # Printed paper photo or heavy out-of-focus blur typically has lap_var < 28
-        if lap_var < 28.0:
+        if lap_var < 18.0:
             return False, round(lap_var, 2), "Flat or blurred image (possible printed paper photo)"
 
         # Extreme high-frequency screen pixel grid / moiré pattern
@@ -460,31 +467,41 @@ def compare_faces(known_encoding: list, unknown_encoding: list, tolerance: float
     return is_match, round(confidence, 3)
 
 
-def batch_compare_faces(known_matrix: np.ndarray, unknown_encoding: list, tolerance: float = None):
+def batch_compare_faces(known_matrix: np.ndarray, unknown_encoding: list, tolerance: float = None,
+                        min_margin: float = None):
     """
     Sub-millisecond vectorized comparison of an unknown face against a section's pre-indexed matrix.
     known_matrix shape: (N, 128)
     unknown_encoding length: 128
-    Returns (is_match: bool, best_index: int or None, min_distance: float, confidence: float)
+    Returns (is_match, best_index, min_distance, confidence, margin)
+    margin = distance to second-best match minus best distance (higher = more confident)
     """
     if tolerance is None:
-        tolerance = getattr(settings, 'FACE_RECOGNITION_TOLERANCE', 0.5)
+        tolerance = getattr(settings, 'FACE_RECOGNITION_TOLERANCE', 0.38)
+    if min_margin is None:
+        min_margin = getattr(settings, 'FACE_MATCH_MARGIN', 0.08)
 
     if known_matrix is None or len(known_matrix) == 0 or unknown_encoding is None:
-        return False, None, 999.0, 0.0
+        return False, None, 999.0, 0.0, 0.0
 
     try:
         unknown_np = np.array(unknown_encoding, dtype=np.float32)
 
         # High-accuracy 128-D Euclidean Vectorized Matching
         if known_matrix.ndim == 2 and known_matrix.shape[1] == len(unknown_np):
-            # Compute Euclidean distances across all students at C speed in one step
             distances = np.linalg.norm(known_matrix - unknown_np, axis=1)
-            best_idx = int(np.argmin(distances))
+            sorted_indices = np.argsort(distances)
+            best_idx = int(sorted_indices[0])
             min_dist = float(distances[best_idx])
-            is_match = min_dist <= tolerance
+            second_dist = float(distances[sorted_indices[1]]) if len(distances) > 1 else 999.0
+            margin = second_dist - min_dist
             confidence = max(0.0, 1.0 - min_dist)
-            return is_match, best_idx, min_dist, round(confidence, 3)
+
+            is_match = min_dist <= tolerance and confidence >= getattr(settings, 'MIN_FACE_CONFIDENCE', 0.62)
+            if is_match and len(distances) > 1 and margin < min_margin:
+                is_match = False
+
+            return is_match, best_idx, min_dist, round(confidence, 3), round(margin, 3)
 
         # Fallback for LBPH or differing dimensions
         best_idx = None
@@ -497,11 +514,87 @@ def batch_compare_faces(known_matrix: np.ndarray, unknown_encoding: list, tolera
                 best_match = True
                 best_idx = i
                 best_confidence = conf
-        return best_match, best_idx, min_dist, best_confidence
+        return best_match, best_idx, min_dist, best_confidence, 0.0
 
     except Exception as e:
         logger.error(f"batch_compare_faces error: {e}")
-        return False, None, 999.0, 0.0
+        return False, None, 999.0, 0.0, 0.0
+
+
+def pick_primary_face(detected_faces: list, frame_w: int = 640, frame_h: int = 480) -> list:
+    """
+    Select the single most prominent face (largest area + closest to center).
+    Forces one-at-a-time scanning so the system focuses on one person per frame.
+    """
+    if not detected_faces:
+        return []
+    if len(detected_faces) == 1:
+        return detected_faces
+
+    center_x = frame_w / 2.0
+    center_y = frame_h / 2.0
+
+    def prominence_score(face):
+        box = face.get('box', {})
+        w = max(1, box.get('right', 0) - box.get('left', 0))
+        h = max(1, box.get('bottom', 0) - box.get('top', 0))
+        area = w * h
+        cx = (box.get('left', 0) + box.get('right', 0)) / 2.0
+        cy = (box.get('top', 0) + box.get('bottom', 0)) / 2.0
+        dist_from_center = ((cx - center_x) ** 2 + (cy - center_y) ** 2) ** 0.5
+        return area - dist_from_center * 2.0
+
+    return [max(detected_faces, key=prominence_score)]
+
+
+def pick_face_for_next_attendance(
+    detected_faces: list,
+    section_matrix: np.ndarray,
+    students: list,
+    marked_student_ids: set,
+    frame_w: int = 640,
+    frame_h: int = 480,
+    tolerance: float = None,
+):
+    """
+    Prefer the face that matches an not-yet-marked enrolled student (queue scanning).
+    Falls back to the largest / most centered face when no unmarked match is found.
+    """
+    if not detected_faces:
+        return []
+    if len(detected_faces) == 1:
+        return detected_faces
+
+    marked_student_ids = set(marked_student_ids or [])
+    unmarked_indices = [
+        i for i, student in enumerate(students)
+        if student.get('id') not in marked_student_ids
+    ]
+    if (
+        not unmarked_indices
+        or section_matrix is None
+        or len(section_matrix) == 0
+    ):
+        return pick_primary_face(detected_faces, frame_w, frame_h)
+
+    sub_matrix = section_matrix[unmarked_indices]
+    best_face = None
+    best_confidence = -1.0
+
+    for face in detected_faces:
+        encoding = face.get('encoding')
+        if not encoding:
+            continue
+        is_match, sub_idx, _dist, confidence, _margin = batch_compare_faces(
+            sub_matrix, encoding, tolerance
+        )
+        if is_match and sub_idx is not None and confidence > best_confidence:
+            best_confidence = confidence
+            best_face = face
+
+    if best_face is not None:
+        return [best_face]
+    return pick_primary_face(detected_faces, frame_w, frame_h)
 
 
 def _chi_squared_distance(h1: np.ndarray, h2: np.ndarray) -> float:

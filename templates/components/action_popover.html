@@ -15,23 +15,52 @@
     <i data-lucide="{{ trigger_icon|default:'more-vertical' }}"></i>
   </button>
   <div class="action-popover-menu">
-    {% if start_url %}
-      <a href="{{ start_url }}" class="action-popover-item text-success">
-        <i data-lucide="{{ start_icon|default:'play' }}"></i> {{ start_label|default:"Start Attendance" }}
+    {% if start_modal_url %}
+      <button type="button" class="action-popover-item {% if start_is_primary %}text-primary{% else %}text-success{% endif %}" onclick="openStartSessionModal('{{ start_modal_url|escapejs }}', '{{ start_modal_name|escapejs }}')">
+        <i data-lucide="{{ start_icon|default:'camera' }}"></i> {{ start_label|default:"Start Attendance" }}
+      </button>
+    {% elif start_onclick %}
+      <button type="button" class="action-popover-item {% if start_is_primary %}text-primary{% else %}text-success{% endif %}" onclick="{{ start_onclick }}">
+        <i data-lucide="{{ start_icon|default:'camera' }}"></i> {{ start_label|default:"Start Attendance" }}
+      </button>
+    {% elif start_url %}
+      <a href="{{ start_url }}" class="action-popover-item {% if start_is_primary %}text-primary{% else %}text-success{% endif %}" data-loading-text="Launching...">
+        <i data-lucide="{{ start_icon|default:'camera' }}"></i> {{ start_label|default:"Start Attendance" }}
       </a>
+    {% endif %}
+    {% if reopen_url %}
+      <form method="post" action="{{ reopen_url }}" style="margin:0;">
+        {% csrf_token %}
+        <button type="submit" class="action-popover-item text-primary" data-loading-text="Launching...">
+          <i data-lucide="{{ reopen_icon|default:'camera' }}"></i> {{ reopen_label|default:"Reopen & Scan" }}
+        </button>
+      </form>
+    {% endif %}
+    {% if start_url or start_onclick or start_modal_url or reopen_url %}
+      {% if detail_url or detail_onclick or detail_section_id or report_url or primary_url or edit_url or delete_url %}
+        <div class="action-popover-divider"></div>
+      {% endif %}
     {% endif %}
     {% if primary_url %}
       <a href="{{ primary_url }}" class="action-popover-item">
         <i data-lucide="{{ primary_icon|default:'plus' }}"></i> {{ primary_label }}
       </a>
     {% endif %}
-    {% if detail_url %}
+    {% if detail_section_id %}
+      <button type="button" class="action-popover-item" onclick="openSectionDetailsModal('{{ detail_section_id }}')">
+        <i data-lucide="{{ detail_icon|default:'users' }}"></i> {{ detail_label|default:"View Details" }}
+      </button>
+    {% elif detail_onclick %}
+      <button type="button" class="action-popover-item" onclick="{{ detail_onclick }}">
+        <i data-lucide="{{ detail_icon|default:'users' }}"></i> {{ detail_label|default:"View Details" }}
+      </button>
+    {% elif detail_url %}
       <a href="{{ detail_url }}" class="action-popover-item">
         <i data-lucide="{{ detail_icon|default:'users' }}"></i> {{ detail_label|default:"View Details" }}
       </a>
     {% endif %}
     {% if report_url %}
-      <a href="{{ report_url }}" class="action-popover-item">
+      <a href="{{ report_url }}{% if report_section_id %}?section_id={{ report_section_id }}{% endif %}" class="action-popover-item">
         <i data-lucide="{{ report_icon|default:'file-text' }}"></i> {{ report_label|default:"Attendance Report" }}
       </a>
     {% endif %}

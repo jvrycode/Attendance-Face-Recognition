@@ -12,22 +12,20 @@ from core.services.attendance_service import AttendanceService
 from face_app.utils import (
     detect_and_encode_all_faces,
     batch_compare_faces,
-    encode_face_from_frame,
-    compare_faces,
-    base64_to_bytes,
     draw_face_boxes,
     check_face_liveness,
+    pick_face_for_next_attendance,
     _decode_image_to_rgb,
-    FR_AVAILABLE,
-    FACE_RECOGNITION_AVAILABLE,
-    LBPH_AVAILABLE,
 )
 
 logger = logging.getLogger(__name__)
 
 SECTION_CACHE_KEY_PREFIX = 'sec_face_embeddings_'
 GLOBAL_CACHE_KEY = 'global_student_face_embeddings'
+CONSENSUS_CACHE_PREFIX = 'face_consensus_'
+LIVENESS_OK_PREFIX = 'face_liveness_ok_'
 CACHE_TIMEOUT = 300  # 5 minutes
+LIVENESS_CACHE_TIMEOUT = 90
 
 
 class FaceService:
@@ -147,25 +145,64 @@ class FaceService:
         return data
 
     @staticmethod
+    def _consensus_cache_key(session_id):
+        return f"{CONSENSUS_CACHE_PREFIX}{session_id}"
+
+    @staticmethod
+    def _reset_consensus(session_id):
+        cache.delete(FaceService._consensus_cache_key(session_id))
+
+    @staticmethod
+    def _consensus_frames_required(match_confidence):
+        """Strong matches mark in one frame; weaker matches need consecutive frames."""
+        instant = getattr(settings, 'FACE_INSTANT_MARK_CONFIDENCE', 0.70)
+        if match_confidence >= instant:
+            return 1
+        return getattr(settings, 'FACE_CONSENSUS_FRAMES', 2)
+
+    @staticmethod
+    def _update_consensus(session_id, student_id):
+        """Track consecutive matching frames; returns (streak, required_frame_count)."""
+        cache_key = FaceService._consensus_cache_key(session_id)
+        data = cache.get(cache_key) or {'student_id': None, 'count': 0}
+        if data.get('student_id') == student_id:
+            data['count'] += 1
+        else:
+            data = {'student_id': student_id, 'count': 1}
+        cache.set(cache_key, data, timeout=60)
+        return data['count']
+
+    @staticmethod
     def recognize_all_faces_in_frame(session, frame_bytes, tolerance=None):
         """
-        Lightning-fast omni-directional recognition for ALL faces present in a single frame.
-        1. Downscales frame for rapid multi-face detection (catches off-center & angled faces).
-        2. Extracts encodings for every detected face.
-        3. Uses vectorized NumPy matrix comparison against section students (<0.1ms).
-        4. Auto-marks attendance for matched students (present or late).
+        Accurate single-face recognition with strict matching, liveness check,
+        and multi-frame consensus before marking attendance.
+        1. Detect all faces, then pick the primary (largest / most centered) face only.
+        2. Liveness check rejects photos and screen spoofs.
+        3. Strict Euclidean match with confidence floor and second-best margin gate.
+        4. Requires FACE_CONSENSUS_FRAMES consecutive matches before first mark.
         """
         if tolerance is None:
-            tolerance = getattr(settings, 'FACE_RECOGNITION_TOLERANCE', 0.5)
+            tolerance = getattr(settings, 'FACE_RECOGNITION_TOLERANCE', 0.38)
 
-        # Detect and encode all faces in frame (fast downscaled localization)
-        detected_faces = detect_and_encode_all_faces(frame_bytes)
-        if not detected_faces:
+        all_detected = detect_and_encode_all_faces(
+            frame_bytes, downscale=0.42, fast=True
+        )
+        total_face_count = len(all_detected)
+        if not all_detected:
             return {
                 'success': True,
                 'recognized': [],
                 'face_count': 0,
             }
+
+        # Decode frame once for liveness checks
+        try:
+            img_rgb = _decode_image_to_rgb(frame_bytes)
+            frame_h, frame_w = img_rgb.shape[:2]
+        except Exception:
+            img_rgb = None
+            frame_w, frame_h = 640, 480
 
         section = session.schedule.section
         section_data = FaceService.get_section_student_encodings(section)
@@ -173,6 +210,21 @@ class FaceService:
         section_matrix = section_data.get('matrix')
         if section_matrix is None and section_data.get('encodings'):
             section_matrix = np.array(section_data['encodings'], dtype=np.float32)
+
+        marked_student_ids = set(
+            session.records.exclude(status='absent').values_list('student_id', flat=True)
+        )
+
+        # Queue mode: prioritize faces that belong to students not yet marked present/late
+        detected_faces = pick_face_for_next_attendance(
+            all_detected,
+            section_matrix,
+            students,
+            marked_student_ids,
+            frame_w,
+            frame_h,
+            tolerance,
+        )
 
         recognized_results = []
 
@@ -182,36 +234,117 @@ class FaceService:
 
             best_match = None
             best_confidence = 0.0
+            unmarked_indices = [
+                i for i, student in enumerate(students)
+                if student.get('id') not in marked_student_ids
+            ]
 
-            if section_matrix is not None and len(section_matrix) > 0 and face_encoding:
-                is_match, best_idx, min_dist, confidence = batch_compare_faces(
+            if (
+                section_matrix is not None
+                and len(section_matrix) > 0
+                and face_encoding
+                and unmarked_indices
+            ):
+                sub_matrix = section_matrix[unmarked_indices]
+                is_match, sub_idx, min_dist, confidence, margin = batch_compare_faces(
+                    sub_matrix, face_encoding, tolerance
+                )
+                if is_match and sub_idx is not None and sub_idx < len(unmarked_indices):
+                    best_match = students[unmarked_indices[sub_idx]]
+                    best_confidence = confidence
+
+            if not best_match and section_matrix is not None and len(section_matrix) > 0 and face_encoding:
+                is_match, best_idx, min_dist, confidence, margin = batch_compare_faces(
                     section_matrix, face_encoding, tolerance
                 )
                 if is_match and best_idx is not None and best_idx < len(students):
-                    best_match = students[best_idx]
-                    best_confidence = confidence
+                    candidate = students[best_idx]
+                    if candidate.get('id') in marked_student_ids:
+                        recognized_results.append({
+                            'student_id': candidate['id'],
+                            'student_number': candidate['student_number'],
+                            'name': candidate['name'],
+                            'confidence': round(confidence * 100, 1),
+                            'status': session.records.filter(
+                                student=candidate['student_obj']
+                            ).exclude(status='absent').values_list('status', flat=True).first(),
+                            'new_status': None,
+                            'box': box,
+                            'matched': False,
+                            'verifying': False,
+                            'already_marked': True,
+                        })
+                        FaceService._reset_consensus(session.pk)
+                        continue
 
             if best_match:
-                # Auto-mark attendance via AttendanceService
                 student_obj = best_match['student_obj']
+
+                # Liveness only when attempting a new attendance mark
+                if img_rgb is not None:
+                    is_live, live_score, live_reason = check_face_liveness(img_rgb, box)
+                    if not is_live:
+                        FaceService._reset_consensus(session.pk)
+                        recognized_results.append({
+                            'student_id': best_match['id'],
+                            'student_number': best_match['student_number'],
+                            'name': best_match['name'],
+                            'confidence': round(best_confidence * 100, 1),
+                            'status': None,
+                            'new_status': None,
+                            'box': box,
+                            'matched': False,
+                            'wrong_section': False,
+                            'liveness_failed': True,
+                            'message': live_reason,
+                        })
+                        continue
+
+                streak = FaceService._update_consensus(session.pk, best_match['id'])
+                required = FaceService._consensus_frames_required(best_confidence)
+                consensus_reached = streak >= required
+
                 record, is_new_mark = AttendanceService.mark_attendance(
                     session=session,
                     student=student_obj,
                     confidence=best_confidence
-                )
+                ) if consensus_reached else (None, False)
+
+                if consensus_reached:
+                    FaceService._reset_consensus(session.pk)
 
                 recognized_results.append({
                     'student_id': best_match['id'],
                     'student_number': best_match['student_number'],
                     'name': best_match['name'],
                     'confidence': round(best_confidence * 100, 1),
-                    'status': record.status,
-                    'new_status': record.status if is_new_mark else None,
+                    'status': record.status if record else 'verifying',
+                    'new_status': record.status if (is_new_mark and consensus_reached) else None,
                     'box': box,
-                    'matched': True,
+                    'matched': consensus_reached,
+                    'verifying': not consensus_reached,
                 })
             else:
-                # Two-tier check: Cross-check against all registered students to catch wrong-section scans
+                FaceService._reset_consensus(session.pk)
+
+                if img_rgb is not None:
+                    is_live, live_score, live_reason = check_face_liveness(img_rgb, box)
+                    if not is_live:
+                        recognized_results.append({
+                            'student_id': None,
+                            'student_number': None,
+                            'name': 'Unknown',
+                            'confidence': 0.0,
+                            'status': None,
+                            'new_status': None,
+                            'box': box,
+                            'matched': False,
+                            'wrong_section': False,
+                            'liveness_failed': True,
+                            'message': live_reason,
+                        })
+                        continue
+
                 global_data = FaceService.get_global_student_encodings()
                 global_matrix = global_data.get('matrix')
                 global_students = global_data.get('students', [])
@@ -219,7 +352,7 @@ class FaceService:
                 wrong_section_conf = 0.0
 
                 if global_matrix is not None and len(global_matrix) > 0 and face_encoding:
-                    is_match_g, g_idx, dist_g, conf_g = batch_compare_faces(
+                    is_match_g, g_idx, dist_g, conf_g, _margin_g = batch_compare_faces(
                         global_matrix, face_encoding, tolerance
                     )
                     if is_match_g and g_idx is not None and g_idx < len(global_students):
@@ -240,7 +373,6 @@ class FaceService:
                         'assigned_sections': wrong_section_match.get('assigned_sections', 'Different Section'),
                     })
                 else:
-                    # Truly unregistered / unknown face
                     recognized_results.append({
                         'student_id': None,
                         'student_number': None,
@@ -256,7 +388,9 @@ class FaceService:
         return {
             'success': True,
             'recognized': recognized_results,
-            'face_count': len(detected_faces),
+            'face_count': total_face_count,
+            'scanning_primary': len(detected_faces) == 1,
+            'multiple_faces_detected': total_face_count > 1,
         }
 
     @staticmethod

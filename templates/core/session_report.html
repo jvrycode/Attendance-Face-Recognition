@@ -2,10 +2,16 @@
 {% block title %}Session Report{% endblock %}
 {% block page_title %}Attendance Report{% endblock %}
 {% block page_subtitle %}
-  <p>{{ session.schedule.section.name }} | {{ session.schedule.section.effective_subject.code|default:"—" }} | {{ session.date }}</p>
+  <p class="header-subtitle">{{ session.schedule.section.name }} | {{ session.schedule.section.effective_subject.code|default:"—" }} | {{ session.date }}</p>
 {% endblock %}
+
+{% block page_back %}
+<div class="page-back-wrapper">
+  <a href="{% url 'attendance_history' %}" class="page-back-link"><i data-lucide="arrow-left"></i> <span>Back to History</span></a>
+</div>
+{% endblock %}
+
 {% block header_actions %}
-  <a href="{% url 'attendance_history' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to History</a>
   <button onclick="window.print()" class="btn btn-outline"><i data-lucide="printer"></i> Print</button>
   {% if session.status == 'open' %}
     <a href="{% url 'session_live' session.pk %}" class="btn btn-primary"><i data-lucide="camera"></i> Live Scanner</a>
@@ -14,10 +20,9 @@
       <button type="submit" class="btn btn-danger"><i data-lucide="square"></i> Close Session</button>
     </form>
   {% elif request.user.role in 'admin,teacher' %}
-    <form method="post" action="{% url 'session_reopen' session.pk %}" style="display:inline;">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-warning"><i data-lucide="rotate-ccw"></i> Re-open Session</button>
-    </form>
+    <a href="{% url 'section_detail' session.schedule.section.pk %}" class="btn btn-outline">
+      <i data-lucide="calendar"></i> Section &amp; Schedule
+    </a>
   {% endif %}
 {% endblock %}
 
@@ -69,7 +74,7 @@
   <div class="table-container" style="border:none;">
     <table>
       <thead>
-        <tr><th>#</th><th>Student</th><th>Student ID</th><th>Status</th><th>Recognized At</th><th>Confidence</th><th>Remarks</th>
+        <tr><th>#</th><th>Student</th><th>Student ID</th><th>Status</th><th>Recognized At</th><th>Notes</th>
         {% if request.user.role in 'admin,teacher' %}<th>Edit</th>{% endif %}
         </tr>
       </thead>
@@ -91,9 +96,6 @@
             {% else %}<span class="badge badge-danger"><i data-lucide="x-circle"></i> Absent</span>{% endif %}
           </td>
           <td class="text-muted">{{ record.recognized_at|time:"g:i:s A"|default:"—" }}</td>
-          <td class="text-muted">
-            {% if record.confidence_score %}{{ record.confidence_score|floatformat:1 }}%{% else %}—{% endif %}
-          </td>
           <td class="text-muted">{{ record.remarks|default:"—" }}</td>
           {% if request.user.role == 'admin' or request.user.role == 'teacher' %}
           <td>

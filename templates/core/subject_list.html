@@ -5,7 +5,7 @@
 
 {% block header_actions %}
   {% if request.user.role == 'admin' %}
-    <a href="{% url 'subject_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Subject</a>
+    <button type="button" class="btn btn-primary" onclick="openAddSubjectModal();"><i data-lucide="plus"></i> Add Subject</button>
   {% endif %}
 {% endblock %}
 
@@ -69,7 +69,7 @@
           <td colspan="7" class="text-center text-muted" style="padding:30px;">
             No subjects found.
             {% if request.user.role == 'admin' %}
-              <a href="{% url 'subject_create' %}">Add one</a>
+              <a href="{% url 'subject_create' %}" onclick="event.preventDefault(); openAddSubjectModal();">Add one</a>
             {% endif %}
           </td>
         </tr>
@@ -78,4 +78,136 @@
     </table>
   </div>
 </div>
+
+{% if request.user.role == 'admin' %}
+<!-- Add Subject Modal -->
+<div class="modal-backdrop" id="add-subject-modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-card modal-lg">
+    <div class="modal-header">
+      <h3 class="modal-title"><i data-lucide="book-open" style="color:var(--primary);"></i> Add Subject Offering</h3>
+      <button type="button" class="btn btn-outline btn-sm modal-close-btn" data-close-modal aria-label="Close modal">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <form method="post" action="{% url 'subject_create' %}">
+      {% csrf_token %}
+      <div class="modal-body" style="padding:22px; display:flex; flex-direction:column; gap:16px;">
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label" style="font-weight:600;">1. Academic Program *</label>
+            {{ subject_form.program }}
+            {% if subject_form.program.errors %}<div class="form-error">{{ subject_form.program.errors.0 }}</div>{% endif %}
+            <span class="form-text">Filters available sections.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" style="font-weight:600;">2. Class Section (Optional)</label>
+            {{ subject_form.section }}
+            {% if subject_form.section.errors %}<div class="form-error">{{ subject_form.section.errors.0 }}</div>{% endif %}
+            <span class="form-text" id="section-helper">Choose section offering.</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">3. Assigned Instructor / Teacher</label>
+          {{ subject_form.teacher }}
+          {% if subject_form.teacher.errors %}<div class="form-error">{{ subject_form.teacher.errors.0 }}</div>{% endif %}
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Subject Code *</label>
+            {{ subject_form.code }}
+            {% if subject_form.code.errors %}<div class="form-error">{{ subject_form.code.errors.0 }}</div>{% endif %}
+            <span class="form-text">e.g. CS101, IT201, ACT101</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Units *</label>
+            {{ subject_form.units }}
+            {% if subject_form.units.errors %}<div class="form-error">{{ subject_form.units.errors.0 }}</div>{% endif %}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Subject Name *</label>
+          {{ subject_form.name }}
+          {% if subject_form.name.errors %}<div class="form-error">{{ subject_form.name.errors.0 }}</div>{% endif %}
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Description / Course Topics</label>
+          {{ subject_form.description }}
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding:14px 22px; background:var(--bg-secondary); border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" class="btn btn-outline" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-primary" data-loading-text="Saving Subject...">
+          <i data-lucide="check"></i> Save Subject
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openAddSubjectModal() {
+  if (typeof window.openModal === 'function') {
+    window.openModal('add-subject-modal');
+  }
+}
+
+function closeAddSubjectModal() {
+  if (typeof window.closeModal === 'function') {
+    window.closeModal('add-subject-modal');
+  }
+}
+
+async function filterSectionsByProgram() {
+  const programSelect = document.getElementById('id_program');
+  const sectionSelect = document.getElementById('id_section');
+  const helper = document.getElementById('section-helper');
+  if (!programSelect || !sectionSelect) return;
+
+  const programId = programSelect.value;
+  if (!programId) {
+    if (helper) helper.textContent = 'Select a program above to see sections.';
+    return;
+  }
+
+  if (helper) {
+    helper.innerHTML = '<i data-lucide="loader" style="width:12px; height:12px;"></i> Loading sections...';
+    if (window.lucide) lucide.createIcons();
+  }
+
+  try {
+    const resp = await fetch(`/api/sections-by-program/${programId}/`);
+    const data = await resp.json();
+
+    sectionSelect.innerHTML = '<option value="">Select Section (Optional)</option>';
+    if (window.syncSelectPlaceholder) window.syncSelectPlaceholder(sectionSelect);
+
+    if (data.sections && data.sections.length > 0) {
+      data.sections.forEach(sec => {
+        const opt = document.createElement('option');
+        opt.value = sec.id;
+        opt.textContent = `${sec.name} (${sec.year_level})`;
+        sectionSelect.appendChild(opt);
+      });
+      if (helper) helper.textContent = `${data.sections.length} section(s) available for this program.`;
+    } else {
+      if (helper) helper.textContent = 'No sections created under this program yet.';
+    }
+  } catch (err) {
+    console.error('Error fetching sections:', err);
+    if (helper) helper.textContent = 'Failed to load sections dynamically.';
+  } finally {
+    if (window.syncSelectPlaceholder) {
+      window.syncSelectPlaceholder(programSelect);
+      window.syncSelectPlaceholder(sectionSelect);
+    }
+  }
+}
+</script>
+{% endif %}
 {% endblock %}

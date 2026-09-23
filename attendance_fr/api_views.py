@@ -5,19 +5,18 @@ Protected with JWT Authentication and CORS.
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
-from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
+from rest_framework.generics import ListCreateAPIView
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from accounts.models import CustomUser, Teacher, Student
-from accounts.serializers import CurrentUserProfileSerializer, StudentSerializer
+from accounts.models import Student
+from accounts.serializers import CurrentUserProfileSerializer
 from core.models import Subject, Section, Schedule, AttendanceSession, AttendanceRecord, StudentSection
 from core.serializers import (
     SubjectSerializer, SectionSerializer, ScheduleSerializer,
     AttendanceSessionSerializer, AttendanceRecordSerializer
 )
 from core.services.schedule_service import ScheduleService
-from core.services.attendance_service import AttendanceService
 from face_app.services.face_service import FaceService
 from face_app.utils import (
     base64_to_bytes, encode_face_from_frame, FR_AVAILABLE

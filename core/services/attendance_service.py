@@ -4,7 +4,7 @@ and attendance recording.
 """
 from django.conf import settings
 from django.utils import timezone
-from core.models import AttendanceSession, AttendanceRecord, StudentSection
+from core.models import AttendanceRecord, StudentSection
 
 
 class AttendanceService:

@@ -273,7 +273,7 @@ class CoreFeatureTests(TestCase):
             'course': 'BSIT',
             'year_level': 1,
             'section': self.section_a.pk,
-            'password': 'secretpassword123',
+            'password': 'SecretPassword@123',
         })
 
         new_student = Student.objects.get(student_id='2024-99999')
@@ -446,5 +446,49 @@ class CoreFeatureTests(TestCase):
 
         res_week = client.get(f'/reports/attendance/?section_id={self.section_a.pk}&period=week')
         self.assertEqual(res_week.status_code, 200)
+
+    def test_student_attendance_history_calendar_view(self):
+        """Verify student attendance history renders Section (Subject name) cards and real-aligned calendar grid."""
+        import datetime
+        StudentSection.objects.create(student=self.student, section=self.section_a)
+
+        sched = Schedule.objects.create(
+            section=self.section_a, day_of_week='Tue',
+            start_time=time(8, 0), end_time=time(9, 30), room='Room 101'
+        )
+        session_date = datetime.date(2026, 9, 22)
+        session = AttendanceSession.objects.create(
+            schedule=sched, date=session_date, started_by=self.teacher, status='closed'
+        )
+        AttendanceRecord.objects.create(
+            session=session, student=self.student, status='present',
+            recognized_at=timezone.now()
+        )
+
+        client = Client()
+        client.force_login(self.student_user)
+
+        # 1. Main student records page: Enrolled cards only
+        res = client.get('/history/')
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'BSCS-2A (Data Structures &amp; Algorithms)')
+        self.assertContains(res, 'View Attendance')
+        self.assertNotContains(res, 'Attendance Graph')
+
+        # 2. Dedicated Section Attendance Page: Full calendar graph & session logs
+        res_sec = client.get(f'/history/{self.section_a.pk}/?year=2026&month=9')
+        self.assertEqual(res_sec.status_code, 200)
+        self.assertContains(res_sec, 'Attendance Graph')
+        self.assertContains(res_sec, 'September 2026')
+        self.assertContains(res_sec, 'Present')
+        # Remarks column should be removed
+        self.assertNotContains(res_sec, '<th>Remarks</th>')
+        self.assertNotContains(res_sec, '<th>REMARKS</th>')
+
+        # 3. Dynamic rollover to 2027 on dedicated page
+        res_2027 = client.get(f'/history/{self.section_a.pk}/?year=2027&month=1')
+        self.assertEqual(res_2027.status_code, 200)
+        self.assertContains(res_2027, 'January 2027')
+
 
 

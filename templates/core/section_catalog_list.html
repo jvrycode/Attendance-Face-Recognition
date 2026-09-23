@@ -4,7 +4,7 @@
 {% block page_subtitle %}<p>Stored section definitions grouped by College / Academic Program</p>{% endblock %}
 
 {% block header_actions %}
-  <a href="{% url 'section_catalog_create' %}" class="btn btn-primary"><i data-lucide="plus"></i> Add Section Definition</a>
+  <button type="button" class="btn btn-primary" onclick="openAddCatalogModal();"><i data-lucide="plus"></i> Add Section Definition</button>
 {% endblock %}
 
 {% block content %}
@@ -76,7 +76,7 @@
           <td colspan="7" class="text-center text-muted" style="padding:36px;">
             No section definitions stored yet.
             <div style="margin-top:10px;">
-              <a href="{% url 'section_catalog_create' %}" class="btn btn-primary btn-sm"><i data-lucide="plus"></i> Add First Section</a>
+              <a href="{% url 'section_catalog_create' %}" class="btn btn-primary btn-sm" onclick="event.preventDefault(); openAddCatalogModal();"><i data-lucide="plus"></i> Add First Section</a>
             </div>
           </td>
         </tr>
@@ -85,4 +85,66 @@
     </table>
   </div>
 </div>
+
+<!-- Add Section Definition Modal -->
+<div class="modal-backdrop" id="add-catalog-modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-card modal-md">
+    <div class="modal-header">
+      <h3 class="modal-title"><i data-lucide="layers" style="color:var(--primary);"></i> Add Section Definition</h3>
+      <button type="button" class="btn btn-outline btn-sm modal-close-btn" data-close-modal aria-label="Close modal">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <form method="post" action="{% url 'section_catalog_create' %}">
+      {% csrf_token %}
+      <div class="modal-body" style="padding:22px; display:flex; flex-direction:column; gap:16px;">
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Academic Program *</label>
+            {{ form.program }}
+            {% if form.program.errors %}<div class="form-error">{{ form.program.errors.0 }}</div>{% endif %}
+          </div>
+          <div class="form-group">
+            <label class="form-label">Year Level *</label>
+            {{ form.year_level }}
+            {% if form.year_level.errors %}<div class="form-error">{{ form.year_level.errors.0 }}</div>{% endif %}
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Section Name / Code *</label>
+          {{ form.name }}
+          {% if form.name.errors %}<div class="form-error">{{ form.name.errors.0 }}</div>{% endif %}
+          <span class="form-text">e.g. BSCS-3A, IT-41, EMC-1B</span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Description / Major Track (Optional)</label>
+          {{ form.description }}
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding:14px 22px; background:var(--bg-secondary); border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" class="btn btn-outline" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-primary" data-loading-text="Saving Definition...">
+          <i data-lucide="check"></i> Save Definition
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openAddCatalogModal() {
+  if (typeof window.openModal === 'function') {
+    window.openModal('add-catalog-modal');
+  }
+}
+
+function closeAddCatalogModal() {
+  if (typeof window.closeModal === 'function') {
+    window.closeModal('add-catalog-modal');
+  }
+}
+</script>
 {% endblock %}

@@ -2,13 +2,18 @@
 {% block title %}{{ title }}{% endblock %}
 {% block page_title %}{{ title }}{% endblock %}
 
-{% block header_actions %}
-  <a href="{% url 'subject_list' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to Subjects</a>
+{% block page_subtitle %}<p class="header-subtitle">Define subject syllabus, academic units, and section assignment</p>{% endblock %}
+
+{% block page_back %}
+<div class="page-back-wrapper">
+  <a href="{% url 'subject_list' %}" class="page-back-link"><i data-lucide="arrow-left"></i> <span>Back to Subjects</span></a>
+</div>
 {% endblock %}
 
 {% block content %}
-<div class="card" style="max-width:600px;">
-  <div class="card-header"><span class="card-title"><i data-lucide="book-open"></i> {{ title }}</span></div>
+<div class="form-container-centered">
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i data-lucide="book-open"></i> {{ title }}</span></div>
   <div class="card-body">
     <form method="post" id="subject-form">
       {% csrf_token %}
@@ -70,6 +75,7 @@
     </form>
   </div>
 </div>
+</div>
 
 <script>
 // Dynamic Dropdown Filtering: Program -> Section
@@ -94,7 +100,7 @@ async function filterSectionsByProgram() {
     const resp = await fetch(`/api/sections-by-program/${programId}/`);
     const data = await resp.json();
 
-    sectionSelect.innerHTML = '<option value="">-- Select Section --</option>';
+    sectionSelect.innerHTML = '<option value="">Select Section</option>';
 
     if (data.sections && data.sections.length > 0) {
       data.sections.forEach(sec => {

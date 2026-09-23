@@ -62,20 +62,29 @@ class AccountsFeatureTests(TestCase):
         self.assertFalse(student.is_face_enrolled)
 
     def test_password_validators_enforcement(self):
-        """Verify production password validation rules (Fix 1)."""
-        # Short password (< 8 chars) should fail
+        """Verify production password validation rules (min 6 chars, uppercase, lowercase, special char)."""
+        # Short password (< 6 chars) should fail
         with self.assertRaises(ValidationError):
-            validate_password('short7')
+            validate_password('Ab1!')
 
-        # Entirely numeric password should fail
+        # Missing uppercase
         with self.assertRaises(ValidationError):
-            validate_password('1234567890')
+            validate_password('lowercase@123')
 
-        # Strong password should pass without error
+        # Missing lowercase
+        with self.assertRaises(ValidationError):
+            validate_password('UPPERCASE@123')
+
+        # Missing special character
+        with self.assertRaises(ValidationError):
+            validate_password('Password123')
+
+        # Compliant complex password should pass without error
         try:
             validate_password('SecurePass2026!#')
+            validate_password('Pass@1')
         except ValidationError:
-            self.fail("validate_password unexpectedly raised ValidationError for a strong password")
+            self.fail("validate_password unexpectedly raised ValidationError for a compliant password")
 
     def test_admin_user_create_staff_teacher(self):
         """Verify admin can create a teacher with employee profile via user_create."""

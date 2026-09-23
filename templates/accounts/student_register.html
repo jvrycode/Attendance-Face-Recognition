@@ -1,14 +1,16 @@
 {% extends 'base.html' %}
 {% block title %}Register New Student{% endblock %}
 {% block page_title %}Register New Student{% endblock %}
-{% block page_subtitle %}<p>Enroll student details and proceed directly to biometric face capture</p>{% endblock %}
+{% block page_subtitle %}<p class="header-subtitle">Enroll student details and proceed directly to biometric face capture</p>{% endblock %}
 
-{% block header_actions %}
-  <a href="{% url 'user_list' %}?role=student" class="btn btn-outline btn-sm"><i data-lucide="arrow-left"></i> Back to Users</a>
+{% block page_back %}
+<div class="page-back-wrapper">
+  <a href="{% url 'user_list' %}?role=student" class="page-back-link"><i data-lucide="arrow-left"></i> <span>Back to Users</span></a>
+</div>
 {% endblock %}
 
 {% block content %}
-<div style="max-width: 760px; margin: 0 auto;">
+<div class="form-container-wide">
 
   <!-- Info Alert -->
   <div class="alert mb-3" style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 12px; padding: 16px 20px; display: flex; align-items: flex-start; gap: 14px;">

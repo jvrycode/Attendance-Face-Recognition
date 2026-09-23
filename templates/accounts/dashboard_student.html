@@ -1,14 +1,19 @@
 {% extends 'base.html' %}
 {% block title %}Student Dashboard{% endblock %}
 {% block page_title %}My Dashboard{% endblock %}
-{% block page_subtitle %}<p>Track your attendance records</p>{% endblock %}
+{% block page_subtitle %}<p>Your attendance overview &mdash; {{ student.course|default:"Student" }}</p>{% endblock %}
+
+{% block header_actions %}
+  <a href="{% url 'section_list' %}" class="btn btn-outline"><i data-lucide="calendar"></i> My Schedule</a>
+  <a href="{% url 'attendance_history' %}" class="btn btn-outline"><i data-lucide="clipboard-list"></i> Full Record</a>
+{% endblock %}
 
 {% block content %}
 {% if student %}
-<!-- Student Info Card -->
+<!-- Profile + summary -->
 <div class="grid-2 mb-3">
   <div class="card">
-    <div class="card-header"><span class="card-title"><i data-lucide="graduation-cap"></i> My Info</span></div>
+    <div class="card-header"><span class="card-title"><i data-lucide="graduation-cap"></i> My Profile</span></div>
     <div class="card-body">
       <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
         {% if user.profile_image %}
@@ -20,16 +25,16 @@
         {% endif %}
         <div>
           <div class="font-bold" style="font-size:18px;">{{ user.get_full_name|default:user.username }}</div>
-          <div class="text-muted">Student ID: {{ student.student_id }}</div>
-          <div class="text-muted">{{ student.course }} – Year {{ student.year_level }}</div>
+          <div class="text-muted">Student ID: <strong>{{ student.student_id }}</strong></div>
+          <div class="text-muted">Login: {{ user.username }}</div>
+          <div class="text-muted">{{ student.course }} &mdash; Year {{ student.year_level }}</div>
         </div>
       </div>
       {% if student.is_face_enrolled %}
-        <div class="alert alert-success" style="margin-bottom:0;"><i data-lucide="check-circle"></i> Face enrolled on {{ student.face_enrolled_at|date:"M d, Y" }}</div>
+        <div class="alert alert-success" style="margin-bottom:0;"><i data-lucide="check-circle"></i> Biometric profile verified (Enrolled on {{ student.face_enrolled_at|date:"M d, Y" }})</div>
       {% else %}
         <div class="alert alert-warning" style="margin-bottom:0;">
-          <i data-lucide="alert-triangle"></i> Face not enrolled yet.
-          <a href="{% url 'enroll_face' %}" class="btn btn-primary btn-sm" style="margin-left:8px;">Enroll Now</a>
+          <i data-lucide="alert-triangle"></i> Biometric profile not registered &mdash; contact your administrator for face enrollment.
         </div>
       {% endif %}
     </div>
@@ -38,140 +43,94 @@
   <div class="card">
     <div class="card-header"><span class="card-title"><i data-lucide="bar-chart-2"></i> Attendance Summary</span></div>
     <div class="card-body">
-      {% with present=records|length %}
-      <div class="stats-grid" style="grid-template-columns:1fr 1fr;">
-        <div class="stat-card green" style="padding:14px;">
-          <div class="stat-icon green" style="width:36px;height:36px;font-size:16px;"><i data-lucide="check-circle"></i></div>
+      <div class="stats-grid" style="grid-template-columns:repeat(2, 1fr); margin-bottom:12px;">
+        <div class="stat-card green" style="padding:12px;">
           <div class="stat-info">
-            <div class="value" style="font-size:20px;">
-              {{ records|dictsort:"status"|dictsortreversed:"status"|length }}
-            </div>
-            <div class="label">Total Records</div>
+            <div class="value" style="font-size:24px;">{{ overall_rate }}%</div>
+            <div class="label">Overall rate</div>
           </div>
         </div>
-        <div class="stat-card blue" style="padding:14px;">
-          <div class="stat-icon blue" style="width:36px;height:36px;font-size:16px;"><i data-lucide="calendar"></i></div>
+        <div class="stat-card blue" style="padding:12px;">
           <div class="stat-info">
-            <div class="value" style="font-size:20px;">{{ records|length }}</div>
-            <div class="label">Recent</div>
+            <div class="value" style="font-size:24px;">{{ total_logged }}</div>
+            <div class="label">Sessions logged</div>
           </div>
         </div>
       </div>
-      {% endwith %}
+      <div style="display:flex; flex-wrap:wrap; gap:8px; font-size:12px;">
+        <span class="badge badge-success">Present: {{ attendance_totals.present|default:0 }}</span>
+        <span class="badge badge-warning">Late: {{ attendance_totals.late|default:0 }}</span>
+        <span class="badge badge-danger">Absent: {{ attendance_totals.absent|default:0 }}</span>
+        <span class="badge badge-info">Excused: {{ attendance_totals.excused|default:0 }}</span>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- My Class Schedule (URIOS Style with 1-Click Table/Grid Toggle) -->
+<!-- Per subject / section -->
 <div class="card mb-3">
-  <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-    <span class="card-title">
-      <i data-lucide="calendar"></i> My Class Schedule
-    </span>
-    <div style="display:inline-flex; gap:6px; align-items:center;">
-      <button type="button" class="btn btn-primary btn-sm" id="btn-student-view-table" onclick="setStudentScheduleView('table')" title="View in table list style">
-        <i data-lucide="list"></i> Table View
-      </button>
-      <button type="button" class="btn btn-outline btn-sm" id="btn-student-view-grid" onclick="setStudentScheduleView('grid')" title="View in weekly timetable grid graph (FSUU style)">
-        <i data-lucide="calendar"></i> Timetable Grid
-      </button>
-    </div>
+  <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+    <span class="card-title"><i data-lucide="book-open"></i> Attendance by Subject / Section</span>
+    <span class="text-muted" style="font-size:12px;">{{ enrolled_sections.count }} enrolled class(es)</span>
   </div>
-
-  <!-- View 1: Table View (URIOS Image 1 Style) -->
-  <div id="student-schedule-table-view">
-    {% if enrolled_sections %}
-    <div class="table-container" style="border:none; border-radius:0;">
-      <table>
-        <thead>
-          <tr>
-            <th style="width:40px;">#</th>
-            <th>Subject Code</th>
-            <th>Description</th>
-            <th>Section</th>
-            <th>Schedule</th>
-            <th>Room</th>
-            <th>Teacher</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for sec in enrolled_sections %}
-          <tr>
-            <td class="text-muted">{{ forloop.counter }}</td>
-            <td>
-              {% if sec.effective_subject %}
-                <span class="badge badge-accent" style="font-weight:700;">{{ sec.effective_subject.code }}</span>
-              {% else %}
-                <span class="badge badge-outline">{{ sec.name }}</span>
+  {% if section_summaries %}
+  <div class="table-container" style="border:none;">
+    <table>
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>Section</th>
+          <th>Sessions</th>
+          <th>Present</th>
+          <th>Late</th>
+          <th>Absent</th>
+          <th>Rate</th>
+          <th>Last class</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in section_summaries %}
+        <tr>
+          <td>
+            {% if row.section.effective_subject %}
+              <span class="badge badge-accent">{{ row.section.effective_subject.code }}</span>
+              <div class="text-muted" style="font-size:11px; margin-top:2px;">{{ row.section.effective_subject.name|truncatechars:36 }}</div>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td><strong>{{ row.section.name }}</strong></td>
+          <td>{{ row.total_sessions }}</td>
+          <td>{{ row.present }}</td>
+          <td>{{ row.late }}</td>
+          <td>{{ row.absent }}</td>
+          <td>
+            {% if row.rate != None %}
+              <strong>{{ row.rate }}%</strong>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-muted" style="font-size:12px;">
+            {% if row.last_date %}
+              {{ row.last_date|date:"M j, Y" }}
+              {% if row.last_status == 'present' %}<span class="badge badge-success" style="margin-left:4px;">P</span>
+              {% elif row.last_status == 'late' %}<span class="badge badge-warning" style="margin-left:4px;">L</span>
+              {% elif row.last_status == 'absent' %}<span class="badge badge-danger" style="margin-left:4px;">A</span>
               {% endif %}
-            </td>
-            <td>
-              <strong>{{ sec.effective_subject.name|default:sec.name }}</strong>
-            </td>
-            <td>
-              <span class="badge badge-info">{{ sec.name }}</span>
-            </td>
-            <td>
-              {% if sec.schedules.all %}
-                <span class="badge badge-outline" style="font-size:12px; font-weight:600; display:inline-flex; align-items:center; gap:4px; color:var(--text-primary); border-color:rgba(99,102,241,0.35); background:rgba(99,102,241,0.06);">
-                  <i data-lucide="clock" style="width:12px; height:12px; color:var(--primary);"></i>
-                  {{ sec.schedule_display }}
-                </span>
-              {% else %}
-                <span class="text-muted" style="font-size:12px;">No schedule set</span>
-              {% endif %}
-            </td>
-            <td>
-              {% for sc in sec.schedules.all %}
-                <span style="font-size:12px; font-weight:500;">{{ sc.room }}</span>{% if not forloop.last %}, {% endif %}
-              {% empty %}
-                <span class="text-muted">—</span>
-              {% endfor %}
-            </td>
-            <td>
-              {% if sec.teacher %}
-                {{ sec.teacher.user.get_full_name|default:sec.teacher.user.username }}
-              {% else %}
-                <span class="text-muted">—</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-      <div class="card-body text-center text-muted" style="padding:28px;">
-        <i data-lucide="calendar-x" style="width:32px; height:32px; margin:0 auto 6px; opacity:.4; display:block;"></i>
-        <div>No enrolled classes found for this semester.</div>
-      </div>
-    {% endif %}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
-
-  <!-- View 2: Timetable Grid (URIOS Image 2 Style) -->
-  <div id="student-schedule-grid-view" style="display:none; padding:16px;">
-    {% include 'core/timetable_grid_partial.html' with timetable_tbody_id='student-timetable-tbody' %}
-  </div>
+  {% else %}
+  <div class="card-body text-center text-muted">You are not enrolled in any sections yet.</div>
+  {% endif %}
 </div>
 
-<script>
-  function setStudentScheduleView(mode) {
-    if (typeof switchScheduleView === 'function') {
-      switchScheduleView(mode, 'student-schedule-table-view', 'student-schedule-grid-view', 'btn-student-view-table', 'btn-student-view-grid', 'fsuu_student_view');
-    }
-  }
-
-  document.addEventListener('DOMContentLoaded', function() {
-    try {
-      const savedMode = localStorage.getItem('fsuu_student_view');
-      if (savedMode === 'grid') {
-        setStudentScheduleView('grid');
-      }
-    } catch(e){}
-  });
-</script>
-
-<!-- Recent Records -->
+<!-- Recent log -->
 <div class="card">
   <div class="card-header">
     <span class="card-title"><i data-lucide="clipboard-list"></i> Recent Attendance</span>
@@ -181,13 +140,15 @@
   <div class="table-container" style="border:none; border-radius:0;">
     <table>
       <thead>
-        <tr><th>Date</th><th>Subject</th><th>Section</th><th>Status</th><th>Time</th></tr>
+        <tr><th>Date</th><th>Subject</th><th>Section</th><th>Status</th><th>Time In</th></tr>
       </thead>
       <tbody>
         {% for record in records %}
         <tr>
-          <td>{{ record.session.date }}</td>
-          <td><span class="badge badge-accent">{{ record.session.schedule.section.subject.code }}</span></td>
+          <td>{{ record.session.date|date:"M j, Y" }}</td>
+          <td>
+            <span class="badge badge-accent">{{ record.session.schedule.section.effective_subject.code|default:"—" }}</span>
+          </td>
           <td>{{ record.session.schedule.section.name }}</td>
           <td>
             {% if record.status == 'present' %}<span class="badge badge-success"><i data-lucide="check-circle"></i> Present</span>
@@ -204,7 +165,7 @@
     </table>
   </div>
   {% else %}
-    <div class="card-body text-center text-muted">No attendance records yet.</div>
+    <div class="card-body text-center text-muted">No attendance records yet. Records appear after your instructor takes class attendance.</div>
   {% endif %}
 </div>
 

@@ -1,12 +1,12 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction
 from django.urls import reverse
 from .forms import (
     LoginForm, AdminUserCreateForm, TeacherProfileForm,
-    StudentProfileForm, UserEditForm, StudentRegisterForm
+    UserEditForm, StudentRegisterForm
 )
 from .models import CustomUser, Teacher, Student
 from .decorators import admin_required
@@ -24,8 +24,7 @@ def login_view(request):
             login(request, user)
             messages.success(request, f'Welcome back, {user.get_full_name() or user.username}!')
             return redirect('dashboard')
-        else:
-            messages.error(request, 'Invalid username or password.')
+        # Do not add messages.error; form.errors/non_field_errors already renders the message clearly
 
     return render(request, 'accounts/login.html', {'form': form})
 
@@ -45,13 +44,29 @@ def dashboard_view(request):
 
     if user.role == 'admin':
         from core.models import Subject, Section, Schedule, AttendanceSession
+        from django.utils import timezone
+        from django.db.models import Q
+
+        today = timezone.localdate()
         context['total_teachers'] = Teacher.objects.count()
         context['total_students'] = Student.objects.count()
         context['total_subjects'] = Subject.objects.count()
         context['total_sections'] = Section.objects.count()
+        context['open_sessions_count'] = AttendanceSession.objects.filter(status='open').count()
+        context['sessions_today_count'] = AttendanceSession.objects.filter(date=today).count()
+        context['sessions_today_closed'] = AttendanceSession.objects.filter(
+            date=today, status='closed'
+        ).count()
+        face_enrolled = Student.objects.exclude(
+            Q(face_encoding__isnull=True) | Q(face_encoding='')
+        ).count()
+        context['face_enrolled_count'] = face_enrolled
+        total_st = context['total_students']
+        context['face_enrollment_pct'] = round(face_enrolled / total_st * 100, 1) if total_st else 0
         context['recent_sessions'] = AttendanceSession.objects.select_related(
             'schedule__section__subject', 'started_by__user'
-        ).order_by('-date', '-created_at')[:5]
+        ).order_by('-date', '-created_at')[:8]
+        context['today'] = today
         return render(request, 'accounts/dashboard_admin.html', context)
 
     elif user.role == 'teacher':
@@ -83,6 +98,31 @@ def dashboard_view(request):
             context['total_students'] = total_students
             context['total_schedules'] = total_schedules
             context['open_sessions_count'] = open_sessions_count
+
+            from core.session_helpers import attach_today_sessions
+            from django.utils import timezone
+            today = timezone.localdate()
+            attach_today_sessions(sections, today)
+            context['attendance_today'] = today
+
+            from core.session_helpers import schedules_meeting_today
+            context['today_schedule_items'] = schedules_meeting_today(sections, today)
+
+            today_sessions = AttendanceSession.objects.filter(
+                Q(started_by=teacher) | Q(schedule__section__in=sections),
+                date=today,
+            ).select_related('schedule__section__subject').distinct().order_by('-created_at')
+            context['today_class_sessions'] = today_sessions
+
+            finalized_today = today_sessions.filter(status='closed').count()
+            context['finalized_today_count'] = finalized_today
+            context['open_today_sessions'] = today_sessions.filter(status='open')
+            not_enrolled_face = StudentSection.objects.filter(
+                section__in=sections,
+            ).filter(
+                Q(student__face_encoding__isnull=True) | Q(student__face_encoding='')
+            ).values('student_id').distinct().count()
+            context['students_need_face_count'] = not_enrolled_face
         except Teacher.DoesNotExist:
             messages.warning(request, 'Teacher profile not set up. Contact admin.')
             context['teacher'] = None
@@ -92,11 +132,17 @@ def dashboard_view(request):
         try:
             student = user.student_profile
             from core.models import AttendanceRecord, Section
-            records = AttendanceRecord.objects.filter(
+            from core.models import AttendanceSession
+            from django.db.models import Count, Q
+
+            records_qs = AttendanceRecord.objects.filter(
                 student=student
             ).select_related(
-                'session__schedule__section__subject'
-            ).order_by('-session__date')[:10]
+                'session__schedule__section__subject',
+                'session__schedule__section__program',
+            ).order_by('-session__date')
+            records = records_qs[:15]
+
             section = student.section if hasattr(student, 'section') else None
             enrolled_sections = Section.objects.filter(
                 enrollments__student=student
@@ -105,11 +151,50 @@ def dashboard_view(request):
             from core.services import TimetableService
             timetable_data = TimetableService.build_timetable_data(enrolled_sections)
 
+            totals = records_qs.aggregate(
+                present=Count('id', filter=Q(status='present')),
+                late=Count('id', filter=Q(status='late')),
+                absent=Count('id', filter=Q(status='absent')),
+                excused=Count('id', filter=Q(status='excused')),
+            )
+            attended = (totals['present'] or 0) + (totals['late'] or 0)
+            total_logged = records_qs.count()
+            overall_rate = round(attended / total_logged * 100, 1) if total_logged else 0
+
+            section_summaries = []
+            for sec in enrolled_sections:
+                sec_records = records_qs.filter(session__schedule__section=sec)
+                sec_total = sec_records.count()
+                sec_present = sec_records.filter(status='present').count()
+                sec_late = sec_records.filter(status='late').count()
+                sec_absent = sec_records.filter(status='absent').count()
+                sec_attended = sec_present + sec_late
+                sec_rate = round(sec_attended / sec_total * 100, 1) if sec_total else None
+                last_rec = sec_records.first()
+                section_summaries.append({
+                    'section': sec,
+                    'total_sessions': sec_total,
+                    'present': sec_present,
+                    'late': sec_late,
+                    'absent': sec_absent,
+                    'rate': sec_rate,
+                    'last_date': last_rec.session.date if last_rec else None,
+                    'last_status': last_rec.status if last_rec else None,
+                })
+
             context['student'] = student
             context['records'] = records
             context['section'] = section
             context['enrolled_sections'] = enrolled_sections
             context['timetable'] = timetable_data
+            context['attendance_totals'] = totals
+            context['overall_rate'] = overall_rate
+            context['total_logged'] = total_logged
+            context['section_summaries'] = section_summaries
+            context['upcoming_sessions'] = AttendanceSession.objects.filter(
+                schedule__section__in=enrolled_sections,
+                status='closed',
+            ).select_related('schedule__section__subject').order_by('-date')[:5]
         except Student.DoesNotExist:
             messages.warning(request, 'Student profile not set up. Contact admin.')
         return render(request, 'accounts/dashboard_student.html', context)
@@ -155,6 +240,8 @@ def user_list_view(request):
         'selected_role': role_filter,
         'search_query': search_query,
         'counts': counts,
+        'user_form': AdminUserCreateForm(),
+        'teacher_form': TeacherProfileForm(),
     })
 
 
@@ -220,13 +307,8 @@ def student_register_view(request):
         section = cd.get('section')
         password = cd['password'] or 'student123'
 
-        # Generate unique username
-        base_username = f"s_{student_id.lower().replace('-', '')}"
-        username = base_username
-        suffix = 1
-        while CustomUser.objects.filter(username=username).exists():
-            username = f"{base_username}_{suffix}"
-            suffix += 1
+        from accounts.username_utils import username_from_student_id
+        username = username_from_student_id(student_id)
 
         with transaction.atomic():
             user = CustomUser.objects.create_user(

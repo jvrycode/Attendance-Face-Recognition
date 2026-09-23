@@ -90,10 +90,32 @@ DATABASES = {
 }
 
 # TiDB Cloud SSL support
-if os.getenv('DB_USE_SSL', 'False').lower() in ('true', '1') or os.getenv('DB_SSL_CA'):
-    DATABASES['default']['OPTIONS']['ssl'] = {
-        'ca': os.getenv('DB_SSL_CA', '/etc/ssl/certs/ca-certificates.crt')
-    }
+db_use_ssl = os.getenv('DB_USE_SSL', 'False').lower() in ('true', '1')
+db_ssl_ca = os.getenv('DB_SSL_CA', '')
+
+if db_use_ssl or db_ssl_ca:
+    ssl_dict = {}
+    ca_candidates = []
+    if db_ssl_ca:
+        ca_candidates.append(db_ssl_ca)
+        ca_candidates.append(os.path.join(BASE_DIR, db_ssl_ca))
+    ca_candidates.append(os.path.join(BASE_DIR, 'isrgrootx1.pem'))
+    ca_candidates.append('isrgrootx1.pem')
+    ca_candidates.append('/etc/ssl/certs/ca-certificates.crt')
+
+    for candidate in ca_candidates:
+        if candidate and os.path.exists(candidate):
+            ssl_dict['ca'] = os.path.abspath(candidate)
+            break
+
+    if 'ca' not in ssl_dict:
+        try:
+            import certifi
+            ssl_dict['ca'] = certifi.where()
+        except ImportError:
+            pass
+
+    DATABASES['default']['OPTIONS']['ssl'] = ssl_dict
 
 # Isolated SQLite database for automated test suite runs (fast, zero socket crash risk)
 if 'test' in sys.argv or 'test_features' in sys.argv:
@@ -217,8 +239,16 @@ CACHES = {
 }
 
 # ─── Face Recognition ─────────────────────────────────────────────────────────
-# Euclidean threshold for dlib 128-D embeddings (lower = stricter; 0.55 optimal for webcams)
-FACE_RECOGNITION_TOLERANCE = float(os.getenv('FACE_RECOGNITION_TOLERANCE', '0.55'))
+# Euclidean threshold for dlib 128-D embeddings (lower = stricter; 0.38 rejects look-alikes)
+FACE_RECOGNITION_TOLERANCE = float(os.getenv('FACE_RECOGNITION_TOLERANCE', '0.38'))
+# Minimum confidence (0–1) required before marking attendance (1 - tolerance ≈ 0.62)
+MIN_FACE_CONFIDENCE = float(os.getenv('MIN_FACE_CONFIDENCE', '0.62'))
+# Best match must beat second-best by at least this distance to avoid ambiguous matches
+FACE_MATCH_MARGIN = float(os.getenv('FACE_MATCH_MARGIN', '0.08'))
+# Consecutive matching frames required before attendance is marked (weak matches)
+FACE_CONSENSUS_FRAMES = int(os.getenv('FACE_CONSENSUS_FRAMES', '2'))
+# Strong match marks on first frame (~1.5s queue time with fast rescan)
+FACE_INSTANT_MARK_CONFIDENCE = float(os.getenv('FACE_INSTANT_MARK_CONFIDENCE', '0.70'))
 # Minutes after class starts before a student is considered "late"
 LATE_THRESHOLD_MINUTES = int(os.getenv('LATE_THRESHOLD_MINUTES', '15'))
 # Chi-squared threshold for LBPH fallback encoder
@@ -247,9 +277,22 @@ LOGGING = {
         'level': 'INFO',
     },
     'loggers': {
-        'django': {'handlers': ['console'], 'level': 'WARNING', 'propagate': False},
         'face_app': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
         'core':     {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
         'accounts': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
     },
 }
+
+# ─── Password Validation ──────────────────────────────────────────────────────
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'accounts.validators.ComplexPasswordValidator',
+        'OPTIONS': {
+            'min_length': 6,
+        }
+    },
+]
+

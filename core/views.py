@@ -7,8 +7,8 @@ from django.db.models import Count, Q
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from .models import Program, ProgramSection, Subject, Section, Schedule, AttendanceSession, AttendanceRecord, StudentSection
-from .forms import ProgramForm, ProgramSectionForm, SubjectForm, SectionForm, ScheduleForm, EnrollStudentForm, AttendanceRecordEditForm
-from accounts.models import Teacher, Student
+from .forms import ProgramForm, ProgramSectionForm, SubjectForm, SectionForm, ScheduleForm
+from accounts.models import Student
 from accounts.decorators import admin_required, teacher_required
 
 
@@ -21,7 +21,10 @@ def program_list(request):
         section_count=Count('sections', distinct=True),
         subject_count=Count('subjects', distinct=True)
     ).order_by('code')
-    return render(request, 'core/program_list.html', {'programs': programs})
+    return render(request, 'core/program_list.html', {
+        'programs': programs,
+        'program_form': ProgramForm(),
+    })
 
 
 @login_required
@@ -184,7 +187,12 @@ def api_sections_by_program(request, program_id):
 @admin_required
 def subject_list(request):
     subjects = Subject.objects.select_related('program', 'section', 'teacher__user').order_by('code')
-    return render(request, 'core/subject_list.html', {'subjects': subjects})
+    programs = Program.objects.all().order_by('code')
+    return render(request, 'core/subject_list.html', {
+        'subjects': subjects,
+        'subject_form': SubjectForm(),
+        'programs': programs,
+    })
 
 
 @login_required
@@ -258,12 +266,22 @@ def section_list(request):
         return redirect('dashboard')
 
     from core.services import TimetableService
-    timetable_data = TimetableService.build_timetable_data(sections)
+    from core.session_helpers import attach_today_sessions
 
-    return render(request, 'core/section_list.html', {
+    timetable_data = TimetableService.build_timetable_data(sections)
+    today = timezone.localdate()
+    attach_today_sessions(sections, today)
+
+    context = {
         'sections': sections,
         'timetable': timetable_data,
-    })
+        'attendance_today': today,
+    }
+    if request.user.role == 'admin':
+        context['section_form'] = SectionForm()
+        context['programs'] = Program.objects.all().order_by('code')
+
+    return render(request, 'core/section_list.html', context)
 
 
 @login_required
@@ -314,9 +332,17 @@ def section_detail(request, pk):
         if not is_assigned and request.user.role != 'admin':
             messages.error(request, "Permission denied: You are not assigned to this section.")
             return redirect('dashboard')
+    elif request.user.role == 'student':
+        student = getattr(request.user, 'student_profile', None)
+        if not student or not section.enrollments.filter(student=student).exists():
+            messages.error(request, "Permission denied.")
+            return redirect('dashboard')
     elif request.user.role != 'admin':
         messages.error(request, "Permission denied.")
         return redirect('dashboard')
+
+    from core.session_helpers import attach_today_sessions
+    attach_today_sessions([section], timezone.localdate())
 
     # Scalable fallback POST handler
     if request.method == 'POST' and request.user.role == 'admin':
@@ -331,6 +357,7 @@ def section_detail(request, pk):
 
     return render(request, 'core/section_detail.html', {
         'section': section,
+        'schedule_form': ScheduleForm(initial={'section': section}),
     })
 
 
@@ -454,6 +481,68 @@ def student_unenroll(request, section_pk, student_pk):
     return redirect('section_detail', pk=section_pk)
 
 
+@login_required
+def api_section_details(request, pk):
+    """Returns JSON details of a section, its schedules, teacher, and enrolled students."""
+    section = get_object_or_404(
+        Section.objects.select_related('program', 'subject', 'teacher__user').prefetch_related(
+            'schedules', 'enrollments__student__user', 'subjects'
+        ),
+        pk=pk
+    )
+
+    if request.user.role == 'teacher':
+        teacher = getattr(request.user, 'teacher_profile', None)
+        is_assigned = (section.teacher == teacher) or section.subjects.filter(teacher=teacher).exists()
+        if not is_assigned and not request.user.is_superuser:
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+    elif request.user.role == 'student':
+        student = getattr(request.user, 'student_profile', None)
+        if not student or not section.enrollments.filter(student=student).exists():
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    schedules_data = [
+        {
+            'day': s.full_days_display,
+            'days_display': s.days_display,
+            'time_display': s.time_display,
+            'room': s.room or 'TBA',
+        }
+        for s in section.schedules.all()
+    ]
+
+    students_data = [
+        {
+            'id': e.student.pk,
+            'name': e.student.user.get_full_name() or e.student.user.username,
+            'student_id': e.student.student_id,
+            'course': e.student.course,
+            'year_level': e.student.year_level,
+            'is_face_enrolled': e.student.is_face_enrolled,
+            'avatar_letter': (e.student.user.first_name or e.student.user.username)[0].upper(),
+        }
+        for e in section.enrollments.select_related('student__user').all()
+    ]
+
+    data = {
+        'id': section.pk,
+        'name': section.name,
+        'program_code': section.program.code if section.program else '—',
+        'program_name': section.program.name if section.program else '',
+        'year_level': section.get_year_level_display(),
+        'subject_code': section.effective_subject.code if section.effective_subject else '—',
+        'subject_name': section.effective_subject.name if section.effective_subject else 'No Subject Linked',
+        'teacher_name': section.teacher.user.get_full_name() if section.teacher else 'Unassigned',
+        'teacher_email': section.teacher.user.email if section.teacher else '',
+        'school_year': section.school_year,
+        'semester': section.get_semester_display() if hasattr(section, 'get_semester_display') else section.semester,
+        'student_count': section.enrollments.count(),
+        'schedules': schedules_data,
+        'students': students_data,
+    }
+    return JsonResponse({'section': data})
+
+
 # ─── Schedules ─────────────────────────────────────────────────────────────────
 
 @login_required
@@ -462,7 +551,10 @@ def schedule_list(request):
     schedules = Schedule.objects.select_related(
         'section__subject', 'section__teacher__user'
     ).order_by('day_of_week', 'start_time')
-    return render(request, 'core/schedule_list.html', {'schedules': schedules})
+    return render(request, 'core/schedule_list.html', {
+        'schedules': schedules,
+        'schedule_form': ScheduleForm(),
+    })
 
 
 @login_required
@@ -560,6 +652,21 @@ def session_start(request, schedule_pk):
         messages.info(request, 'A session is already open for today.')
         return redirect('session_live', pk=existing.pk)
 
+    closed_today = AttendanceSession.objects.filter(
+        schedule=schedule, date=today, status='closed'
+    ).first()
+    if closed_today:
+        if request.method == 'POST':
+            closed_today.status = 'open'
+            closed_today.closed_at = None
+            closed_today.save()
+            messages.success(request, f'Attendance session re-opened for {schedule.section.name}. Scanner active.')
+            return redirect('session_live', pk=closed_today.pk)
+        return render(request, 'core/session_start.html', {
+            'schedule': schedule,
+            'closed_today': closed_today,
+        })
+
     if request.method == 'POST':
         session = AttendanceSession.objects.create(
             schedule=schedule,
@@ -630,6 +737,13 @@ def session_live(request, pk):
     enrolled_face_count = records.filter(
         student__face_encoding__isnull=False
     ).exclude(student__face_encoding='').count()
+
+    try:
+        from face_app.services.face_service import FaceService
+        FaceService.get_section_student_encodings(session.schedule.section)
+    except Exception:
+        pass
+
     return render(request, 'core/session_live.html', {
         'session': session,
         'records': records,
@@ -668,7 +782,7 @@ def session_reopen(request, pk):
         session.save()
         messages.success(request, f'Attendance session #{pk} re-opened.')
         return redirect('session_live', pk=pk)
-    return redirect('session_report', pk=pk)
+    return redirect('section_detail', pk=session.schedule.section.pk)
 
 
 @login_required
@@ -953,10 +1067,59 @@ def attendance_history(request):
     user = request.user
     if user.role == 'student':
         student = get_object_or_404(Student, user=user)
-        records = AttendanceRecord.objects.filter(student=student).select_related(
-            'session__schedule__section__subject'
-        ).order_by('-session__date')
-        return render(request, 'core/attendance_history_student.html', {'records': records})
+
+        # 1. Enrolled sections for this student
+        enrolled_sections = Section.objects.filter(
+            enrollments__student=student
+        ).select_related('program', 'subject', 'teacher__user').prefetch_related('schedules', 'subjects').distinct().order_by('name')
+
+        if not enrolled_sections.exists() and hasattr(student, 'section') and student.section:
+            enrolled_sections = Section.objects.filter(id=student.section.id).select_related('program', 'subject', 'teacher__user').prefetch_related('schedules', 'subjects')
+
+        # 2. Build Enrolled Section Cards data: 'Section (Subject name)'
+        enrolled_cards = []
+        rank = {'present': 4, 'late': 3, 'excused': 2, 'absent': 1}
+        for sec in enrolled_sections:
+            sub_name = sec.effective_subject.name if sec.effective_subject else "General Subject"
+            sub_code = sec.effective_subject.code if sec.effective_subject else "—"
+            card_title = f"{sec.name} ({sub_name})"
+
+            teacher_name = sec.teacher.user.get_full_name() if (sec.teacher and sec.teacher.user) else "Unassigned"
+            sec_records = AttendanceRecord.objects.filter(student=student, session__schedule__section=sec).select_related('session')
+            sec_by_date = {}
+            for r in sec_records:
+                d = r.session.date
+                if d not in sec_by_date or rank.get(r.status, 0) > rank.get(sec_by_date[d].status, 0):
+                    sec_by_date[d] = r
+            unique_sec_recs = list(sec_by_date.values())
+            total_cnt = len(unique_sec_recs)
+            pres_cnt = sum(1 for r in unique_sec_recs if r.status == 'present')
+            late_cnt = sum(1 for r in unique_sec_recs if r.status == 'late')
+            abs_cnt = sum(1 for r in unique_sec_recs if r.status == 'absent')
+            exc_cnt = sum(1 for r in unique_sec_recs if r.status == 'excused')
+            attended = pres_cnt + late_cnt
+            rate = round(attended / total_cnt * 100, 1) if total_cnt > 0 else None
+
+            enrolled_cards.append({
+                'section': sec,
+                'title': card_title,
+                'section_name': sec.name,
+                'subject_name': sub_name,
+                'subject_code': sub_code,
+                'teacher_name': teacher_name,
+                'schedule_display': sec.schedule_display,
+                'total_sessions': total_cnt,
+                'present_count': pres_cnt,
+                'late_count': late_cnt,
+                'absent_count': abs_cnt,
+                'excused_count': exc_cnt,
+                'rate': rate,
+            })
+
+        return render(request, 'core/attendance_history_student.html', {
+            'student': student,
+            'enrolled_cards': enrolled_cards,
+        })
     elif user.role == 'teacher':
         return redirect('section_attendance_report')
     else:
@@ -964,6 +1127,196 @@ def attendance_history(request):
             'schedule__section__subject', 'started_by__user'
         ).order_by('-date')
         return render(request, 'core/attendance_history_admin.html', {'sessions': sessions})
+
+
+@login_required
+def student_section_attendance(request, section_pk):
+    """Dedicated full-page attendance graph & session logs for a specific enrolled section."""
+    user = request.user
+    if user.role != 'student' and user.role != 'admin':
+        messages.error(request, "Access restricted to students and administrators.")
+        return redirect('dashboard')
+
+    if user.role == 'student':
+        student = get_object_or_404(Student, user=user)
+        # Ensure student is enrolled in this section
+        is_enrolled = Section.objects.filter(id=section_pk, enrollments__student=student).exists()
+        if not is_enrolled and hasattr(student, 'section') and getattr(student, 'section', None):
+            is_enrolled = (student.section.id == section_pk)
+        if not is_enrolled and not user.is_superuser:
+            messages.error(request, "You are not enrolled in this section.")
+            return redirect('attendance_history')
+    else:
+        # Admin inspecting
+        student_id = request.GET.get('student_id')
+        if student_id:
+            student = get_object_or_404(Student, pk=student_id)
+        else:
+            student = Student.objects.first()
+
+    section = get_object_or_404(
+        Section.objects.select_related('program', 'subject', 'teacher__user').prefetch_related('schedules', 'subjects'),
+        pk=section_pk
+    )
+
+    import calendar
+    today = timezone.localdate()
+    try:
+        target_year = int(request.GET.get('year', today.year))
+        target_month = int(request.GET.get('month', today.month))
+        if not (1 <= target_month <= 12):
+            target_year = today.year
+            target_month = today.month
+    except (ValueError, TypeError):
+        target_year = today.year
+        target_month = today.month
+
+    if target_month == 1:
+        prev_year = target_year - 1
+        prev_month = 12
+    else:
+        prev_year = target_year
+        prev_month = target_month - 1
+
+    if target_month == 12:
+        next_year = target_year + 1
+        next_month = 1
+    else:
+        next_year = target_year
+        next_month = target_month + 1
+
+    month_name = calendar.month_name[target_month]
+    month_label = f"{month_name} {target_year}"
+
+    # 1 subject, 1 meeting, 1 attendance guarantee: deduplicate by meeting date
+    raw_sec_records = AttendanceRecord.objects.filter(
+        student=student,
+        session__schedule__section=section,
+    ).select_related('session__schedule', 'session__started_by__user').order_by('-session__date', '-recognized_at')
+
+    rank = {'present': 4, 'late': 3, 'excused': 2, 'absent': 1}
+    by_date = {}
+    for r in raw_sec_records:
+        d = r.session.date
+        if d not in by_date:
+            by_date[d] = r
+        else:
+            curr_rank = rank.get(by_date[d].status, 0)
+            new_rank = rank.get(r.status, 0)
+            if new_rank > curr_rank:
+                by_date[d] = r
+            elif new_rank == curr_rank and r.recognized_at:
+                if not by_date[d].recognized_at or r.recognized_at < by_date[d].recognized_at:
+                    by_date[d] = r
+
+    all_sec_records = sorted(by_date.values(), key=lambda r: r.session.date, reverse=True)
+    detailed_records = all_sec_records
+
+    total_s = len(all_sec_records)
+    p_cnt = sum(1 for r in all_sec_records if r.status == 'present')
+    l_cnt = sum(1 for r in all_sec_records if r.status == 'late')
+    a_cnt = sum(1 for r in all_sec_records if r.status == 'absent')
+    e_cnt = sum(1 for r in all_sec_records if r.status == 'excused')
+    att = p_cnt + l_cnt
+    overall_rate = round(att / total_s * 100, 1) if total_s > 0 else 0
+    active_stats = {
+        'total': total_s,
+        'present': p_cnt,
+        'late': l_cnt,
+        'absent': a_cnt,
+        'excused': e_cnt,
+        'rate': overall_rate,
+    }
+
+    records_by_date = {}
+    for r in all_sec_records:
+        if r.session.date.year == target_year and r.session.date.month == target_month:
+            records_by_date[r.session.date] = [r]
+
+    cal = calendar.Calendar(firstweekday=6)
+    raw_weeks = cal.monthdatescalendar(target_year, target_month)
+    calendar_weeks = []
+    for week in raw_weeks:
+        week_days = []
+        for d in week:
+            day_recs = records_by_date.get(d, [])
+            week_days.append({
+                'date': d,
+                'day_num': d.day,
+                'is_current_month': (d.month == target_month),
+                'is_today': (d == today),
+                'records': day_recs,
+                'has_attendance': len(day_recs) > 0,
+            })
+        calendar_weeks.append(week_days)
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.GET.get('format') == 'json':
+        json_weeks = []
+        for week in calendar_weeks:
+            json_week = []
+            for d in week:
+                recs_json = [
+                    {
+                        'status': r.status,
+                        'status_display': r.get_status_display(),
+                        'time': r.recognized_at.strftime('%I:%M %p') if r.recognized_at else 'Class time',
+                    } for r in d['records']
+                ]
+                json_week.append({
+                    'day_num': d['day_num'],
+                    'is_current_month': d['is_current_month'],
+                    'is_today': d['is_today'],
+                    'has_attendance': d['has_attendance'],
+                    'records': recs_json,
+                })
+            json_weeks.append(json_week)
+
+        records_json = [
+            {
+                'date': r.session.date.strftime('%b %d, %Y'),
+                'day': r.session.date.strftime('%a'),
+                'status': r.status,
+                'status_display': r.get_status_display(),
+                'time': r.recognized_at.strftime('%I:%M %p') if r.recognized_at else '—',
+            } for r in detailed_records[:20]
+        ]
+
+        return JsonResponse({
+            'success': True,
+            'section_name': section.name,
+            'subject_code': section.effective_subject.code if section.effective_subject else '—',
+            'subject_name': section.effective_subject.name if section.effective_subject else 'General',
+            'teacher_name': section.teacher.user.get_full_name() if section.teacher else 'Unassigned',
+            'schedule_display': section.schedule_display,
+            'month_label': month_label,
+            'target_year': target_year,
+            'target_month': target_month,
+            'prev_year': prev_year,
+            'prev_month': prev_month,
+            'next_year': next_year,
+            'next_month': next_month,
+            'stats': active_stats,
+            'calendar_weeks': json_weeks,
+            'records': records_json,
+        })
+
+    context = {
+        'student': student,
+        'section': section,
+        'target_year': target_year,
+        'target_month': target_month,
+        'month_label': month_label,
+        'month_name': month_name,
+        'prev_year': prev_year,
+        'prev_month': prev_month,
+        'next_year': next_year,
+        'next_month': next_month,
+        'today': today,
+        'calendar_weeks': calendar_weeks,
+        'active_stats': active_stats,
+        'detailed_records': detailed_records,
+    }
+    return render(request, 'core/student_attendance_detail.html', context)
 
 
 # ─── Mark Present API (AJAX from face recognition) ────────────────────────────

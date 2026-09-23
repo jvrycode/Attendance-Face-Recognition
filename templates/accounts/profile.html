@@ -58,9 +58,10 @@
       {% if user.role == 'student' %}
         {% with student=user.student_profile %}
         <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
-          <a href="{% url 'enroll_face' %}" class="btn btn-primary w-full" style="justify-content:center;">
-            <i data-lucide="camera"></i> {% if student.is_face_enrolled %}Re-enroll Face{% else %}Enroll Face{% endif %}
-          </a>
+          <div style="font-size:13px; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
+            <i data-lucide="shield-check" style="width:16px; height:16px; color:var(--primary);"></i>
+            <span>Biometric Profile: <strong>{% if student.is_face_enrolled %}Enrolled{% else %}Not Enrolled (Admin Managed){% endif %}</strong></span>
+          </div>
         </div>
         {% endwith %}
       {% endif %}

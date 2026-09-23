@@ -197,6 +197,15 @@ class Schedule(models.Model):
         return d1
 
     @property
+    def full_days_display(self):
+        """Returns e.g. 'Tuesday & Thursday' or 'Monday' for human-readable display."""
+        d1 = self.get_day_of_week_display()
+        if self.day_2:
+            d2 = self.get_day_2_display()
+            return f"{d1} & {d2}"
+        return d1
+
+    @property
     def meeting_days(self):
         """Returns list of all days this schedule meets on."""
         days = [self.day_of_week]
@@ -241,10 +250,27 @@ class AttendanceSession(models.Model):
     ]
     schedule = models.ForeignKey(Schedule, on_delete=models.CASCADE, related_name='sessions')
     date = models.DateField(default=timezone.localdate)
-    started_by = models.ForeignKey(Teacher, on_delete=models.SET_NULL, null=True, related_name='sessions_started')
+    started_by = models.ForeignKey(Teacher, on_delete=models.SET_NULL, null=True, blank=True, related_name='sessions_started')
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='open')
     created_at = models.DateTimeField(auto_now_add=True)
     closed_at = models.DateTimeField(blank=True, null=True)
+
+    def clean(self):
+        super().clean()
+        if self.schedule_id and self.date:
+            existing = AttendanceSession.objects.filter(
+                schedule_id=self.schedule_id,
+                date=self.date
+            ).exclude(pk=self.pk)
+            if existing.exists():
+                raise ValidationError(
+                    f"An attendance session already exists for this class schedule on {self.date}. "
+                    "1 subject, 1 meeting, 1 attendance session only — no duplication allowed."
+                )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.schedule.section.name} | {self.date} [{self.status}]"
@@ -253,6 +279,7 @@ class AttendanceSession(models.Model):
         ordering = ['-date', '-created_at']
         verbose_name = 'Attendance Session'
         verbose_name_plural = 'Attendance Sessions'
+        unique_together = ['schedule', 'date']
 
 
 class AttendanceRecord(models.Model):
@@ -269,6 +296,24 @@ class AttendanceRecord(models.Model):
     recognized_at = models.DateTimeField(blank=True, null=True)
     confidence_score = models.FloatField(blank=True, null=True)
     remarks = models.CharField(max_length=200, blank=True)
+
+    def clean(self):
+        super().clean()
+        if self.session_id and self.student_id:
+            existing = AttendanceRecord.objects.filter(
+                session__schedule=self.session.schedule,
+                session__date=self.session.date,
+                student=self.student
+            ).exclude(pk=self.pk)
+            if existing.exists():
+                raise ValidationError(
+                    f"Student {self.student} already has an attendance record for this meeting on {self.session.date}. "
+                    "1 subject, 1 meeting, 1 attendance only — no duplication allowed."
+                )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.student} | {self.session.date} - {self.status}"

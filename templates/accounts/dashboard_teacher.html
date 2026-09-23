@@ -4,6 +4,7 @@
 {% block page_subtitle %}<p>Welcome back, {% if teacher %}{{ teacher.user.get_full_name|default:teacher.user.username }}{% else %}{{ user.get_full_name|default:user.username }}{% endif %} &bull; Department: {{ teacher.department|default:"Faculty" }}</p>{% endblock %}
 
 {% block header_actions %}
+  <a href="{% url 'section_list' %}" class="btn btn-outline"><i data-lucide="calendar"></i> Section &amp; Schedule</a>
   <a href="{% url 'section_attendance_report' %}" class="btn btn-outline"><i data-lucide="file-text"></i> Attendance Reports</a>
 {% endblock %}
 
@@ -26,103 +27,107 @@
     </div>
   </div>
   <div class="stat-card orange">
-    <div class="stat-icon orange"><i data-lucide="calendar"></i></div>
+    <div class="stat-icon orange"><i data-lucide="calendar-check"></i></div>
     <div class="stat-info">
-      <div class="value">{{ total_schedules }}</div>
-      <div class="label">Weekly Classes</div>
+      <div class="value">{{ today_schedule_items|length }}</div>
+      <div class="label">Classes Today</div>
     </div>
   </div>
   <div class="stat-card green">
-    <div class="stat-icon green"><i data-lucide="check-circle-2"></i></div>
+    <div class="stat-icon green"><i data-lucide="radio"></i></div>
     <div class="stat-info">
-      <div class="value">{{ recent_sessions.count }}</div>
-      <div class="label">Recorded Sessions</div>
+      <div class="value">{{ open_sessions_count }}</div>
+      <div class="label">Live Sessions</div>
     </div>
   </div>
 </div>
 
-<!-- My Sections & Schedules Table -->
-<div class="card mb-3">
-  <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-    <span class="card-title" style="display:flex; align-items:center; gap:8px;">
-      <i data-lucide="calendar"></i> My Assigned Sections & Schedules
-    </span>
-    <span style="font-size:12px; color:var(--text-muted);">
-      {{ sections.count }} section(s) assigned
-    </span>
-  </div>
-  {% if sections %}
-  <div class="table-container" style="border:none;">
-    <table>
-      <thead>
-        <tr>
-          <th>Section</th>
-          <th>Subject Offering</th>
-          <th>Class Schedule</th>
-          <th>Enrolled</th>
-          <th style="text-align:right;">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for section in sections %}
-        <tr>
-          <td>
-            <div style="font-weight:700; font-size:14px;">{{ section.name }}</div>
-            {% if section.program %}
-              <span class="badge badge-accent" style="font-size:10.5px; margin-top:2px;">{{ section.program.code }}</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if section.effective_subject %}
-              <span class="badge badge-info" style="font-size:11.5px; font-weight:700;">{{ section.effective_subject.code }}</span>
-              <span style="font-size:13px; margin-left:4px; font-weight:500;">{{ section.effective_subject.name }}</span>
-            {% else %}
-              <span class="text-muted" style="font-size:12px;">No subject linked</span>
-            {% endif %}
-          </td>
-          <td>
-            {% for sched in section.schedules.all %}
-              <div style="font-size:12.5px; display:flex; align-items:center; gap:6px; margin-bottom:4px;">
-                <span class="badge badge-primary" style="font-size:11px; font-weight:700; padding:2px 6px;">{{ sched.days_display }}</span>
-                <span style="color:var(--text-primary); font-weight:500;">{{ sched.time_display }}</span>
-                <span class="text-muted" style="font-size:11.5px;">@ {{ sched.room }}</span>
-              </div>
-            {% empty %}
-              <span class="text-muted" style="font-size:12px;">No schedule set</span>
-            {% endfor %}
-          </td>
-          <td>
-            <span class="badge badge-outline" style="font-weight:600; font-size:12px;">
-              <i data-lucide="users" style="width:12px; height:12px; margin-right:4px;"></i> {{ section.enrollments.count }} students
-            </span>
-          </td>
-          <td style="text-align:right;">
-            <div style="display:inline-flex; align-items:center; gap:8px;">
-              {% for sched in section.schedules.all %}
-                <a href="{% url 'session_start' sched.pk %}" class="btn btn-primary btn-sm" title="Start live attendance camera for {{ section.name }}">
-                  <i data-lucide="camera"></i> Start Attendance
-                </a>
-              {% empty %}
-                <span class="text-muted" style="font-size:11.5px; margin-right:6px;">No schedule</span>
-              {% endfor %}
-
-              <!-- Action Popover -->
-              {% url 'section_detail' section.pk as sec_detail %}
-              {% url 'section_attendance_report' as sec_report %}
-              {% include 'components/action_popover.html' with trigger_title="More Actions" detail_url=sec_detail detail_label="View Class Roster" detail_icon="users" report_url=sec_report|add:"?section_id="|add:section.pk %}
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-    <div class="card-body text-center text-muted" style="padding:48px;">
-      <i data-lucide="inbox" style="width:36px; height:36px; margin:0 auto 10px; display:block; opacity:0.5;"></i>
-      No sections assigned to your profile yet. Please contact the administrator.
+<div class="grid-2 mb-3" style="align-items:stretch;">
+  <!-- Today's classes -->
+  <div class="card" style="display:flex; flex-direction:column;">
+    <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+      <span class="card-title"><i data-lucide="sun"></i> Today &mdash; {{ attendance_today|date:"l, M j" }}</span>
+      <span class="badge badge-outline" style="font-weight:600;">
+        {{ finalized_today_count }} finalized &bull; {{ open_today_sessions.count }} live
+      </span>
     </div>
-  {% endif %}
+    {% if today_schedule_items %}
+    <div class="card-body" style="padding:0; flex:1;">
+      <div class="table-container" style="border:none;">
+        <table>
+          <thead>
+            <tr>
+              <th>Section / Subject</th>
+              <th>Time</th>
+              <th>Status</th>
+              <th style="text-align:right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for sched, section in today_schedule_items %}
+            <tr>
+              <td>
+                <div style="font-weight:700;">{{ section.name }}</div>
+                <div class="text-muted" style="font-size:12px;">
+                  {% if section.effective_subject %}{{ section.effective_subject.code }} &mdash; {{ section.effective_subject.name|truncatechars:40 }}{% else %}No subject{% endif %}
+                </div>
+              </td>
+              <td style="font-size:13px; white-space:nowrap;">{{ sched.time_display }} @ {{ sched.room }}</td>
+              <td>
+                {% if sched.today_session %}
+                  {% if sched.today_session.status == 'open' %}
+                    <span class="badge badge-success"><span class="pulse-dot" style="background:#10b981; width:6px; height:6px;"></span> In Progress</span>
+                  {% else %}
+                    <span class="badge badge-muted"><i data-lucide="check-circle" style="width:11px; height:11px;"></i> Finished</span>
+                  {% endif %}
+                {% else %}
+                  <span class="badge badge-warning" style="background:var(--warning-light); color:var(--warning); border:1px solid var(--warning-border);">Not Started</span>
+                {% endif %}
+              </td>
+              <td style="text-align:right; white-space:nowrap;">
+                {% include 'core/partials/schedule_session_controls.html' with sched=sched %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card-body text-center text-muted" style="padding:36px;">
+      <i data-lucide="coffee" style="width:32px; height:32px; opacity:.45; margin:0 auto 8px; display:block;"></i>
+      No scheduled classes for today. Use <a href="{% url 'section_list' %}">Section &amp; Schedule</a> to manage your weekly timetable.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Snapshot -->
+  <div class="card">
+    <div class="card-header"><span class="card-title"><i data-lucide="activity"></i> At a Glance</span></div>
+    <div class="card-body" style="display:flex; flex-direction:column; gap:14px;">
+      <div class="dashboard-mini-stat">
+        <span class="text-muted" style="font-size:12px;">Weekly class meetings</span>
+        <strong style="font-size:22px;">{{ total_schedules }}</strong>
+      </div>
+      <div class="dashboard-mini-stat">
+        <span class="text-muted" style="font-size:12px;">Sessions recorded (recent)</span>
+        <strong style="font-size:22px;">{{ recent_sessions.count }}</strong>
+      </div>
+      {% if students_need_face_count %}
+      <div class="alert alert-warning" style="margin:0; font-size:13px;">
+        <i data-lucide="camera-off"></i>
+        <strong>{{ students_need_face_count }}</strong> enrolled student(s) still need face enrollment for automatic scanning.
+      </div>
+      {% else %}
+      <div class="alert alert-success" style="margin:0; font-size:13px;">
+        <i data-lucide="check-circle"></i> All enrolled students in your sections have face data on file.
+      </div>
+      {% endif %}
+      <a href="{% url 'section_list' %}" class="btn btn-outline" style="margin-top:auto;">
+        <i data-lucide="calendar-range"></i> Open Section &amp; Schedule
+      </a>
+    </div>
+  </div>
 </div>
 
 <!-- Recent Sessions -->
@@ -166,7 +171,7 @@
                 <span class="pulse-dot" style="background:#10b981; width:7px; height:7px;"></span> Live / Open
               </span>
             {% else %}
-              <span class="badge badge-muted" style="font-size:11.5px;">Closed</span>
+              <span class="badge badge-muted" style="font-size:11.5px;">Finalized</span>
             {% endif %}
           </td>
           <td style="text-align:right;">
@@ -187,7 +192,7 @@
   </div>
   {% else %}
     <div class="card-body text-center text-muted" style="padding:32px;">
-      No attendance sessions recorded yet. Start taking attendance from your assigned sections above.
+      No attendance sessions recorded yet. Start from <a href="{% url 'section_list' %}">Section &amp; Schedule</a> when class begins.
     </div>
   {% endif %}
 </div>
@@ -201,4 +206,5 @@
   </div>
 </div>
 {% endif %}
+{% include 'components/modal_start_session.html' %}
 {% endblock %}

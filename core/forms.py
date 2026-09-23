@@ -1,5 +1,5 @@
 from django import forms
-from .models import Program, ProgramSection, Subject, Section, Schedule, AttendanceRecord, StudentSection
+from .models import Program, ProgramSection, Subject, Section, Schedule, AttendanceRecord
 from accounts.models import Teacher, Student
 
 
@@ -20,7 +20,7 @@ class ProgramSectionForm(forms.ModelForm):
     program = forms.ModelChoiceField(
         queryset=Program.objects.all(),
         required=True,
-        empty_label='-- Select Academic Program --',
+        empty_label='Select Academic Program',
         widget=forms.Select(attrs={'class': 'form-select'}),
         label='Academic Program'
     )
@@ -39,21 +39,21 @@ class SubjectForm(forms.ModelForm):
     program = forms.ModelChoiceField(
         queryset=Program.objects.all(),
         required=True,
-        empty_label='-- Select Academic Program --',
+        empty_label='Select Academic Program',
         widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_program', 'onchange': 'filterSectionsByProgram()'}),
         label='Academic Program'
     )
     section = forms.ModelChoiceField(
         queryset=Section.objects.select_related('program').all(),
         required=False,
-        empty_label='-- Select Section (Optional) --',
+        empty_label='Select Section (Optional)',
         widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_section'}),
         label='Class Section'
     )
     teacher = forms.ModelChoiceField(
         queryset=Teacher.objects.select_related('user').all(),
         required=False,
-        empty_label='-- Select Assigned Teacher --',
+        empty_label='Select Assigned Teacher',
         widget=forms.Select(attrs={'class': 'form-select'}),
         label='Instructor / Teacher'
     )
@@ -78,14 +78,14 @@ class SectionForm(forms.ModelForm):
     program = forms.ModelChoiceField(
         queryset=Program.objects.all(),
         required=True,
-        empty_label='-- Select Academic Program --',
+        empty_label='Select Academic Program',
         widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_program', 'onchange': 'onProgramChanged()'}),
         label='Academic Program'
     )
     program_section = forms.ModelChoiceField(
         queryset=ProgramSection.objects.select_related('program').all(),
         required=False,
-        empty_label='-- Select Section --',
+        empty_label='Select Section',
         widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_section_select', 'onchange': 'onSectionChanged()'}),
         label='Class Section'
     )
@@ -97,7 +97,7 @@ class SectionForm(forms.ModelForm):
     teacher = forms.ModelChoiceField(
         queryset=Teacher.objects.select_related('user').all(),
         required=False,
-        empty_label='-- Select Assigned Teacher --',
+        empty_label='Select Assigned Teacher',
         widget=forms.Select(attrs={'class': 'form-select'}),
         label='Section Adviser / Teacher'
     )
@@ -143,11 +143,11 @@ class ScheduleForm(forms.Form):
     and an optional validity window (effective_from / effective_to).
     One form submission creates 1 or 2 Schedule rows.
     """
-    DAY_CHOICES_WITH_NONE = [('', '-- None (single day) --')] + Schedule.DAY_CHOICES
+    DAY_CHOICES_WITH_NONE = [('', 'None (single day)')] + Schedule.DAY_CHOICES
 
     section = forms.ModelChoiceField(
         queryset=Section.objects.select_related('program').all(),
-        empty_label='-- Select Section --',
+        empty_label='Select Section',
         widget=forms.Select(attrs={'class': 'form-select'}),
         label='Section'
     )
@@ -157,7 +157,7 @@ class ScheduleForm(forms.Form):
         label='Day 1'
     )
     day_2 = forms.ChoiceField(
-        choices=[('', '-- None (single day) --')] + list(Schedule.DAY_CHOICES),
+        choices=[('', 'None (single day)')] + list(Schedule.DAY_CHOICES),
         required=False,
         widget=forms.Select(attrs={'class': 'form-select'}),
         label='Day 2'
@@ -212,11 +212,11 @@ class TeacherScheduleForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields['section'].queryset = Section.objects.filter(teacher=teacher)
 
-    DAY_CHOICES_WITH_NONE = [('', '-- None (single day) --')] + Schedule.DAY_CHOICES
+    DAY_CHOICES_WITH_NONE = [('', 'None (single day)')] + Schedule.DAY_CHOICES
 
     section = forms.ModelChoiceField(
         queryset=Section.objects.none(),
-        empty_label='-- Select Section --',
+        empty_label='Select Section',
         widget=forms.Select(attrs={'class': 'form-select'}),
         label='Section'
     )
@@ -226,7 +226,7 @@ class TeacherScheduleForm(forms.Form):
         label='Day 1'
     )
     day_2 = forms.ChoiceField(
-        choices=[('', '-- None (single day) --')] + list(Schedule.DAY_CHOICES),
+        choices=[('', 'None (single day)')] + list(Schedule.DAY_CHOICES),
         required=False,
         widget=forms.Select(attrs={'class': 'form-select'}),
         label='Day 2'

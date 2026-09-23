@@ -5,7 +5,7 @@ from .models import CustomUser, Teacher, Student
 
 class LoginForm(AuthenticationForm):
     username = forms.CharField(
-        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Username', 'autofocus': True})
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Username or Student ID', 'autofocus': True})
     )
     password = forms.CharField(
         widget=forms.PasswordInput(attrs={'class': 'form-control', 'placeholder': 'Password'})
@@ -43,8 +43,14 @@ class TeacherProfileForm(forms.ModelForm):
     class Meta:
         model = Teacher
         fields = ['employee_id', 'department', 'specialization']
+        labels = {
+            'employee_id': 'Faculty ID (FAC-ID)',
+        }
         widgets = {
-            'employee_id': forms.TextInput(attrs={'class': 'form-control'}),
+            'employee_id': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'e.g. FAC-2026-001',
+            }),
             'department': forms.TextInput(attrs={'class': 'form-control'}),
             'specialization': forms.TextInput(attrs={'class': 'form-control'}),
         }
@@ -103,7 +109,7 @@ class StudentRegisterForm(forms.Form):
     section = forms.ModelChoiceField(
         queryset=None,
         required=False,
-        empty_label='-- Select Section (Optional) --',
+        empty_label='Select Section (Optional)',
         widget=forms.Select(attrs={'class': 'form-select'})
     )
     password = forms.CharField(
@@ -125,4 +131,11 @@ class StudentRegisterForm(forms.Form):
         if Student.objects.filter(student_id=sid).exists():
             raise forms.ValidationError(f"A student with Student ID '{sid}' already exists.")
         return sid
+
+    def clean_password(self):
+        pwd = self.cleaned_data.get('password')
+        if pwd:
+            from django.contrib.auth.password_validation import validate_password
+            validate_password(pwd)
+        return pwd
 

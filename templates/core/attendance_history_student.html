@@ -1,38 +1,304 @@
 {% extends 'base.html' %}
 {% block title %}My Attendance Records{% endblock %}
 {% block page_title %}My Attendance Records{% endblock %}
+{% block page_subtitle %}<p class="header-subtitle">Your enrolled subjects and attendance performance</p>{% endblock %}
 
-{% block header_actions %}{% endblock %}
+{% block page_back %}
+<div class="page-back-wrapper">
+  <a href="{% url 'dashboard' %}" class="page-back-link"><i data-lucide="arrow-left"></i> <span>Dashboard</span></a>
+</div>
+{% endblock %}
 
 {% block content %}
-<div class="card">
-  <div class="table-container" style="border:none;">
-    <table>
-      <thead>
-        <tr><th>Date</th><th>Subject</th><th>Section</th><th>Status</th><th>Time</th><th>Confidence</th></tr>
-      </thead>
-      <tbody>
-        {% for record in records %}
-        <tr>
-          <td>{{ record.session.date }}</td>
-          <td><span class="badge badge-accent">{{ record.session.schedule.section.subject.code }}</span> {{ record.session.schedule.section.subject.name }}</td>
-          <td>{{ record.session.schedule.section.name }}</td>
-          <td>
-            {% if record.status == 'present' %}<span class="badge badge-success"><i data-lucide="check-circle"></i> Present</span>
-            {% elif record.status == 'late' %}<span class="badge badge-warning"><i data-lucide="alarm-clock"></i> Late</span>
-            {% elif record.status == 'excused' %}<span class="badge badge-info"><i data-lucide="file-text"></i> Excused</span>
-            {% else %}<span class="badge badge-danger"><i data-lucide="x-circle"></i> Absent</span>{% endif %}
-          </td>
-          <td class="text-muted">{{ record.recognized_at|time:"g:i A"|default:"—" }}</td>
-          <td class="text-muted">
-            {% if record.confidence_score %}{{ record.confidence_score|floatformat:1 }}%{% else %}—{% endif %}
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="6" class="text-center text-muted" style="padding:30px;">No attendance records yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<!-- ══ ENROLLED CLASSES: Section (Subject Name) Cards ═════════════════════════ -->
+<div class="mb-4">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+    <h3 style="font-size:16px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
+      <i data-lucide="book-open" style="width:18px; height:18px; color:var(--primary);"></i> Enrolled Classes
+    </h3>
+    <span class="text-muted" style="font-size:13px;">Click <strong>View Attendance</strong> to view monthly calendar and records</span>
+  </div>
+
+  {% if enrolled_cards %}
+  <div class="section-cards-grid">
+    {% for card in enrolled_cards %}
+    <div class="card section-card">
+      <div class="section-card-header">
+        <span class="badge badge-accent">{{ card.subject_code }}</span>
+      </div>
+
+      <div class="section-card-body">
+        <h4 class="section-card-title">{{ card.title }}</h4>
+        
+        <div class="section-card-meta-list">
+          <div class="section-card-meta">
+            <i data-lucide="user"></i> <span>{{ card.teacher_name }}</span>
+          </div>
+          <div class="section-card-meta">
+            <i data-lucide="clock"></i> <span>{{ card.schedule_display }}</span>
+          </div>
+        </div>
+
+        <div class="section-card-stats">
+          {% if card.rate != None %}
+            <div class="rate-badge">
+              <span class="font-bold">{{ card.rate }}% Rate</span>
+              <span class="text-muted">({{ card.present_count }} Present, {{ card.late_count }} Late)</span>
+            </div>
+          {% else %}
+            <span class="text-muted" style="font-size:12px;">No sessions logged yet</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="section-card-footer">
+        <a href="{% url 'student_section_attendance' card.section.id %}" onclick="openStudentAttendanceModal('{{ card.section.id }}'); return false;" class="btn btn-outline btn-sm w-100 btn-view-attendance">
+          <i data-lucide="calendar"></i> <span>View Attendance</span>
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="card-body text-center text-muted" style="padding:48px 24px;">
+      <i data-lucide="book-x" style="width:40px; height:40px; margin-bottom:12px; opacity:0.5;"></i>
+      <p style="font-size:15px; font-weight:500;">You are not currently enrolled in any classes.</p>
+      <p style="font-size:13px; color:var(--text-muted); margin-top:4px;">Please contact your administrator or instructor to be added to your class section.</p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ══ In-Page Modal: Student Attendance Calendar & Summary ════════════ -->
+<div class="modal-backdrop" id="student-attendance-modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-card modal-xl">
+    <div class="modal-header">
+      <div>
+        <h3 class="modal-title">
+          <i data-lucide="calendar-check" style="color:var(--primary);"></i>
+          <span id="sam-title">Class Attendance</span>
+        </h3>
+        <div class="modal-subtitle" id="sam-subtitle">Loading records...</div>
+      </div>
+      <button type="button" class="modal-close-btn" data-close-modal aria-label="Close modal">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div id="sam-spinner" style="text-align:center; padding:36px; color:var(--text-muted);">
+        <i data-lucide="loader-2" class="spin" style="width:28px; height:28px; color:var(--primary); margin-bottom:8px;"></i>
+        <div>Loading attendance calendar...</div>
+      </div>
+
+      <div id="sam-content" style="display:none;">
+        <!-- Month Navigation Bar -->
+        <div class="cal-nav-toolbar" style="margin-bottom:14px;">
+          <button type="button" id="sam-btn-prev" class="btn btn-outline btn-sm" onclick="navAttendanceMonth(-1)">
+            <i data-lucide="chevron-left"></i> Previous
+          </button>
+
+          <div class="cal-current-label">
+            <i data-lucide="calendar" style="width:16px; height:16px; color:var(--primary);"></i>
+            <h4 id="sam-month-label" style="font-size:15px; font-weight:700; margin:0;">Month</h4>
+          </div>
+
+          <button type="button" id="sam-btn-next" class="btn btn-outline btn-sm" onclick="navAttendanceMonth(1)">
+            Next <i data-lucide="chevron-right"></i>
+          </button>
+        </div>
+
+        <!-- Attendance Health Metric Summary -->
+        <div class="stats-grid mb-3" style="grid-template-columns:repeat(auto-fit, minmax(110px, 1fr));">
+          <div class="stat-card green" style="padding:10px 12px;">
+            <div class="stat-info">
+              <div class="value" id="sam-stat-rate" style="font-size:20px;">0%</div>
+              <div class="label" style="font-size:11px;">Attendance Rate</div>
+            </div>
+          </div>
+          <div class="stat-card blue" style="padding:10px 12px;">
+            <div class="stat-info">
+              <div class="value" id="sam-stat-present" style="font-size:20px;">0</div>
+              <div class="label" style="font-size:11px;">Present Days</div>
+            </div>
+          </div>
+          <div class="stat-card orange" style="padding:10px 12px;">
+            <div class="stat-info">
+              <div class="value" id="sam-stat-late" style="font-size:20px;">0</div>
+              <div class="label" style="font-size:11px;">Late Days</div>
+            </div>
+          </div>
+          <div class="stat-card" style="padding:10px 12px; background:var(--danger-light); border-left:4px solid var(--danger);">
+            <div class="stat-info">
+              <div class="value" id="sam-stat-absent" style="font-size:20px; color:var(--danger);">0</div>
+              <div class="label" style="font-size:11px;">Absent Days</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-Aligned Sunday-to-Saturday Calendar Grid -->
+        <div class="real-calendar-container" style="margin-bottom:16px;">
+          <div class="real-calendar-grid" id="sam-calendar-grid"></div>
+        </div>
+
+        <!-- Legend -->
+        <div class="cal-legend" style="margin-bottom:18px;">
+          <div class="legend-item"><span class="legend-dot green"></span> <span>Present</span></div>
+          <div class="legend-item"><span class="legend-dot amber"></span> <span>Late</span></div>
+          <div class="legend-item"><span class="legend-dot red"></span> <span>Absent</span></div>
+          <div class="legend-item"><span class="legend-dot blue"></span> <span>Excused</span></div>
+          <div class="legend-item"><span class="legend-dot gray"></span> <span>No Class / Off-cycle</span></div>
+        </div>
+
+        <!-- Recent Session Logs -->
+        <div>
+          <h4 style="font-size:13px; font-weight:700; color:var(--text-secondary); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+            <i data-lucide="list" style="width:14px; height:14px; color:var(--primary);"></i> Attendance Session Logs
+          </h4>
+          <div class="table-container" style="max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:var(--radius);">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date &amp; Day</th>
+                  <th>Status</th>
+                  <th>Time Recognized</th>
+                </tr>
+              </thead>
+              <tbody id="sam-logs-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <a href="#" id="sam-full-link" class="btn btn-outline btn-sm">
+        <i data-lucide="external-link"></i> Open Full Attendance Page
+      </a>
+      <button type="button" class="btn btn-primary btn-sm" data-close-modal>Close</button>
+    </div>
   </div>
 </div>
+
+<script>
+let currentSamSectionId = null;
+let currentSamYear = null;
+let currentSamMonth = null;
+let samPrevYear = null, samPrevMonth = null;
+let samNextYear = null, samNextMonth = null;
+
+async function openStudentAttendanceModal(sectionId, year, month) {
+  currentSamSectionId = sectionId;
+  openModal('student-attendance-modal');
+
+  const spinner = document.getElementById('sam-spinner');
+  const content = document.getElementById('sam-content');
+  if (spinner) spinner.style.display = 'block';
+  if (content) content.style.display = 'none';
+
+  let url = `/history/${sectionId}/?format=json`;
+  if (year && month) url += `&year=${year}&month=${month}`;
+
+  try {
+    const resp = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const data = await resp.json();
+    if (!data.success) throw new Error('Could not load attendance.');
+
+    document.getElementById('sam-title').textContent = `${data.section_name} (${data.subject_code})`;
+    document.getElementById('sam-subtitle').textContent = `${data.subject_name} • Instructor: ${data.teacher_name} • ${data.schedule_display}`;
+    document.getElementById('sam-month-label').textContent = data.month_label;
+
+    document.getElementById('sam-stat-rate').textContent = `${data.stats.rate}%`;
+    document.getElementById('sam-stat-present').textContent = data.stats.present;
+    document.getElementById('sam-stat-late').textContent = data.stats.late;
+    document.getElementById('sam-stat-absent').textContent = data.stats.absent;
+
+    samPrevYear = data.prev_year;
+    samPrevMonth = data.prev_month;
+    samNextYear = data.next_year;
+    samNextMonth = data.next_month;
+
+    const fullLink = document.getElementById('sam-full-link');
+    if (fullLink) fullLink.href = `/history/${sectionId}/`;
+
+    // Render Calendar
+    const calGrid = document.getElementById('sam-calendar-grid');
+    if (calGrid) {
+      let calHtml = `
+        <div class="real-cal-day-header">Sun</div>
+        <div class="real-cal-day-header">Mon</div>
+        <div class="real-cal-day-header">Tue</div>
+        <div class="real-cal-day-header">Wed</div>
+        <div class="real-cal-day-header">Thu</div>
+        <div class="real-cal-day-header">Fri</div>
+        <div class="real-cal-day-header">Sat</div>
+      `;
+
+      data.calendar_weeks.forEach(week => {
+        week.forEach(day => {
+          let classes = ['real-cal-cell'];
+          if (!day.is_current_month) classes.push('other-month');
+          if (day.is_today) classes.push('today');
+          if (day.has_attendance) classes.push('has-event');
+
+          let badges = '';
+          day.records.forEach(rec => {
+            badges += `<div class="cal-badge cal-badge-${rec.status}">
+              <span>${rec.status_display}</span>
+              <span class="cal-badge-time">${rec.time}</span>
+            </div>`;
+          });
+
+          calHtml += `
+            <div class="${classes.join(' ')}">
+              <div class="real-cal-cell-header">
+                <span class="day-num">${day.day_num}</span>
+                ${day.is_today ? '<span class="today-badge">TODAY</span>' : ''}
+              </div>
+              <div class="cal-events-stack">${badges}</div>
+            </div>
+          `;
+        });
+      });
+      calGrid.innerHTML = calHtml;
+    }
+
+    // Render Logs
+    const tbody = document.getElementById('sam-logs-tbody');
+    if (tbody) {
+      if (data.records.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted" style="padding:20px;">No attendance sessions logged for this class yet.</td></tr>';
+      } else {
+        tbody.innerHTML = data.records.map(r => `
+          <tr>
+            <td><strong>${r.date}</strong> <span class="text-muted">(${r.day})</span></td>
+            <td>
+              <span class="badge ${r.status === 'present' ? 'badge-success' : (r.status === 'late' ? 'badge-warning' : 'badge-danger')}">
+                ${r.status_display}
+              </span>
+            </td>
+            <td>${r.time}</td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    if (spinner) spinner.style.display = 'none';
+    if (content) content.style.display = 'block';
+    if (window.lucide) lucide.createIcons();
+  } catch(err) {
+    if (spinner) spinner.innerHTML = `<div style="color:var(--danger);"><i data-lucide="alert-circle"></i> Error loading attendance: ${err.message}</div>`;
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function navAttendanceMonth(dir) {
+  if (dir === -1 && samPrevYear) {
+    openStudentAttendanceModal(currentSamSectionId, samPrevYear, samPrevMonth);
+  } else if (dir === 1 && samNextYear) {
+    openStudentAttendanceModal(currentSamSectionId, samNextYear, samNextMonth);
+  }
+}
+</script>
 {% endblock %}

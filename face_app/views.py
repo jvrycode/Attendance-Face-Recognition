@@ -4,15 +4,11 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from accounts.models import Student
-from core.models import AttendanceSession, AttendanceRecord, StudentSection
+from core.models import AttendanceSession
 from face_app.services.face_service import FaceService
-from .utils import (
-    encode_face_from_frame, compare_faces, base64_to_bytes,
-    draw_face_boxes, FR_AVAILABLE
-)
+from .utils import encode_face_from_frame, base64_to_bytes, FR_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +24,12 @@ def enroll_face(request):
         if student_id:
             student = get_object_or_404(Student, pk=student_id)
         else:
+            from accounts.forms import StudentRegisterForm
             students = Student.objects.select_related('user').all()
-            return render(request, 'face/enroll_select.html', {'students': students})
+            return render(request, 'face/enroll_select.html', {
+                'students': students,
+                'student_register_form': StudentRegisterForm(user=request.user),
+            })
     else:
         messages.error(request, "Permission denied. Face enrollment is managed by the administrator.")
         return redirect('dashboard')

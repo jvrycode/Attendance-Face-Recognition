@@ -1,11 +1,13 @@
 {% extends 'base.html' %}
 {% block title %}Face Enrollment{% endblock %}
 {% block page_title %}Face Enrollment — {{ student.user.get_full_name }}{% endblock %}
-{% block page_subtitle %}<p>Student ID: {{ student.student_id }} | {{ student.course|default:"Not Assigned" }}</p>{% endblock %}
+{% block page_subtitle %}<p class="header-subtitle">Student ID: {{ student.student_id }} | {{ student.course|default:"Not Assigned" }}</p>{% endblock %}
 
-{% block header_actions %}
+{% block page_back %}
   {% if request.user.role in 'admin,teacher' %}
-    <a href="{% url 'enroll_face' %}" class="btn btn-outline btn-sm"><i data-lucide="arrow-left"></i> Back to Student List</a>
+  <div class="page-back-wrapper">
+    <a href="{% url 'enroll_face' %}" class="page-back-link"><i data-lucide="arrow-left"></i> <span>Back to Student List</span></a>
+  </div>
   {% endif %}
 {% endblock %}
 
@@ -226,7 +228,7 @@
 </div>
 
 <script>
-const STUDENT_ID = {{ student.pk }};
+const STUDENT_ID = Number('{{ student.pk }}');
 const CSRF_TOKEN = '{{ csrf_token }}';
 let enrollStream = null;
 

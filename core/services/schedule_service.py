@@ -3,7 +3,6 @@ Schedule Service: Handles business logic for class schedules and conflict detect
 Ensures teachers are not double-booked across sections and rooms are not double-booked.
 """
 from django.core.exceptions import ValidationError
-from django.db.models import Q
 
 
 class ScheduleService:

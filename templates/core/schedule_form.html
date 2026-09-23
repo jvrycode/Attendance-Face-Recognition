@@ -1,17 +1,20 @@
 {% extends 'base.html' %}
 {% block title %}{{ title }}{% endblock %}
 {% block page_title %}{{ title }}{% endblock %}
-{% block page_subtitle %}<p>Configure a class meeting pattern and its effective date window</p>{% endblock %}
+{% block page_subtitle %}<p class="header-subtitle">Configure class meeting pattern, schedule period, and room assignment</p>{% endblock %}
 
-{% block header_actions %}
-  <a href="{% url 'schedule_list' %}" class="btn btn-outline"><i data-lucide="arrow-left"></i> Back to Schedules</a>
+{% block page_back %}
+<div class="page-back-wrapper">
+  <a href="{% url 'schedule_list' %}" class="page-back-link"><i data-lucide="arrow-left"></i> <span>Back to Schedules</span></a>
+</div>
 {% endblock %}
 
 {% block content %}
-<div class="card" style="max-width:680px;">
-  <div class="card-header">
-    <span class="card-title"><i data-lucide="calendar"></i> {{ title }}</span>
-  </div>
+<div class="form-container-centered">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title"><i data-lucide="calendar"></i> {{ title }}</span>
+    </div>
   <div class="card-body">
 
     <div class="alert alert-info" style="margin-bottom:20px;">
@@ -116,6 +119,7 @@
       </div>
     </form>
   </div>
+</div>
 </div>
 
 <script>
