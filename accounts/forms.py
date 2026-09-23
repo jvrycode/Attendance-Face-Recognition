@@ -12,12 +12,18 @@ class LoginForm(AuthenticationForm):
     )
 
 
+STAFF_ROLE_CHOICES = (
+    ('teacher', 'Teacher'),
+    ('admin', 'Admin'),
+)
+
+
 class AdminUserCreateForm(UserCreationForm):
-    """Used by admin to create any user."""
+    """Used by admin to create staff/faculty users (Teacher, Admin)."""
     first_name = forms.CharField(max_length=50, required=True, widget=forms.TextInput(attrs={'class': 'form-control'}))
     last_name = forms.CharField(max_length=50, required=True, widget=forms.TextInput(attrs={'class': 'form-control'}))
     email = forms.EmailField(required=True, widget=forms.EmailInput(attrs={'class': 'form-control'}))
-    role = forms.ChoiceField(choices=CustomUser.ROLE_CHOICES, widget=forms.Select(attrs={'class': 'form-select'}))
+    role = forms.ChoiceField(choices=STAFF_ROLE_CHOICES, widget=forms.Select(attrs={'class': 'form-select'}))
     phone = forms.CharField(max_length=20, required=False, widget=forms.TextInput(attrs={'class': 'form-control'}))
 
     class Meta:

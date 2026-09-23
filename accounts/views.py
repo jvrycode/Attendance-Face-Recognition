@@ -162,10 +162,9 @@ def user_list_view(request):
 def user_create_view(request):
     user_form = AdminUserCreateForm(request.POST or None)
     teacher_form = TeacherProfileForm(request.POST or None)
-    student_form = StudentProfileForm(request.POST or None)
 
     if request.method == 'POST':
-        role = request.POST.get('role', 'student')
+        role = request.POST.get('role', 'teacher')
         user_form = AdminUserCreateForm(request.POST)
 
         if user_form.is_valid():
@@ -177,13 +176,7 @@ def user_create_view(request):
                         teacher = t_form.save(commit=False)
                         teacher.user = user
                         teacher.save()
-                elif role == 'student':
-                    s_form = StudentProfileForm(request.POST)
-                    if s_form.is_valid():
-                        student = s_form.save(commit=False)
-                        student.user = user
-                        student.save()
-                messages.success(request, f'User "{user.username}" created successfully.')
+                messages.success(request, f'{user.get_role_display()} "{user.get_full_name() or user.username}" created successfully.')
                 return redirect('user_list')
         else:
             messages.error(request, 'Please fix the errors below.')
@@ -191,7 +184,6 @@ def user_create_view(request):
     return render(request, 'accounts/user_create.html', {
         'user_form': user_form,
         'teacher_form': teacher_form,
-        'student_form': student_form,
     })
 
 

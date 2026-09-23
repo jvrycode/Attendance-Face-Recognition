@@ -4,7 +4,7 @@
 {% block page_subtitle %}<p>Enroll student details and proceed directly to biometric face capture</p>{% endblock %}
 
 {% block header_actions %}
-  <a href="{% url 'enroll_face' %}" class="btn btn-outline btn-sm"><i data-lucide="arrow-left"></i> Back to Student List</a>
+  <a href="{% url 'user_list' %}?role=student" class="btn btn-outline btn-sm"><i data-lucide="arrow-left"></i> Back to Users</a>
 {% endblock %}
 
 {% block content %}
