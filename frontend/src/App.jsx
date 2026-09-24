@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Api, TokenStorage } from './api';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -48,7 +48,7 @@ export default function App() {
     checkAuth();
   }, []);
 
-  const getTitle = (tab) => {
+  const getTitle = useCallback((tab) => {
     switch (tab) {
       case 'dashboard':
         return user?.role === 'admin'
@@ -85,16 +85,29 @@ export default function App() {
       default:
         return 'AttendFR';
     }
-  };
+  }, [user?.role]);
 
-  const handleTabChange = (newTab) => {
+  const updateHeaderInfo = useCallback((info) => {
+    setHeaderInfo((prev) => {
+      if (
+        prev.title === info.title &&
+        prev.subtitle === info.subtitle &&
+        prev.headerActions === info.headerActions
+      ) {
+        return prev;
+      }
+      return { ...prev, ...info };
+    });
+  }, []);
+
+  const handleTabChange = useCallback((newTab) => {
     setActiveTab(newTab);
     setHeaderInfo({
       title: getTitle(newTab),
       subtitle: '',
       headerActions: null,
     });
-  };
+  }, [getTitle]);
 
   const handleLoginSuccess = (userData) => {
     setUser(userData);
@@ -158,7 +171,7 @@ export default function App() {
             <DashboardView
               user={user}
               onNavigate={handleTabChange}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
               onStartSession={(sec) => {
                 setActiveSessionId(sec?.id);
                 handleTabChange('scanner');
@@ -169,14 +182,14 @@ export default function App() {
           {activeTab === 'programs' && (
             <ProgramsView
               user={user}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
             />
           )}
 
           {activeTab === 'section_catalog' && (
             <SectionCatalogView
               user={user}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
             />
           )}
 
@@ -184,7 +197,7 @@ export default function App() {
             <SectionsView
               user={user}
               onNavigate={handleTabChange}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
               onStartSession={(sec) => {
                 setActiveSessionId(sec?.id);
                 handleTabChange('scanner');
@@ -195,35 +208,35 @@ export default function App() {
           {activeTab === 'subjects' && (
             <SubjectsView
               user={user}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
             />
           )}
 
           {activeTab === 'schedules' && (
             <SchedulesView
               user={user}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
             />
           )}
 
           {activeTab === 'users' && (
             <UsersView
               user={user}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
             />
           )}
 
           {activeTab === 'face_enrollment' && (
             <FaceEnrollmentView
               user={user}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
             />
           )}
 
           {activeTab === 'section_report' && (
             <SectionReportView
               user={user}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
             />
           )}
 
@@ -231,7 +244,7 @@ export default function App() {
             <ReportsView
               user={user}
               onNavigate={handleTabChange}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
               onStartSession={(s) => {
                 setActiveSessionId(s.id);
                 handleTabChange('scanner');
@@ -243,7 +256,7 @@ export default function App() {
             <ProfileView
               user={user}
               onUserUpdated={setUser}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
             />
           )}
 
@@ -251,7 +264,7 @@ export default function App() {
             <LiveScannerView
               user={user}
               onNavigate={handleTabChange}
-              onSetHeaderInfo={setHeaderInfo}
+              onSetHeaderInfo={updateHeaderInfo}
               activeSessionId={activeSessionId}
             />
           )}

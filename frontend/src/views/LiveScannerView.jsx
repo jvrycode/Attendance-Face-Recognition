@@ -121,7 +121,7 @@ export default function LiveScannerView({ user, onNavigate, activeSessionId, onS
         ),
       });
     }
-  }, [session, onSetHeaderInfo, onNavigate]);
+  }, [session?.id, session?.status, onSetHeaderInfo]);
 
   // Start Camera Stream
   const startCamera = async () => {

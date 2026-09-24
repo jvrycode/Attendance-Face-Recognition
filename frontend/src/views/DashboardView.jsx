@@ -155,7 +155,7 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
         ),
       });
     }
-  }, [role, user, onSetHeaderInfo, onNavigate]);
+  }, [role, user?.id, onSetHeaderInfo]);
 
   // ══════════════════════════════════════════════════════════════════════════
   // VIEW 1: ADMIN DASHBOARD (100% copycat of templates/accounts/dashboard_admin.html)
