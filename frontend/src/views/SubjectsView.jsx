@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Plus, X, Check, Building, Award } from 'lucide-react';
+import { BookOpen, Plus, X, Check, Building, Trash2 } from 'lucide-react';
 import { Api } from '../api';
 
 export default function SubjectsView({ user, onSetHeaderInfo }) {
   const [subjects, setSubjects] = useState([]);
   const [programs, setPrograms] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [formData, setFormData] = useState({
@@ -13,6 +15,8 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
     units: 3,
     description: '',
     program: '',
+    section: '',
+    teacher: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -21,12 +25,16 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [subjList, progList] = await Promise.all([
+      const [subjList, progList, secList, teacherList] = await Promise.all([
         Api.getSubjects(),
         Api.getPrograms(),
+        Api.getSections(),
+        Api.getTeachers(),
       ]);
       setSubjects(subjList);
       setPrograms(progList);
+      setSections(secList);
+      setTeachers(teacherList);
     } catch (err) {
       console.error('Failed to load subjects:', err);
     } finally {
@@ -70,26 +78,57 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
     try {
       setSubmitting(true);
       setErrorMsg('');
-      await Api.createSubject(formData);
-      setSuccessMsg(`Subject ${formData.code} created successfully!`);
+      const payload = {
+        code: formData.code,
+        name: formData.name,
+        units: parseInt(formData.units, 10) || 3,
+        description: formData.description || '',
+        program: formData.program || null,
+        section: formData.section || null,
+        teacher: formData.teacher || null,
+      };
+      await Api.createSubject(payload);
+      setSuccessMsg(`Subject "${formData.code}" created successfully!`);
       setShowAddModal(false);
-      setFormData({ code: '', name: '', units: 3, description: '', program: '' });
+      setFormData({ code: '', name: '', units: 3, description: '', program: '', section: '', teacher: '' });
       await loadData();
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to create subject.');
+      setErrorMsg(err.message || 'Failed to create subject offering.');
     } finally {
       setSubmitting(false);
     }
   };
 
+  const handleDelete = async (id, code) => {
+    if (!window.confirm(`Are you sure you want to delete subject "${code}"?`)) return;
+    try {
+      await Api.deleteSubject(id);
+      setSuccessMsg(`Subject ${code} deleted.`);
+      loadData();
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to delete subject.');
+    }
+  };
+
+  // Filter sections if program is selected
+  const filteredSections = formData.program
+    ? sections.filter((s) => String(s.program) === String(formData.program))
+    : sections;
+
   return (
     <div className="page-content">
-
       {successMsg && (
         <div className="alert alert-success" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Check size={18} />
           <span>{successMsg}</span>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="alert alert-danger" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span>{errorMsg}</span>
         </div>
       )}
 
@@ -101,20 +140,22 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Code</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Subject Name</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Program</th>
+                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Linked Section</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Instructor</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Units</th>
+                {isAdmin && <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="5" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={isAdmin ? 7 : 6} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading subjects...
                   </td>
                 </tr>
               ) : subjects.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={isAdmin ? 7 : 6} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No subjects found.{' '}
                     {isAdmin && (
                       <button
@@ -151,6 +192,15 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                         <span className="text-muted">—</span>
                       )}
                     </td>
+                    <td style={{ padding: '14px 18px' }}>
+                      {sub.section_name ? (
+                        <span className="badge badge-outline" style={{ fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <Building size={12} /> {sub.section_name}
+                        </span>
+                      ) : (
+                        <span className="text-muted">Unlinked</span>
+                      )}
+                    </td>
                     <td style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '13px' }}>
                       {sub.teacher_details?.user
                         ? `${sub.teacher_details.user.first_name} ${sub.teacher_details.user.last_name}`
@@ -159,6 +209,19 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                     <td style={{ padding: '14px 18px', fontSize: '13px', fontWeight: '600' }}>
                       {sub.units || 3}
                     </td>
+                    {isAdmin && (
+                      <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm text-danger"
+                          onClick={() => handleDelete(sub.id, sub.code)}
+                          title="Delete Subject"
+                          style={{ padding: '4px 8px' }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -169,8 +232,14 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
 
       {/* Add Subject Modal */}
       {showAddModal && (
-        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="modal-card modal-md" style={{ width: '100%', maxWidth: '520px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden', border: '1px solid var(--border)' }}>
+        <div
+          className="modal-backdrop open"
+          style={{ display: 'flex', opacity: 1, zIndex: 1200 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowAddModal(false);
+          }}
+        >
+          <div className="modal-card modal-lg" style={{ width: '100%', maxWidth: '580px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             <div className="modal-header" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h3 className="modal-title" style={{ fontSize: '16px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <BookOpen size={18} style={{ color: 'var(--primary)' }} />
@@ -194,19 +263,59 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                   </div>
                 )}
 
+                <div className="grid-2">
+                  <div className="form-group">
+                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
+                      1. Academic Program *
+                    </label>
+                    <select
+                      className="form-select"
+                      value={formData.program}
+                      onChange={(e) => setFormData({ ...formData, program: e.target.value, section: '' })}
+                      required
+                    >
+                      <option value="">Select program...</option>
+                      {programs.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.code} - {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="form-text" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Filters available sections.</span>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
+                      2. Class Section (Optional)
+                    </label>
+                    <select
+                      className="form-select"
+                      value={formData.section}
+                      onChange={(e) => setFormData({ ...formData, section: e.target.value })}
+                    >
+                      <option value="">Choose section offering...</option>
+                      {filteredSections.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.school_year})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 <div className="form-group">
                   <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                    Academic Program
+                    3. Assigned Instructor / Teacher (Optional)
                   </label>
                   <select
                     className="form-select"
-                    value={formData.program}
-                    onChange={(e) => setFormData({ ...formData, program: e.target.value })}
+                    value={formData.teacher}
+                    onChange={(e) => setFormData({ ...formData, teacher: e.target.value })}
                   >
-                    <option value="">Select program...</option>
-                    {programs.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.code} - {p.name}
+                    <option value="">Choose instructor...</option>
+                    {teachers.map((t) => (
+                      <option key={t.id || t.username} value={t.teacher_profile?.id || t.id}>
+                        {t.first_name ? `${t.first_name} ${t.last_name || ''}` : t.username} ({t.email})
                       </option>
                     ))}
                   </select>
@@ -220,7 +329,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                     <input
                       type="text"
                       className="form-control"
-                      placeholder="e.g. CS 301, IT 204"
+                      placeholder="e.g. CS101, IT 473, ACT 101"
                       value={formData.code}
                       onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                       required
@@ -229,7 +338,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
 
                   <div className="form-group">
                     <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                      Units
+                      Units *
                     </label>
                     <input
                       type="number"
@@ -238,6 +347,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                       onChange={(e) => setFormData({ ...formData, units: e.target.value })}
                       min="1"
                       max="10"
+                      required
                     />
                   </div>
                 </div>
@@ -249,7 +359,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                   <input
                     type="text"
                     className="form-control"
-                    placeholder="e.g. Artificial Intelligence & Expert Systems"
+                    placeholder="e.g. System Integration and Architecture"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     required
@@ -258,7 +368,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
 
                 <div className="form-group">
                   <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                    Description (Optional)
+                    Description / Course Topics (Optional)
                   </label>
                   <textarea
                     className="form-control"
@@ -276,7 +386,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
                   <Check size={16} />
-                  <span>{submitting ? 'Creating...' : 'Create Subject'}</span>
+                  <span>{submitting ? 'Saving...' : 'Save Subject'}</span>
                 </button>
               </div>
             </form>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, X, Check, Clock, Building } from 'lucide-react';
+import { Calendar, CalendarRange, Plus, X, Check, Clock, Building, Infinity, Trash2 } from 'lucide-react';
 import { Api } from '../api';
+import { formatTime12h } from '../utils/time';
 
 export default function SchedulesView({ user, onSetHeaderInfo }) {
   const [schedules, setSchedules] = useState([]);
@@ -9,10 +10,13 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [formData, setFormData] = useState({
     section: '',
-    day_of_week: 'mon',
+    day_of_week: 'Mon',
+    day_2: '',
     start_time: '08:00',
     end_time: '09:30',
     room: '',
+    effective_from: '',
+    effective_to: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -44,7 +48,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
     if (onSetHeaderInfo) {
       onSetHeaderInfo({
         title: 'Schedules',
-        subtitle: 'Class meeting times and room allocations',
+        subtitle: 'All class meeting schedules and their effective date windows',
         headerActions: isAdmin ? (
           <button
             type="button"
@@ -62,34 +66,70 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.section || !formData.start_time || !formData.end_time) {
-      setErrorMsg('Section, start time, and end time are required.');
+    if (!formData.section || !formData.start_time || !formData.end_time || !formData.room) {
+      setErrorMsg('Section, start time, end time, and room are required.');
       return;
     }
 
     try {
       setSubmitting(true);
       setErrorMsg('');
-      await Api.createSchedule(formData);
-      setSuccessMsg('Schedule created successfully!');
+      const payload = {
+        section: formData.section,
+        day_of_week: formData.day_of_week,
+        day_2: formData.day_2 || null,
+        start_time: formData.start_time,
+        end_time: formData.end_time,
+        room: formData.room,
+        effective_from: formData.effective_from || null,
+        effective_to: formData.effective_to || null,
+      };
+      await Api.createSchedule(payload);
+      setSuccessMsg('Class schedule created successfully!');
       setShowAddModal(false);
-      setFormData({ section: '', day_of_week: 'mon', start_time: '08:00', end_time: '09:30', room: '' });
+      setFormData({
+        section: '',
+        day_of_week: 'Mon',
+        day_2: '',
+        start_time: '08:00',
+        end_time: '09:30',
+        room: '',
+        effective_from: '',
+        effective_to: '',
+      });
       await loadData();
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to create schedule.');
+      setErrorMsg(err.message || 'Failed to create schedule. Possible conflict with another class.');
     } finally {
       setSubmitting(false);
     }
   };
 
+  const handleDelete = async (id, sectionName) => {
+    if (!window.confirm(`Are you sure you want to delete the schedule for "${sectionName}"?`)) return;
+    try {
+      await Api.deleteSchedule(id);
+      setSuccessMsg('Schedule deleted successfully.');
+      loadData();
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to delete schedule.');
+    }
+  };
+
   return (
     <div className="page-content">
-
       {successMsg && (
         <div className="alert alert-success" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Check size={18} />
           <span>{successMsg}</span>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="alert alert-danger" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span>{errorMsg}</span>
         </div>
       )}
 
@@ -99,22 +139,26 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Section</th>
+                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Subject</th>
+                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Teacher</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Day</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Time</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Room</th>
+                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Effective Period</th>
+                {isAdmin && <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="4" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={isAdmin ? 8 : 7} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading schedules...
                   </td>
                 </tr>
               ) : schedules.length === 0 ? (
                 <tr>
-                  <td colSpan="4" style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    No schedules registered yet.{' '}
+                  <td colSpan={isAdmin ? 8 : 7} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    No schedules yet.{' '}
                     {isAdmin && (
                       <button
                         type="button"
@@ -128,24 +172,64 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
                   </td>
                 </tr>
               ) : (
-                schedules.map((sch) => (
-                  <tr key={sch.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '14px 18px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                      {sch.section_name}
-                    </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span className="badge badge-info" style={{ fontWeight: '700' }}>
-                        {sch.day_display}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 18px', fontSize: '13px' }}>
-                      {sch.start_time} – {sch.end_time}
-                    </td>
-                    <td style={{ padding: '14px 18px', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                      {sch.room || '—'}
-                    </td>
-                  </tr>
-                ))
+                schedules.map((sch) => {
+                  const displayTime = formatTime12h(
+                    sch.time_display || (sch.start_time && sch.end_time ? `${sch.start_time} - ${sch.end_time}` : '')
+                  );
+                  return (
+                    <tr key={sch.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '14px 18px' }}>
+                        <strong>{sch.section_name}</strong>
+                      </td>
+                      <td style={{ padding: '14px 18px' }}>
+                        <span className="badge badge-accent" style={{ fontSize: '12px', fontWeight: '700' }}>
+                          {sch.subject_code || '—'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                        {sch.teacher_name || '—'}
+                      </td>
+                      <td style={{ padding: '14px 18px' }}>
+                        <span className="badge badge-info" style={{ fontWeight: '700', letterSpacing: '.5px' }}>
+                          {sch.days_display || sch.day_display}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px 18px', fontSize: '13px', fontWeight: '500' }}>
+                        {displayTime}
+                      </td>
+                      <td style={{ padding: '14px 18px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                        {sch.room || '—'}
+                      </td>
+                      <td style={{ padding: '14px 18px' }}>
+                        {sch.effective_from || sch.effective_to ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--text-primary)' }}>
+                            <CalendarRange size={13} style={{ color: 'var(--primary)' }} />
+                            <span>
+                              {sch.effective_from || 'Any'} &rarr; {sch.effective_to || 'Ongoing'}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-muted" style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Infinity size={13} /> No restriction
+                          </span>
+                        )}
+                      </td>
+                      {isAdmin && (
+                        <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm text-danger"
+                            onClick={() => handleDelete(sch.id, sch.section_name)}
+                            title="Delete Schedule"
+                            style={{ padding: '4px 8px' }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -154,8 +238,14 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
 
       {/* Add Schedule Modal */}
       {showAddModal && (
-        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="modal-card modal-md" style={{ width: '100%', maxWidth: '520px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden', border: '1px solid var(--border)' }}>
+        <div
+          className="modal-backdrop open"
+          style={{ display: 'flex', opacity: 1, zIndex: 1200 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowAddModal(false);
+          }}
+        >
+          <div className="modal-card modal-lg" style={{ width: '100%', maxWidth: '580px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             <div className="modal-header" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h3 className="modal-title" style={{ fontSize: '16px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Calendar size={18} style={{ color: 'var(--primary)' }} />
@@ -192,7 +282,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
                     <option value="">Select section...</option>
                     {sections.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.name} ({s.school_year})
+                        {s.name} ({s.school_year} - {s.semester})
                       </option>
                     ))}
                   </select>
@@ -201,37 +291,44 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
                 <div className="grid-2">
                   <div className="form-group">
                     <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                      Day of Week *
+                      Day 1 *
                     </label>
                     <select
                       className="form-select"
                       value={formData.day_of_week}
                       onChange={(e) => setFormData({ ...formData, day_of_week: e.target.value })}
+                      required
                     >
-                      <option value="mon">Monday</option>
-                      <option value="tue">Tuesday</option>
-                      <option value="wed">Wednesday</option>
-                      <option value="thu">Thursday</option>
-                      <option value="fri">Friday</option>
-                      <option value="sat">Saturday</option>
+                      <option value="Mon">Monday</option>
+                      <option value="Tue">Tuesday</option>
+                      <option value="Wed">Wednesday</option>
+                      <option value="Thu">Thursday</option>
+                      <option value="Fri">Friday</option>
+                      <option value="Sat">Saturday</option>
                     </select>
                   </div>
 
                   <div className="form-group">
                     <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                      Room Assignment
+                      Day 2 (Optional for 2-day meetings)
                     </label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="e.g. CB 204, Lab 3"
-                      value={formData.room}
-                      onChange={(e) => setFormData({ ...formData, room: e.target.value })}
-                    />
+                    <select
+                      className="form-select"
+                      value={formData.day_2}
+                      onChange={(e) => setFormData({ ...formData, day_2: e.target.value })}
+                    >
+                      <option value="">None (Single-day meeting)</option>
+                      <option value="Mon">Monday</option>
+                      <option value="Tue">Tuesday</option>
+                      <option value="Wed">Wednesday</option>
+                      <option value="Thu">Thursday</option>
+                      <option value="Fri">Friday</option>
+                      <option value="Sat">Saturday</option>
+                    </select>
                   </div>
                 </div>
 
-                <div className="grid-2">
+                <div className="grid-3" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '12px' }}>
                   <div className="form-group">
                     <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
                       Start Time *
@@ -256,6 +353,47 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
                       onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
                       required
                     />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
+                      Room / Lab *
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. 226, LAB-7"
+                      value={formData.room}
+                      onChange={(e) => setFormData({ ...formData, room: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid-2">
+                  <div className="form-group">
+                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
+                      Effective From (Optional)
+                    </label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={formData.effective_from}
+                      onChange={(e) => setFormData({ ...formData, effective_from: e.target.value })}
+                    />
+                    <span className="form-text" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Leave blank if no start constraint</span>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
+                      Effective To (Optional)
+                    </label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={formData.effective_to}
+                      onChange={(e) => setFormData({ ...formData, effective_to: e.target.value })}
+                    />
+                    <span className="form-text" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Leave blank if ongoing schedule</span>
                   </div>
                 </div>
               </div>

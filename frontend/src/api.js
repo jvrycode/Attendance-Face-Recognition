@@ -227,6 +227,42 @@ export const Api = {
     return res.json();
   },
 
+  deleteProgram: async (id) => {
+    const res = await apiRequest(`/api/programs/${id}/`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete program');
+    return true;
+  },
+
+  deleteProgramSection: async (id) => {
+    const res = await apiRequest(`/api/program-sections/${id}/`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete section definition');
+    return true;
+  },
+
+  deleteSection: async (id) => {
+    const res = await apiRequest(`/api/sections/${id}/`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete section');
+    return true;
+  },
+
+  deleteSchedule: async (id) => {
+    const res = await apiRequest(`/api/schedules/${id}/`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete schedule');
+    return true;
+  },
+
+  deleteSubject: async (id) => {
+    const res = await apiRequest(`/api/subjects/${id}/`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete subject');
+    return true;
+  },
+
+  getTeachers: async () => {
+    const res = await apiRequest('/api/users/?role=teacher');
+    if (!res.ok) return [];
+    return res.json();
+  },
+
   getStudents: async (search = '') => {
     const q = search ? `?search=${encodeURIComponent(search)}` : '';
     const res = await apiRequest(`/api/students/${q}`);

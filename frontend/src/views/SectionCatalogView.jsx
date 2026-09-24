@@ -133,18 +133,19 @@ export default function SectionCatalogView({ user, onSetHeaderInfo }) {
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Year Level</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Description / Track</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Active Classes</th>
+                {isAdmin && <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="5" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={isAdmin ? 6 : 5} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading section catalog...
                   </td>
                 </tr>
               ) : sections.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={isAdmin ? 6 : 5} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No section definitions found.{' '}
                     {isAdmin && (
                       <button
@@ -182,6 +183,29 @@ export default function SectionCatalogView({ user, onSetHeaderInfo }) {
                         {sec.active_classes_count || 1} active
                       </span>
                     </td>
+                    {isAdmin && (
+                      <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm text-danger"
+                          onClick={async () => {
+                            if (!window.confirm(`Are you sure you want to delete definition "${sec.name}"?`)) return;
+                            try {
+                              await Api.deleteProgramSection(sec.id);
+                              setSuccessMsg(`Section definition ${sec.name} deleted.`);
+                              loadData();
+                              setTimeout(() => setSuccessMsg(''), 4000);
+                            } catch (err) {
+                              setErrorMsg(err.message || 'Failed to delete definition.');
+                            }
+                          }}
+                          title="Delete Definition"
+                          style={{ padding: '4px 8px' }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -192,7 +216,13 @@ export default function SectionCatalogView({ user, onSetHeaderInfo }) {
 
       {/* Add Section Definition Modal */}
       {showAddModal && (
-        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div
+          className="modal-backdrop open"
+          style={{ display: 'flex', opacity: 1, zIndex: 1200 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowAddModal(false);
+          }}
+        >
           <div className="modal-card modal-md" style={{ width: '100%', maxWidth: '520px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             <div className="modal-header" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h3 className="modal-title" style={{ fontSize: '16px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>

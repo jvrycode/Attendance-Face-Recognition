@@ -7,12 +7,17 @@ from attendance_fr.api_views import (
     CurrentUserAPIView,
     DashboardStatsAPIView,
     ProgramListCreateAPIView,
+    ProgramDetailAPIView,
     ProgramSectionListCreateAPIView,
+    ProgramSectionDetailAPIView,
     UserListCreateAPIView,
     StudentListAPIView,
     SubjectListCreateAPIView,
+    SubjectDetailAPIView,
     SectionListCreateAPIView,
+    SectionDetailAPIView,
     ScheduleListCreateAPIView,
+    ScheduleDetailAPIView,
     AttendanceSessionListAPIView,
     AttendanceSessionStartAPIView,
     AttendanceSessionCloseAPIView,
@@ -30,14 +35,19 @@ urlpatterns = [
     # Dashboard & Users
     path('dashboard/stats/', DashboardStatsAPIView.as_view(), name='api_dashboard_stats'),
     path('programs/', ProgramListCreateAPIView.as_view(), name='api_programs'),
+    path('programs/<int:pk>/', ProgramDetailAPIView.as_view(), name='api_program_detail'),
     path('program-sections/', ProgramSectionListCreateAPIView.as_view(), name='api_program_sections'),
+    path('program-sections/<int:pk>/', ProgramSectionDetailAPIView.as_view(), name='api_program_section_detail'),
     path('users/', UserListCreateAPIView.as_view(), name='api_users'),
     path('students/', StudentListAPIView.as_view(), name='api_students'),
 
     # Academic Structure
     path('subjects/', SubjectListCreateAPIView.as_view(), name='api_subjects'),
+    path('subjects/<int:pk>/', SubjectDetailAPIView.as_view(), name='api_subject_detail'),
     path('sections/', SectionListCreateAPIView.as_view(), name='api_sections'),
+    path('sections/<int:pk>/', SectionDetailAPIView.as_view(), name='api_section_detail'),
     path('schedules/', ScheduleListCreateAPIView.as_view(), name='api_schedules'),
+    path('schedules/<int:pk>/', ScheduleDetailAPIView.as_view(), name='api_schedule_detail'),
 
     # Attendance
     path('attendance/sessions/', AttendanceSessionListAPIView.as_view(), name='api_attendance_sessions'),

@@ -5,7 +5,7 @@ Protected with JWT Authentication and CORS.
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
-from rest_framework.generics import ListCreateAPIView
+from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -113,6 +113,12 @@ class ProgramListCreateAPIView(ListCreateAPIView):
     permission_classes = [IsAdminOrReadOnly]
 
 
+class ProgramDetailAPIView(RetrieveUpdateDestroyAPIView):
+    queryset = Program.objects.all()
+    serializer_class = ProgramSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
+
 class UserListCreateAPIView(APIView):
     """GET /api/users/ - List users with profiles. POST /api/users/ - Create user (Admin only)."""
     permission_classes = [IsAdminOrReadOnly]
@@ -199,6 +205,12 @@ class ProgramSectionListCreateAPIView(ListCreateAPIView):
         return ProgramSection.objects.select_related('program').order_by('program__code', 'year_level', 'name')
 
 
+class ProgramSectionDetailAPIView(RetrieveUpdateDestroyAPIView):
+    queryset = ProgramSection.objects.all()
+    serializer_class = ProgramSectionSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
+
 class StudentListAPIView(APIView):
     """GET /api/students/ - List all registered students with face enrollment status."""
     permission_classes = [IsAdminRole]
@@ -219,7 +231,13 @@ class StudentListAPIView(APIView):
 
 
 class SubjectListCreateAPIView(ListCreateAPIView):
-    queryset = Subject.objects.all().order_by('code')
+    queryset = Subject.objects.select_related('program', 'teacher__user', 'section').order_by('code')
+    serializer_class = SubjectSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
+
+class SubjectDetailAPIView(RetrieveUpdateDestroyAPIView):
+    queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
     permission_classes = [IsAdminOrReadOnly]
 
@@ -230,9 +248,18 @@ class SectionListCreateAPIView(ListCreateAPIView):
 
     def get_queryset(self):
         user = self.request.user
+        qs = Section.objects.select_related('program', 'teacher__user', 'subject').prefetch_related('schedules', 'enrollments')
         if user.role == 'teacher' and hasattr(user, 'teacher_profile'):
-            return Section.objects.filter(teacher=user.teacher_profile).order_by('name')
-        return Section.objects.all().order_by('name')
+            return qs.filter(teacher=user.teacher_profile).order_by('name')
+        elif user.role == 'student' and hasattr(user, 'student_profile'):
+            return qs.filter(enrollments__student=user.student_profile).order_by('name')
+        return qs.order_by('name')
+
+
+class SectionDetailAPIView(RetrieveUpdateDestroyAPIView):
+    queryset = Section.objects.all()
+    serializer_class = SectionSerializer
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class ScheduleListCreateAPIView(ListCreateAPIView):
@@ -241,9 +268,10 @@ class ScheduleListCreateAPIView(ListCreateAPIView):
 
     def get_queryset(self):
         section_id = self.request.query_params.get('section_id')
+        qs = Schedule.objects.select_related('section__program', 'section__teacher__user', 'section__subject')
         if section_id:
-            return Schedule.objects.filter(section_id=section_id).order_by('day_of_week', 'start_time')
-        return Schedule.objects.all().order_by('day_of_week', 'start_time')
+            qs = qs.filter(section_id=section_id)
+        return qs.order_by('day_of_week', 'start_time')
 
     def perform_create(self, serializer):
         schedule = serializer.save()
@@ -252,6 +280,12 @@ class ScheduleListCreateAPIView(ListCreateAPIView):
             schedule.delete()
             from django.core.exceptions import ValidationError
             raise ValidationError(conflicts[0])
+
+
+class ScheduleDetailAPIView(RetrieveUpdateDestroyAPIView):
+    queryset = Schedule.objects.all()
+    serializer_class = ScheduleSerializer
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class AttendanceSessionListAPIView(APIView):

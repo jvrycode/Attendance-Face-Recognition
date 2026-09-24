@@ -28,6 +28,7 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { Api } from '../api';
+import { formatTime12h } from '../utils/time';
 
 export default function DashboardView({ user, onNavigate, onStartSession, onSetHeaderInfo }) {
   const role = user?.role || 'admin';
@@ -491,7 +492,13 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
                             {sec.subject_details?.code || 'CS 101'} &mdash; {sec.subject_details?.name || 'Class Subject'}
                           </div>
                         </td>
-                        <td style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>8:00 AM – 9:30 AM @ Room 204</td>
+                        <td style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>
+                          {sec.schedules && sec.schedules.length > 0
+                            ? `${formatTime12h(sec.schedules[0].time_display || `${sec.schedules[0].start_time} - ${sec.schedules[0].end_time}`)} @ ${sec.schedules[0].room || 'Room 204'}`
+                            : sec.schedule_display && sec.schedule_display !== 'No schedule set'
+                            ? formatTime12h(sec.schedule_display)
+                            : '8:00 AM – 9:30 AM @ Room 204'}
+                        </td>
                         <td>
                           <span
                             className="badge badge-warning"

@@ -97,18 +97,19 @@ export default function ProgramsView({ user, onSetHeaderInfo }) {
                 <th>College / Department</th>
                 <th>Sections</th>
                 <th>Subjects</th>
+                {isAdmin && <th style={{ textAlign: 'right' }}>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="5" className="text-center text-muted" style={{ padding: '32px' }}>
+                  <td colSpan={isAdmin ? 6 : 5} className="text-center text-muted" style={{ padding: '32px' }}>
                     Loading programs...
                   </td>
                 </tr>
               ) : programs.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="text-center text-muted" style={{ padding: '36px' }}>
+                  <td colSpan={isAdmin ? 6 : 5} className="text-center text-muted" style={{ padding: '36px' }}>
                     No academic programs found.{' '}
                     {isAdmin && (
                       <button
@@ -142,6 +143,29 @@ export default function ProgramsView({ user, onSetHeaderInfo }) {
                         {prog.subject_count || 0}
                       </span>
                     </td>
+                    {isAdmin && (
+                      <td style={{ textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm text-danger"
+                          onClick={async () => {
+                            if (!window.confirm(`Are you sure you want to delete program "${prog.code}"?`)) return;
+                            try {
+                              await Api.deleteProgram(prog.id);
+                              setSuccessMsg(`Program ${prog.code} deleted.`);
+                              loadPrograms();
+                              setTimeout(() => setSuccessMsg(''), 4000);
+                            } catch (err) {
+                              setErrorMsg(err.message || 'Failed to delete program.');
+                            }
+                          }}
+                          title="Delete Program"
+                          style={{ padding: '4px 8px' }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -152,7 +176,13 @@ export default function ProgramsView({ user, onSetHeaderInfo }) {
 
       {/* Add Program Modal */}
       {showAddModal && (
-        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div
+          className="modal-backdrop open"
+          style={{ display: 'flex', opacity: 1, zIndex: 1200 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowAddModal(false);
+          }}
+        >
           <div className="modal-card modal-md">
             <div className="modal-header">
               <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
