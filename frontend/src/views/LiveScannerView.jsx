@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { Api } from '../api';
 
-export default function LiveScannerView({ user, onNavigate, activeSessionId }) {
+export default function LiveScannerView({ user, onNavigate, activeSessionId, onSetHeaderInfo }) {
   const [session, setSession] = useState(null);
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -82,6 +82,46 @@ export default function LiveScannerView({ user, onNavigate, activeSessionId }) {
       stopCamera();
     };
   }, [activeSessionId]);
+
+  useEffect(() => {
+    if (onSetHeaderInfo) {
+      onSetHeaderInfo({
+        title: `Live Attendance${session?.schedule_details?.section_name ? ` – ${session.schedule_details.section_name}` : ''}`,
+        subtitle: session ? `${session.date} | Room ${session.schedule_details?.room || 'Main Hall'}` : 'Live Camera Scanner',
+        headerActions: (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => {
+                stopCamera();
+                onNavigate('sections');
+              }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <ArrowLeft size={14} /> <span>Back to Sections</span>
+            </button>
+            {session && session.status === 'open' && (
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={async () => {
+                  if (confirm('Close this attendance session?')) {
+                    await Api.closeSession(session.id);
+                    stopCamera();
+                    onNavigate('dashboard');
+                  }
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Square size={14} /> <span>Close Session</span>
+              </button>
+            )}
+          </div>
+        ),
+      });
+    }
+  }, [session, onSetHeaderInfo, onNavigate]);
 
   // Start Camera Stream
   const startCamera = async () => {
@@ -188,45 +228,7 @@ export default function LiveScannerView({ user, onNavigate, activeSessionId }) {
   const presentCount = records.filter((r) => r.status === 'present').length;
 
   return (
-    <div className="page-content" style={{ padding: '24px', maxWidth: '1280px', margin: '0 auto' }}>
-      {/* Top Bar with Back Link and Session Info */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <button
-            type="button"
-            className="btn-link"
-            onClick={() => onNavigate('sections')}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '13px', textDecoration: 'none', marginBottom: '6px', background: 'none', border: 'none', cursor: 'pointer' }}
-          >
-            <ArrowLeft size={14} />
-            <span>Back to Sections</span>
-          </button>
-          <h2 style={{ fontSize: '22px', fontWeight: '800', margin: 0, color: 'var(--text-primary)' }}>
-            Live Attendance {session?.schedule_details?.section_name ? `– ${session.schedule_details.section_name}` : ''}
-          </h2>
-          <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '13px' }}>
-            {session ? `${session.date} | Room ${session.schedule_details?.room || 'Main Hall'}` : 'Loading active session...'}
-          </p>
-        </div>
-
-        {session && session.status === 'open' && (
-          <button
-            type="button"
-            className="btn btn-danger"
-            onClick={async () => {
-              if (confirm('Close this attendance session?')) {
-                await Api.closeSession(session.id);
-                stopCamera();
-                onNavigate('dashboard');
-              }
-            }}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Square size={14} />
-            <span>Close Session</span>
-          </button>
-        )}
-      </div>
+    <div className="page-content">
 
       {/* Main 2-Column Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.45fr) 380px', gap: '20px', alignItems: 'stretch' }}>

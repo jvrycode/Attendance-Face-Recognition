@@ -22,6 +22,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [headerInfo, setHeaderInfo] = useState({
+    title: '',
+    subtitle: '',
+    headerActions: null,
+  });
 
   useEffect(() => {
     async function checkAuth() {
@@ -43,26 +48,14 @@ export default function App() {
     checkAuth();
   }, []);
 
-  const handleLoginSuccess = (userData) => {
-    setUser(userData);
-    setActiveTab('dashboard');
-  };
-
-  const handleLogout = () => {
-    Api.logout();
-    setUser(null);
-    setActiveTab('dashboard');
-    setActiveSessionId(null);
-  };
-
   const getTitle = (tab) => {
     switch (tab) {
       case 'dashboard':
         return user?.role === 'admin'
           ? 'Admin Dashboard'
           : user?.role === 'teacher'
-          ? 'Teacher Dashboard'
-          : 'Student Dashboard';
+          ? 'Instructor Dashboard'
+          : 'My Dashboard';
       case 'programs':
         return 'Academic Programs';
       case 'section_catalog':
@@ -84,7 +77,7 @@ export default function App() {
       case 'section_report':
         return user?.role === 'teacher' ? 'Attendance Reports' : 'Section Attendance Report';
       case 'session_logs':
-        return user?.role === 'student' ? 'My Attendance Records' : 'Session Logs';
+        return user?.role === 'student' ? 'My Records' : 'Session Logs';
       case 'profile':
         return 'My Profile';
       case 'scanner':
@@ -92,6 +85,27 @@ export default function App() {
       default:
         return 'AttendFR';
     }
+  };
+
+  const handleTabChange = (newTab) => {
+    setActiveTab(newTab);
+    setHeaderInfo({
+      title: getTitle(newTab),
+      subtitle: '',
+      headerActions: null,
+    });
+  };
+
+  const handleLoginSuccess = (userData) => {
+    setUser(userData);
+    handleTabChange('dashboard');
+  };
+
+  const handleLogout = () => {
+    Api.logout();
+    setUser(null);
+    handleTabChange('dashboard');
+    setActiveSessionId(null);
   };
 
   if (loading) {
@@ -111,11 +125,11 @@ export default function App() {
 
   return (
     <div className="app-layout">
-      {/* Sidebar Navigation */}
+      {/* Sidebar Navigation (100% copycat of templates/base.html) */}
       <Sidebar
         user={user}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleTabChange}
         onLogout={handleLogout}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -133,82 +147,111 @@ export default function App() {
       {/* Main Content Area */}
       <main className="main-content">
         <Header
-          user={user}
-          title={getTitle(activeTab)}
+          title={headerInfo.title || getTitle(activeTab)}
+          subtitle={headerInfo.subtitle}
+          headerActions={headerInfo.headerActions}
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          onLogout={handleLogout}
         />
 
         <div style={{ minHeight: 'calc(100vh - 64px)' }}>
           {activeTab === 'dashboard' && (
             <DashboardView
               user={user}
-              onNavigate={setActiveTab}
+              onNavigate={handleTabChange}
+              onSetHeaderInfo={setHeaderInfo}
               onStartSession={(sec) => {
                 setActiveSessionId(sec?.id);
-                setActiveTab('scanner');
+                handleTabChange('scanner');
               }}
             />
           )}
 
           {activeTab === 'programs' && (
-            <ProgramsView user={user} />
+            <ProgramsView
+              user={user}
+              onSetHeaderInfo={setHeaderInfo}
+            />
           )}
 
           {activeTab === 'section_catalog' && (
-            <SectionCatalogView user={user} />
+            <SectionCatalogView
+              user={user}
+              onSetHeaderInfo={setHeaderInfo}
+            />
           )}
 
           {activeTab === 'sections' && (
             <SectionsView
               user={user}
-              onNavigate={setActiveTab}
+              onNavigate={handleTabChange}
+              onSetHeaderInfo={setHeaderInfo}
               onStartSession={(sec) => {
                 setActiveSessionId(sec?.id);
-                setActiveTab('scanner');
+                handleTabChange('scanner');
               }}
             />
           )}
 
           {activeTab === 'subjects' && (
-            <SubjectsView user={user} />
+            <SubjectsView
+              user={user}
+              onSetHeaderInfo={setHeaderInfo}
+            />
           )}
 
           {activeTab === 'schedules' && (
-            <SchedulesView user={user} />
+            <SchedulesView
+              user={user}
+              onSetHeaderInfo={setHeaderInfo}
+            />
           )}
 
           {activeTab === 'users' && (
-            <UsersView user={user} />
+            <UsersView
+              user={user}
+              onSetHeaderInfo={setHeaderInfo}
+            />
           )}
 
           {activeTab === 'face_enrollment' && (
-            <FaceEnrollmentView user={user} />
+            <FaceEnrollmentView
+              user={user}
+              onSetHeaderInfo={setHeaderInfo}
+            />
           )}
 
           {activeTab === 'section_report' && (
-            <SectionReportView user={user} />
+            <SectionReportView
+              user={user}
+              onSetHeaderInfo={setHeaderInfo}
+            />
           )}
 
           {activeTab === 'session_logs' && (
             <ReportsView
               user={user}
-              onNavigate={setActiveTab}
+              onNavigate={handleTabChange}
+              onSetHeaderInfo={setHeaderInfo}
               onStartSession={(s) => {
                 setActiveSessionId(s.id);
-                setActiveTab('scanner');
+                handleTabChange('scanner');
               }}
             />
           )}
 
           {activeTab === 'profile' && (
-            <ProfileView user={user} onUserUpdated={setUser} />
+            <ProfileView
+              user={user}
+              onUserUpdated={setUser}
+              onSetHeaderInfo={setHeaderInfo}
+            />
           )}
 
           {activeTab === 'scanner' && (
             <LiveScannerView
               user={user}
-              onNavigate={setActiveTab}
+              onNavigate={handleTabChange}
+              onSetHeaderInfo={setHeaderInfo}
               activeSessionId={activeSessionId}
             />
           )}

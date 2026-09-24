@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BarChart2, Camera, CircleDot, FileText, CheckCircle2 } from 'lucide-react';
 import { Api } from '../api';
 
-export default function ReportsView({ user, onNavigate, onStartSession }) {
+export default function ReportsView({ user, onNavigate, onStartSession, onSetHeaderInfo }) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -21,18 +21,18 @@ export default function ReportsView({ user, onNavigate, onStartSession }) {
     loadSessions();
   }, []);
 
+  useEffect(() => {
+    if (onSetHeaderInfo) {
+      onSetHeaderInfo({
+        title: user?.role === 'student' ? 'My Records' : 'Session Logs',
+        subtitle: 'Past attendance sessions and verified scan logs',
+        headerActions: null,
+      });
+    }
+  }, [user, onSetHeaderInfo]);
+
   return (
-    <div className="page-content" style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div>
-          <h2 style={{ fontSize: '24px', fontWeight: '800', margin: '0 0 4px 0', color: 'var(--text-primary)' }}>
-            Attendance History & Session Logs
-          </h2>
-          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '14px' }}>
-            Historical record of class attendance sessions and facial recognition verifications
-          </p>
-        </div>
-      </div>
+    <div className="page-content">
 
       <div className="card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
         <div className="table-container" style={{ border: 'none', margin: 0 }}>

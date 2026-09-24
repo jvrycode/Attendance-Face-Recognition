@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FileText, Printer, Filter, Calendar, CheckCircle2, Clock, XCircle } from 'lucide-react';
 import { Api } from '../api';
 
-export default function SectionReportView({ user }) {
+export default function SectionReportView({ user, onSetHeaderInfo }) {
   const [sections, setSections] = useState([]);
   const [selectedSectionId, setSelectedSectionId] = useState('');
   const [records, setRecords] = useState([]);
@@ -27,6 +27,26 @@ export default function SectionReportView({ user }) {
   }, []);
 
   useEffect(() => {
+    if (onSetHeaderInfo) {
+      onSetHeaderInfo({
+        title: user?.role === 'teacher' ? 'Attendance Reports' : 'Section Attendance Report',
+        subtitle: 'Consolidated attendance records by class section',
+        headerActions: (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => window.print()}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Printer size={16} />
+            <span>Print / Save PDF</span>
+          </button>
+        ),
+      });
+    }
+  }, [user, onSetHeaderInfo]);
+
+  useEffect(() => {
     async function loadSectionAttendance() {
       if (!selectedSectionId) return;
       try {
@@ -48,27 +68,7 @@ export default function SectionReportView({ user }) {
   const selectedSection = sections.find((s) => s.id == selectedSectionId);
 
   return (
-    <div className="page-content" style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h2 style={{ fontSize: '24px', fontWeight: '800', margin: '0 0 4px 0', color: 'var(--text-primary)' }}>
-            Section Attendance Report
-          </h2>
-          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '14px' }}>
-            Official daily and weekly attendance records for your assigned class section
-          </p>
-        </div>
-
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => window.print()}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-        >
-          <Printer size={16} />
-          <span>Print / Save PDF</span>
-        </button>
-      </div>
+    <div className="page-content">
 
       {/* Filter Toolbar */}
       <div className="card mb-3" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>

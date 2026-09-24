@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { User, Save, Info, Check, AlertCircle } from 'lucide-react';
 import { Api } from '../api';
 
-export default function ProfileView({ user, onUserUpdated }) {
+export default function ProfileView({ user, onUserUpdated, onSetHeaderInfo }) {
   const [formData, setFormData] = useState({
     first_name: user?.first_name || '',
     last_name: user?.last_name || '',
@@ -12,6 +12,16 @@ export default function ProfileView({ user, onUserUpdated }) {
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    if (onSetHeaderInfo) {
+      onSetHeaderInfo({
+        title: 'My Profile',
+        subtitle: 'Account settings and user information',
+        headerActions: null,
+      });
+    }
+  }, [onSetHeaderInfo]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,15 +40,7 @@ export default function ProfileView({ user, onUserUpdated }) {
   };
 
   return (
-    <div className="page-content" style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '800', margin: '0 0 4px 0', color: 'var(--text-primary)' }}>
-          My Profile
-        </h2>
-        <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '14px' }}>
-          Manage your account settings and contact information
-        </p>
-      </div>
+    <div className="page-content">
 
       {successMsg && (
         <div className="alert alert-success" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>

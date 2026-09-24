@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { Api, apiRequest } from '../api';
 
-export default function UsersView() {
+export default function UsersView({ onSetHeaderInfo }) {
   const [users, setUsers] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,6 +43,26 @@ export default function UsersView() {
     loadUsers();
     loadPrograms();
   }, []);
+
+  useEffect(() => {
+    if (onSetHeaderInfo) {
+      onSetHeaderInfo({
+        title: 'Users',
+        subtitle: 'System users, faculty, staff and students',
+        headerActions: (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setShowAddModal(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Plus size={16} />
+            <span>Add User</span>
+          </button>
+        ),
+      });
+    }
+  }, [onSetHeaderInfo]);
 
   async function loadUsers() {
     try {
@@ -132,26 +152,7 @@ export default function UsersView() {
   });
 
   return (
-    <div className="page-content" style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-      {/* Title & Actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h2 style={{ fontSize: '24px', fontWeight: '800', margin: '0 0 4px 0' }}>User Management</h2>
-          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '13px' }}>
-            System accounts, faculty profiles, and student access credentials
-          </p>
-        </div>
-
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => setShowAddModal(true)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-        >
-          <Plus size={16} />
-          <span>Add Staff / Faculty</span>
-        </button>
-      </div>
+    <div className="page-content">
 
       {successMsg && (
         <div className="alert alert-success" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>

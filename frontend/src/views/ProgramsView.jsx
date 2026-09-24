@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Award, Plus, X, Check, BookOpen, Layers } from 'lucide-react';
+import { Award, Plus, X, Check, BookOpen } from 'lucide-react';
 import { Api } from '../api';
 
-export default function ProgramsView({ user }) {
+export default function ProgramsView({ user, onSetHeaderInfo }) {
   const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -32,6 +32,28 @@ export default function ProgramsView({ user }) {
     loadPrograms();
   }, []);
 
+  const isAdmin = user?.role === 'admin';
+
+  useEffect(() => {
+    if (onSetHeaderInfo) {
+      onSetHeaderInfo({
+        title: 'Academic Programs',
+        subtitle: 'Father Saturnino Urios University (FSUU) Academic Programs',
+        headerActions: isAdmin ? (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setShowAddModal(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Plus size={16} />
+            <span>Add Program</span>
+          </button>
+        ) : null,
+      });
+    }
+  }, [isAdmin]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.code || !formData.name || !formData.college) {
@@ -55,34 +77,8 @@ export default function ProgramsView({ user }) {
     }
   };
 
-  const isAdmin = user?.role === 'admin';
-
   return (
-    <div className="page-content" style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-      {/* Page Title & Actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h2 style={{ fontSize: '24px', fontWeight: '800', margin: '0 0 4px 0', color: 'var(--text-primary)' }}>
-            Academic Programs
-          </h2>
-          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '14px' }}>
-            Father Saturnino Urios University (FSUU) Academic Programs
-          </p>
-        </div>
-
-        {isAdmin && (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setShowAddModal(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Plus size={16} />
-            <span>Add Program</span>
-          </button>
-        )}
-      </div>
-
+    <div className="page-content">
       {successMsg && (
         <div className="alert alert-success" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Check size={18} />
@@ -91,28 +87,28 @@ export default function ProgramsView({ user }) {
       )}
 
       {/* Programs Table */}
-      <div className="card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+      <div className="card">
         <div className="table-container" style={{ border: 'none', margin: 0 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+          <table>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Code</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Program Name</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>College / Department</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Sections</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Subjects</th>
+              <tr>
+                <th>Code</th>
+                <th>Program Name</th>
+                <th>College / Department</th>
+                <th>Sections</th>
+                <th>Subjects</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="5" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan="5" className="text-center text-muted" style={{ padding: '32px' }}>
                     Loading programs...
                   </td>
                 </tr>
               ) : programs.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan="5" className="text-center text-muted" style={{ padding: '36px' }}>
                     No academic programs found.{' '}
                     {isAdmin && (
                       <button
@@ -128,25 +124,21 @@ export default function ProgramsView({ user }) {
                 </tr>
               ) : (
                 programs.map((prog) => (
-                  <tr key={prog.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span className="badge badge-accent" style={{ fontSize: '12px', fontWeight: '700' }}>
+                  <tr key={prog.id}>
+                    <td>
+                      <span className="badge badge-accent" style={{ fontSize: '13px', fontWeight: '700' }}>
                         {prog.code}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 18px', fontWeight: '600', color: 'var(--text-primary)' }}>
-                      {prog.name}
-                    </td>
-                    <td style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                      {prog.college || '—'}
-                    </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span className="badge badge-info" style={{ fontSize: '11px', fontWeight: '600' }}>
+                    <td><strong>{prog.name}</strong></td>
+                    <td><span className="text-muted">{prog.college || '—'}</span></td>
+                    <td>
+                      <span className="badge badge-info" style={{ fontWeight: '600' }}>
                         {prog.section_count || 0}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span className="badge badge-outline" style={{ fontSize: '11px', fontWeight: '600' }}>
+                    <td>
+                      <span className="badge badge-outline" style={{ fontWeight: '600' }}>
                         {prog.subject_count || 0}
                       </span>
                     </td>
@@ -161,9 +153,9 @@ export default function ProgramsView({ user }) {
       {/* Add Program Modal */}
       {showAddModal && (
         <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="modal-card modal-md" style={{ width: '100%', maxWidth: '520px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden', border: '1px solid var(--border)' }}>
-            <div className="modal-header" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 className="modal-title" style={{ fontSize: '16px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="modal-card modal-md">
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <BookOpen size={18} style={{ color: 'var(--primary)' }} />
                 <span>Add Academic Program</span>
               </h3>
@@ -187,9 +179,7 @@ export default function ProgramsView({ user }) {
 
                 <div className="grid-2">
                   <div className="form-group">
-                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                      Program Code *
-                    </label>
+                    <label className="form-label">Program Code *</label>
                     <input
                       type="text"
                       className="form-control"
@@ -198,12 +188,11 @@ export default function ProgramsView({ user }) {
                       onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                       required
                     />
+                    <span className="form-text">e.g. BSCS, BSIT, BSEMC</span>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                      College / Department *
-                    </label>
+                    <label className="form-label">College / Department *</label>
                     <input
                       type="text"
                       className="form-control"
@@ -216,9 +205,7 @@ export default function ProgramsView({ user }) {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                    Full Program Name *
-                  </label>
+                  <label className="form-label">Full Program Name *</label>
                   <input
                     type="text"
                     className="form-control"
@@ -230,9 +217,7 @@ export default function ProgramsView({ user }) {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                    Description (Optional)
-                  </label>
+                  <label className="form-label">Description (Optional)</label>
                   <textarea
                     className="form-control"
                     rows="2"

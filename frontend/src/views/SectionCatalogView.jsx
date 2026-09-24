@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Layers, Plus, Filter, X, Check, Building } from 'lucide-react';
 import { Api } from '../api';
 
-export default function SectionCatalogView({ user }) {
+export default function SectionCatalogView({ user, onSetHeaderInfo }) {
   const [sections, setSections] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [selectedProgramId, setSelectedProgramId] = useState(null);
@@ -38,6 +38,28 @@ export default function SectionCatalogView({ user }) {
     loadData();
   }, [selectedProgramId]);
 
+  const isAdmin = user?.role === 'admin';
+
+  useEffect(() => {
+    if (onSetHeaderInfo) {
+      onSetHeaderInfo({
+        title: 'Section Catalog (Master List)',
+        subtitle: 'Stored section definitions grouped by College / Academic Program',
+        headerActions: isAdmin ? (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setShowAddModal(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Plus size={16} />
+            <span>Add Section Definition</span>
+          </button>
+        ) : null,
+      });
+    }
+  }, [isAdmin, onSetHeaderInfo]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name || !formData.program) {
@@ -61,32 +83,8 @@ export default function SectionCatalogView({ user }) {
     }
   };
 
-  const isAdmin = user?.role === 'admin';
-
   return (
-    <div className="page-content" style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h2 style={{ fontSize: '24px', fontWeight: '800', margin: '0 0 4px 0', color: 'var(--text-primary)' }}>
-            Section Catalog (Master List)
-          </h2>
-          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '14px' }}>
-            Stored section definitions grouped by College / Academic Program
-          </p>
-        </div>
-
-        {isAdmin && (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setShowAddModal(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Plus size={16} />
-            <span>Add Section Definition</span>
-          </button>
-        )}
-      </div>
+    <div className="page-content">
 
       {successMsg && (
         <div className="alert alert-success" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>

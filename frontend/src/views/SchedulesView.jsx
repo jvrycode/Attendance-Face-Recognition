@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, X, Check, Clock, Building } from 'lucide-react';
 import { Api } from '../api';
 
-export default function SchedulesView({ user }) {
+export default function SchedulesView({ user, onSetHeaderInfo }) {
   const [schedules, setSchedules] = useState([]);
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +38,28 @@ export default function SchedulesView({ user }) {
     loadData();
   }, []);
 
+  const isAdmin = user?.role === 'admin';
+
+  useEffect(() => {
+    if (onSetHeaderInfo) {
+      onSetHeaderInfo({
+        title: 'Schedules',
+        subtitle: 'Class meeting times and room allocations',
+        headerActions: isAdmin ? (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setShowAddModal(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Plus size={16} />
+            <span>Add Schedule</span>
+          </button>
+        ) : null,
+      });
+    }
+  }, [isAdmin, onSetHeaderInfo]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.section || !formData.start_time || !formData.end_time) {
@@ -61,32 +83,8 @@ export default function SchedulesView({ user }) {
     }
   };
 
-  const isAdmin = user?.role === 'admin';
-
   return (
-    <div className="page-content" style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h2 style={{ fontSize: '24px', fontWeight: '800', margin: '0 0 4px 0', color: 'var(--text-primary)' }}>
-            Schedules
-          </h2>
-          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '14px' }}>
-            All class meeting schedules and their effective date windows
-          </p>
-        </div>
-
-        {isAdmin && (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setShowAddModal(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Plus size={16} />
-            <span>Add Schedule</span>
-          </button>
-        )}
-      </div>
+    <div className="page-content">
 
       {successMsg && (
         <div className="alert alert-success" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
