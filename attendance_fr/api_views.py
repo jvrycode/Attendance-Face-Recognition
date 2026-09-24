@@ -357,6 +357,13 @@ class ScheduleDetailAPIView(RetrieveUpdateDestroyAPIView):
     serializer_class = ScheduleSerializer
     permission_classes = [IsAdminOrReadOnly]
 
+    def perform_update(self, serializer):
+        schedule = serializer.save()
+        conflicts = ScheduleService.check_conflicts(schedule)
+        if conflicts:
+            from django.core.exceptions import ValidationError
+            raise ValidationError(conflicts[0])
+
 
 class AttendanceSessionListAPIView(APIView):
     """GET /api/attendance/sessions/ - List attendance sessions."""

@@ -211,6 +211,18 @@ export const Api = {
     return res.json();
   },
 
+  updateSchedule: async (id, scheduleData) => {
+    const res = await apiRequest(`/api/schedules/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(scheduleData),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || err.error || (Array.isArray(err) ? err[0] : 'Failed to update schedule'));
+    }
+    return res.json();
+  },
+
   getProgramSections: async (programId = null) => {
     const q = programId ? `?program=${programId}` : '';
     const res = await apiRequest(`/api/program-sections/${q}`);
