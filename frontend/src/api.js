@@ -190,10 +190,62 @@ export const Api = {
     return res.json();
   },
 
+  getProgramSections: async (programId = null) => {
+    const q = programId ? `?program=${programId}` : '';
+    const res = await apiRequest(`/api/program-sections/${q}`);
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  createProgramSection: async (sectionData) => {
+    const res = await apiRequest('/api/program-sections/', {
+      method: 'POST',
+      body: JSON.stringify(sectionData),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || err.error || 'Failed to create section definition');
+    }
+    return res.json();
+  },
+
   getSubjects: async () => {
     const res = await apiRequest('/api/subjects/');
     if (!res.ok) return [];
     return res.json();
+  },
+
+  createSubject: async (subjectData) => {
+    const res = await apiRequest('/api/subjects/', {
+      method: 'POST',
+      body: JSON.stringify(subjectData),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || err.error || 'Failed to create subject offering');
+    }
+    return res.json();
+  },
+
+  getStudents: async (search = '') => {
+    const q = search ? `?search=${encodeURIComponent(search)}` : '';
+    const res = await apiRequest(`/api/students/${q}`);
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  updateProfile: async (profileData) => {
+    const res = await apiRequest('/api/auth/me/', {
+      method: 'PATCH',
+      body: JSON.stringify(profileData),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || err.error || 'Failed to update profile');
+    }
+    const data = await res.json();
+    TokenStorage.set(null, null, data);
+    return data;
   },
 
   // Attendance Sessions

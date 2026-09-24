@@ -5,10 +5,16 @@ import Header from './components/Header';
 import LoginView from './views/LoginView';
 import DashboardView from './views/DashboardView';
 import ProgramsView from './views/ProgramsView';
+import SectionCatalogView from './views/SectionCatalogView';
 import SectionsView from './views/SectionsView';
+import SubjectsView from './views/SubjectsView';
+import SchedulesView from './views/SchedulesView';
 import UsersView from './views/UsersView';
-import LiveScannerView from './views/LiveScannerView';
+import FaceEnrollmentView from './views/FaceEnrollmentView';
+import SectionReportView from './views/SectionReportView';
 import ReportsView from './views/ReportsView';
+import ProfileView from './views/ProfileView';
+import LiveScannerView from './views/LiveScannerView';
 
 export default function App() {
   const [user, setUser] = useState(TokenStorage.getUser());
@@ -52,19 +58,37 @@ export default function App() {
   const getTitle = (tab) => {
     switch (tab) {
       case 'dashboard':
-        return 'Dashboard Overview';
+        return user?.role === 'admin'
+          ? 'Admin Dashboard'
+          : user?.role === 'teacher'
+          ? 'Teacher Dashboard'
+          : 'Student Dashboard';
       case 'programs':
         return 'Academic Programs';
+      case 'section_catalog':
+        return 'Section Catalog (Master List)';
       case 'sections':
-        return 'Class Sections & Timetable';
+        return user?.role === 'student'
+          ? 'My Schedule'
+          : user?.role === 'teacher'
+          ? 'Sections & Schedules'
+          : 'Class Sections';
+      case 'subjects':
+        return 'Subjects';
       case 'schedules':
-        return 'Weekly Schedules';
+        return 'Schedules';
       case 'users':
-        return 'User & Faculty Management';
+        return 'Users';
+      case 'face_enrollment':
+        return 'Select Student to Enroll';
+      case 'section_report':
+        return user?.role === 'teacher' ? 'Attendance Reports' : 'Section Attendance Report';
+      case 'session_logs':
+        return user?.role === 'student' ? 'My Attendance Records' : 'Session Logs';
+      case 'profile':
+        return 'My Profile';
       case 'scanner':
-        return 'Live Facial Recognition Attendance';
-      case 'reports':
-        return 'Attendance Reports & Session Logs';
+        return 'Live Attendance';
       default:
         return 'AttendFR';
     }
@@ -117,11 +141,22 @@ export default function App() {
 
         <div style={{ minHeight: 'calc(100vh - 64px)' }}>
           {activeTab === 'dashboard' && (
-            <DashboardView user={user} onNavigate={setActiveTab} />
+            <DashboardView
+              user={user}
+              onNavigate={setActiveTab}
+              onStartSession={(sec) => {
+                setActiveSessionId(sec?.id);
+                setActiveTab('scanner');
+              }}
+            />
           )}
 
           {activeTab === 'programs' && (
             <ProgramsView user={user} />
+          )}
+
+          {activeTab === 'section_catalog' && (
+            <SectionCatalogView user={user} />
           )}
 
           {activeTab === 'sections' && (
@@ -129,36 +164,33 @@ export default function App() {
               user={user}
               onNavigate={setActiveTab}
               onStartSession={(sec) => {
-                setActiveSessionId(sec.id);
+                setActiveSessionId(sec?.id);
                 setActiveTab('scanner');
               }}
             />
           )}
 
+          {activeTab === 'subjects' && (
+            <SubjectsView user={user} />
+          )}
+
           {activeTab === 'schedules' && (
-            <SectionsView
-              user={user}
-              onNavigate={setActiveTab}
-              onStartSession={(sec) => {
-                setActiveSessionId(sec.id);
-                setActiveTab('scanner');
-              }}
-            />
+            <SchedulesView user={user} />
           )}
 
           {activeTab === 'users' && (
             <UsersView user={user} />
           )}
 
-          {activeTab === 'scanner' && (
-            <LiveScannerView
-              user={user}
-              onNavigate={setActiveTab}
-              activeSessionId={activeSessionId}
-            />
+          {activeTab === 'face_enrollment' && (
+            <FaceEnrollmentView user={user} />
           )}
 
-          {activeTab === 'reports' && (
+          {activeTab === 'section_report' && (
+            <SectionReportView user={user} />
+          )}
+
+          {activeTab === 'session_logs' && (
             <ReportsView
               user={user}
               onNavigate={setActiveTab}
@@ -166,6 +198,18 @@ export default function App() {
                 setActiveSessionId(s.id);
                 setActiveTab('scanner');
               }}
+            />
+          )}
+
+          {activeTab === 'profile' && (
+            <ProfileView user={user} onUserUpdated={setUser} />
+          )}
+
+          {activeTab === 'scanner' && (
+            <LiveScannerView
+              user={user}
+              onNavigate={setActiveTab}
+              activeSessionId={activeSessionId}
             />
           )}
         </div>

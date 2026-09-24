@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import Program, Subject, Section, Schedule, AttendanceSession, AttendanceRecord
+from core.models import Program, ProgramSection, Subject, Section, Schedule, AttendanceSession, AttendanceRecord
 from accounts.serializers import TeacherSerializer, StudentSerializer
 
 
@@ -18,10 +18,26 @@ class ProgramSerializer(serializers.ModelSerializer):
         return obj.subjects.count()
 
 
+class ProgramSectionSerializer(serializers.ModelSerializer):
+    program_details = ProgramSerializer(source='program', read_only=True)
+    year_level_display = serializers.CharField(source='get_year_level_display', read_only=True)
+    active_classes_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProgramSection
+        fields = ['id', 'program', 'program_details', 'name', 'year_level', 'year_level_display', 'description', 'active_classes_count', 'created_at']
+
+    def get_active_classes_count(self, obj):
+        return Section.objects.filter(name=obj.name).count()
+
+
 class SubjectSerializer(serializers.ModelSerializer):
+    program_details = ProgramSerializer(source='program', read_only=True)
+    teacher_details = TeacherSerializer(source='teacher', read_only=True)
+
     class Meta:
         model = Subject
-        fields = ['id', 'name', 'code', 'description', 'units', 'created_at']
+        fields = ['id', 'name', 'code', 'description', 'units', 'program', 'program_details', 'section', 'teacher', 'teacher_details', 'created_at']
 
 
 class SectionSerializer(serializers.ModelSerializer):

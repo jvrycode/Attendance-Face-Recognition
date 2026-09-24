@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 export default function Sidebar({ user, activeTab, setActiveTab, onLogout, isOpen, onClose }) {
-  const role = user?.role || 'student';
+  const role = user?.role || 'admin';
 
   const NavLink = ({ id, label, icon: Icon }) => (
     <button
@@ -46,6 +46,7 @@ export default function Sidebar({ user, activeTab, setActiveTab, onLogout, isOpe
 
   return (
     <aside className={`sidebar ${isOpen ? 'open' : ''}`} id="sidebar">
+      {/* Brand Header */}
       <div className="sidebar-logo">
         <div className="sidebar-logo-brand" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div className="sidebar-logo-icon">
@@ -63,6 +64,7 @@ export default function Sidebar({ user, activeTab, setActiveTab, onLogout, isOpe
         )}
       </div>
 
+      {/* Navigation (100% Reference Copy from base.html) */}
       <nav className="sidebar-nav">
         <div className="nav-section-label">Main</div>
         <NavLink id="dashboard" label="Dashboard" icon={Home} />
@@ -71,15 +73,18 @@ export default function Sidebar({ user, activeTab, setActiveTab, onLogout, isOpe
           <>
             <div className="nav-section-label">Academic Structure</div>
             <NavLink id="programs" label="Programs" icon={Award} />
+            <NavLink id="section_catalog" label="Section Catalog" icon={Layers} />
             <NavLink id="sections" label="Class Sections" icon={Building} />
+            <NavLink id="subjects" label="Subjects" icon={BookOpen} />
             <NavLink id="schedules" label="Schedules" icon={Calendar} />
 
             <div className="nav-section-label">Management</div>
             <NavLink id="users" label="Users" icon={Users} />
-            <NavLink id="scanner" label="Live Scanner" icon={Camera} />
+            <NavLink id="face_enrollment" label="Face Enrollment" icon={Camera} />
 
             <div className="nav-section-label">Reports</div>
-            <NavLink id="reports" label="Session Logs" icon={BarChart2} />
+            <NavLink id="section_report" label="Section Report" icon={FileText} />
+            <NavLink id="session_logs" label="Session Logs" icon={BarChart2} />
           </>
         )}
 
@@ -87,10 +92,9 @@ export default function Sidebar({ user, activeTab, setActiveTab, onLogout, isOpe
           <>
             <div className="nav-section-label">Teaching</div>
             <NavLink id="sections" label="Section & Schedule" icon={Calendar} />
-            <NavLink id="scanner" label="Live Scanner" icon={Camera} />
 
             <div className="nav-section-label">Reports</div>
-            <NavLink id="reports" label="Attendance Reports" icon={FileText} />
+            <NavLink id="section_report" label="Attendance Reports" icon={FileText} />
           </>
         )}
 
@@ -100,11 +104,16 @@ export default function Sidebar({ user, activeTab, setActiveTab, onLogout, isOpe
             <NavLink id="sections" label="My Schedule" icon={Calendar} />
 
             <div className="nav-section-label">My Attendance</div>
-            <NavLink id="reports" label="My Records" icon={BarChart2} />
+            <NavLink id="session_logs" label="My Records" icon={BarChart2} />
           </>
         )}
 
         <div className="nav-section-label">Account</div>
+        <NavLink id="profile" label="Profile" icon={Settings} />
+      </nav>
+
+      {/* Sidebar Footer with Sign Out */}
+      <div className="sidebar-footer">
         <button
           type="button"
           className="nav-item"
@@ -125,22 +134,6 @@ export default function Sidebar({ user, activeTab, setActiveTab, onLogout, isOpe
           </span>
           <span>Sign Out</span>
         </button>
-      </nav>
-
-      <div className="sidebar-footer">
-        <div className="user-badge" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div className="user-avatar" style={{ fontWeight: '700' }}>
-            {(user?.first_name?.[0] || user?.username?.[0] || 'U').toUpperCase()}
-          </div>
-          <div className="user-info" style={{ overflow: 'hidden' }}>
-            <div className="user-name" style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-              {user?.first_name ? `${user.first_name} ${user.last_name || ''}` : user?.username}
-            </div>
-            <div className="user-role" style={{ textTransform: 'capitalize' }}>
-              {user?.role}
-            </div>
-          </div>
-        </div>
       </div>
     </aside>
   );

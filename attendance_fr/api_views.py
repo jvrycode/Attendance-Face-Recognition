@@ -11,9 +11,9 @@ from django.utils import timezone
 
 from accounts.models import CustomUser, Teacher, Student
 from accounts.serializers import CurrentUserProfileSerializer, TeacherSerializer, StudentSerializer
-from core.models import Program, Subject, Section, Schedule, AttendanceSession, AttendanceRecord, StudentSection
+from core.models import Program, ProgramSection, Subject, Section, Schedule, AttendanceSession, AttendanceRecord, StudentSection
 from core.serializers import (
-    ProgramSerializer, SubjectSerializer, SectionSerializer, ScheduleSerializer,
+    ProgramSerializer, ProgramSectionSerializer, SubjectSerializer, SectionSerializer, ScheduleSerializer,
     AttendanceSessionSerializer, AttendanceRecordSerializer
 )
 from core.services.schedule_service import ScheduleService
@@ -30,12 +30,22 @@ from attendance_fr.permissions import (
 
 
 class CurrentUserAPIView(APIView):
-    """GET /api/auth/me/ - Get current authenticated user details and profile."""
+    """GET /api/auth/me/ - Get profile. PATCH /api/auth/me/ - Update profile."""
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         serializer = CurrentUserProfileSerializer(request.user)
         return Response(serializer.data)
+
+    def patch(self, request):
+        user = request.user
+        data = request.data
+        if 'first_name' in data: user.first_name = data['first_name']
+        if 'last_name' in data: user.last_name = data['last_name']
+        if 'email' in data: user.email = data['email']
+        if 'phone' in data: user.phone = data['phone']
+        user.save()
+        return Response(CurrentUserProfileSerializer(user).data)
 
 
 class DashboardStatsAPIView(APIView):
@@ -175,6 +185,37 @@ class UserListCreateAPIView(APIView):
 
         serializer = CurrentUserProfileSerializer(user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ProgramSectionListCreateAPIView(ListCreateAPIView):
+    """GET /api/program-sections/ - List master catalog sections. POST /api/program-sections/ - Create section definition."""
+    serializer_class = ProgramSectionSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
+    def get_queryset(self):
+        program_id = self.request.query_params.get('program')
+        if program_id:
+            return ProgramSection.objects.filter(program_id=program_id).select_related('program').order_by('program__code', 'year_level', 'name')
+        return ProgramSection.objects.select_related('program').order_by('program__code', 'year_level', 'name')
+
+
+class StudentListAPIView(APIView):
+    """GET /api/students/ - List all registered students with face enrollment status."""
+    permission_classes = [IsAdminRole]
+
+    def get(self, request):
+        search = request.query_params.get('search')
+        qs = Student.objects.select_related('user').order_by('user__last_name', 'user__first_name')
+        if search:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(student_id__icontains=search) |
+                Q(user__first_name__icontains=search) |
+                Q(user__last_name__icontains=search) |
+                Q(user__email__icontains=search)
+            )
+        serializer = StudentSerializer(qs[:100], many=True)
+        return Response(serializer.data)
 
 
 class SubjectListCreateAPIView(ListCreateAPIView):
