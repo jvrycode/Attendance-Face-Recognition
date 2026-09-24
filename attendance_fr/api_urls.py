@@ -5,6 +5,9 @@ from rest_framework_simplejwt.views import (
 )
 from attendance_fr.api_views import (
     CurrentUserAPIView,
+    DashboardStatsAPIView,
+    ProgramListCreateAPIView,
+    UserListCreateAPIView,
     SubjectListCreateAPIView,
     SectionListCreateAPIView,
     ScheduleListCreateAPIView,
@@ -21,6 +24,11 @@ urlpatterns = [
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/me/', CurrentUserAPIView.as_view(), name='api_auth_me'),
+
+    # Dashboard & Users
+    path('dashboard/stats/', DashboardStatsAPIView.as_view(), name='api_dashboard_stats'),
+    path('programs/', ProgramListCreateAPIView.as_view(), name='api_programs'),
+    path('users/', UserListCreateAPIView.as_view(), name='api_users'),
 
     # Academic Structure
     path('subjects/', SubjectListCreateAPIView.as_view(), name='api_subjects'),

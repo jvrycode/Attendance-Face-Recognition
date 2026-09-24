@@ -9,11 +9,11 @@ from rest_framework.generics import ListCreateAPIView
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from accounts.models import Student
-from accounts.serializers import CurrentUserProfileSerializer
-from core.models import Subject, Section, Schedule, AttendanceSession, AttendanceRecord, StudentSection
+from accounts.models import CustomUser, Teacher, Student
+from accounts.serializers import CurrentUserProfileSerializer, TeacherSerializer, StudentSerializer
+from core.models import Program, Subject, Section, Schedule, AttendanceSession, AttendanceRecord, StudentSection
 from core.serializers import (
-    SubjectSerializer, SectionSerializer, ScheduleSerializer,
+    ProgramSerializer, SubjectSerializer, SectionSerializer, ScheduleSerializer,
     AttendanceSessionSerializer, AttendanceRecordSerializer
 )
 from core.services.schedule_service import ScheduleService
@@ -36,6 +36,145 @@ class CurrentUserAPIView(APIView):
     def get(self, request):
         serializer = CurrentUserProfileSerializer(request.user)
         return Response(serializer.data)
+
+
+class DashboardStatsAPIView(APIView):
+    """GET /api/dashboard/stats/ - Get role-tailored dashboard metrics."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Q
+        user = request.user
+        today = timezone.localdate()
+
+        if user.role == 'admin':
+            total_teachers = Teacher.objects.count()
+            total_students = Student.objects.count()
+            total_subjects = Subject.objects.count()
+            total_sections = Section.objects.count()
+            open_sessions = AttendanceSession.objects.filter(status='open').count()
+            sessions_today = AttendanceSession.objects.filter(date=today).count()
+            sessions_closed = AttendanceSession.objects.filter(date=today, status='closed').count()
+            face_enrolled = Student.objects.exclude(Q(face_encoding__isnull=True) | Q(face_encoding='')).count()
+            pct = round(face_enrolled / total_students * 100, 1) if total_students else 0
+
+            return Response({
+                'role': 'admin',
+                'total_teachers': total_teachers,
+                'total_students': total_students,
+                'total_subjects': total_subjects,
+                'total_sections': total_sections,
+                'open_sessions_count': open_sessions,
+                'sessions_today_count': sessions_today,
+                'sessions_today_closed': sessions_closed,
+                'face_enrolled_count': face_enrolled,
+                'face_enrollment_pct': pct,
+            })
+        elif user.role == 'teacher':
+            teacher = getattr(user, 'teacher_profile', None)
+            sections_qs = Section.objects.filter(Q(teacher=teacher) | Q(subjects__teacher=teacher)).distinct()
+            total_students = StudentSection.objects.filter(section__in=sections_qs).values('student_id').distinct().count()
+            total_schedules = Schedule.objects.filter(section__in=sections_qs).count()
+            open_sessions = AttendanceSession.objects.filter(
+                Q(started_by=teacher) | Q(schedule__section__in=sections_qs),
+                status='open'
+            ).distinct().count()
+            return Response({
+                'role': 'teacher',
+                'total_sections': sections_qs.count(),
+                'total_students': total_students,
+                'total_schedules': total_schedules,
+                'open_sessions_count': open_sessions,
+            })
+        else:
+            student = getattr(user, 'student_profile', None)
+            enrolled_sections = StudentSection.objects.filter(student=student).count() if student else 0
+            return Response({
+                'role': 'student',
+                'enrolled_sections': enrolled_sections,
+                'is_face_enrolled': student.is_face_enrolled if student else False,
+            })
+
+
+class ProgramListCreateAPIView(ListCreateAPIView):
+    """GET /api/programs/ - List programs. POST /api/programs/ - Create program (Admin only)."""
+    queryset = Program.objects.all().order_by('code')
+    serializer_class = ProgramSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
+
+class UserListCreateAPIView(APIView):
+    """GET /api/users/ - List users with profiles. POST /api/users/ - Create user (Admin only)."""
+    permission_classes = [IsAdminOrReadOnly]
+
+    def get(self, request):
+        role = request.query_params.get('role')
+        search = request.query_params.get('search')
+
+        qs = CustomUser.objects.select_related('teacher_profile', 'student_profile').order_by('last_name', 'first_name')
+        if role:
+            qs = qs.filter(role=role)
+        if search:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(username__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(email__icontains=search) |
+                Q(teacher_profile__employee_id__icontains=search) |
+                Q(student_profile__student_id__icontains=search)
+            )
+
+        serializer = CurrentUserProfileSerializer(qs[:100], many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        if request.user.role != 'admin':
+            return Response({'error': 'Admin permissions required'}, status=status.HTTP_403_FORBIDDEN)
+
+        data = request.data
+        username = data.get('username')
+        password = data.get('password')
+        first_name = data.get('first_name', '')
+        last_name = data.get('last_name', '')
+        email = data.get('email', '')
+        role = data.get('role', 'teacher')
+        phone = data.get('phone', '')
+
+        if not username or not password:
+            return Response({'error': 'Username and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if CustomUser.objects.filter(username=username).exists():
+            return Response({'error': 'Username already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from django.db import transaction
+        with transaction.atomic():
+            user = CustomUser.objects.create_user(
+                username=username,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                role=role,
+                phone=phone
+            )
+            if role == 'teacher':
+                Teacher.objects.create(
+                    user=user,
+                    employee_id=data.get('employee_id', f'EMP-{user.id:04d}'),
+                    department=data.get('department', ''),
+                    specialization=data.get('specialization', '')
+                )
+            elif role == 'student':
+                Student.objects.create(
+                    user=user,
+                    student_id=data.get('student_id', f'STU-{user.id:04d}'),
+                    year_level=int(data.get('year_level', 1)),
+                    course=data.get('course', '')
+                )
+
+        serializer = CurrentUserProfileSerializer(user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class SubjectListCreateAPIView(ListCreateAPIView):

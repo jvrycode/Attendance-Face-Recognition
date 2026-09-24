@@ -1,6 +1,21 @@
 from rest_framework import serializers
-from core.models import Subject, Section, Schedule, AttendanceSession, AttendanceRecord
+from core.models import Program, Subject, Section, Schedule, AttendanceSession, AttendanceRecord
 from accounts.serializers import TeacherSerializer, StudentSerializer
+
+
+class ProgramSerializer(serializers.ModelSerializer):
+    section_count = serializers.SerializerMethodField()
+    subject_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Program
+        fields = ['id', 'code', 'name', 'college', 'description', 'section_count', 'subject_count', 'created_at']
+
+    def get_section_count(self, obj):
+        return obj.standard_sections.count()
+
+    def get_subject_count(self, obj):
+        return obj.subjects.count()
 
 
 class SubjectSerializer(serializers.ModelSerializer):
