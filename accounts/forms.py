@@ -40,20 +40,52 @@ class AdminUserCreateForm(UserCreationForm):
 
 
 class TeacherProfileForm(forms.ModelForm):
+    department = forms.ChoiceField(
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label='Department / Program',
+        help_text='Select the academic department or college'
+    )
+
     class Meta:
         model = Teacher
         fields = ['employee_id', 'department', 'specialization']
         labels = {
             'employee_id': 'Faculty ID (FAC-ID)',
+            'department': 'Department / Program',
         }
         widgets = {
             'employee_id': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'e.g. FAC-2026-001',
             }),
-            'department': forms.TextInput(attrs={'class': 'form-control'}),
-            'specialization': forms.TextInput(attrs={'class': 'form-control'}),
+            'specialization': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'e.g. Software Engineering',
+            }),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from core.models import Program
+        try:
+            programs = Program.objects.all().order_by('code')
+            choices = [('', 'Select Program / Department')]
+            seen = set()
+            for p in programs:
+                label = f"{p.code} - {p.name}" if p.name and p.name != p.code else p.code
+                val = p.name or p.code
+                choices.append((val, label))
+                seen.add(val)
+                seen.add(p.code)
+
+            if self.instance and getattr(self.instance, 'pk', None) and self.instance.department:
+                if self.instance.department not in seen:
+                    choices.append((self.instance.department, self.instance.department))
+
+            self.fields['department'].choices = choices
+        except Exception:
+            self.fields['department'].choices = [('', 'Select Program / Department')]
 
 
 class StudentProfileForm(forms.ModelForm):

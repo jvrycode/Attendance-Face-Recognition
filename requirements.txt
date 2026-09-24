@@ -18,3 +18,5 @@ django-crispy-forms>=2.0
 crispy-bootstrap5>=0.7
 setuptools<70
 certifi>=2024.0.0
+cloudinary>=1.41.0
+django-cloudinary-storage>=0.3.0
