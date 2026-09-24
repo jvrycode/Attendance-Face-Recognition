@@ -14,6 +14,7 @@ import {
   Info,
 } from 'lucide-react';
 import { Api } from '../api';
+import ActionPopover from '../components/ActionPopover';
 
 export default function FaceEnrollmentView({ user, onSetHeaderInfo }) {
   const [students, setStudents] = useState([]);
@@ -403,26 +404,28 @@ export default function FaceEnrollmentView({ user, onSetHeaderInfo }) {
                         </span>
                       )}
                     </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {student.is_face_enrolled ? (
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                         <button
                           type="button"
-                          className="btn btn-outline btn-sm"
+                          className={student.is_face_enrolled ? "btn btn-outline btn-sm" : "btn btn-success btn-sm"}
                           onClick={() => openFaceModal(student)}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                         >
-                          <Camera size={13} /> <span>Re-enroll</span>
+                          <Camera size={13} /> <span>{student.is_face_enrolled ? 'Re-enroll' : 'Enroll Face'}</span>
                         </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn btn-success btn-sm"
-                          onClick={() => openFaceModal(student)}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                        >
-                          <Camera size={13} /> <span>Enroll Face</span>
-                        </button>
-                      )}
+                        <ActionPopover
+                          items={[
+                            {
+                              label: student.is_face_enrolled ? 'Re-enroll Face Biometrics' : 'Enroll Face Biometrics',
+                              icon: Camera,
+                              isSuccess: !student.is_face_enrolled,
+                              isPrimary: student.is_face_enrolled,
+                              onClick: () => openFaceModal(student),
+                            },
+                          ]}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))

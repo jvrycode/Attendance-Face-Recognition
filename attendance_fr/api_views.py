@@ -193,6 +193,76 @@ class UserListCreateAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
+class UserDetailAPIView(APIView):
+    """GET/PATCH/DELETE /api/users/<id>/ - Manage single user (Admin only)."""
+    permission_classes = [IsAdminRole]
+
+    def get(self, request, pk):
+        try:
+            user = CustomUser.objects.select_related('teacher_profile', 'student_profile').get(pk=pk)
+        except CustomUser.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(CurrentUserProfileSerializer(user).data)
+
+    def put(self, request, pk):
+        return self.patch(request, pk)
+
+    def patch(self, request, pk):
+        try:
+            user = CustomUser.objects.select_related('teacher_profile', 'student_profile').get(pk=pk)
+        except CustomUser.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        data = request.data
+        if 'first_name' in data:
+            user.first_name = data['first_name']
+        if 'last_name' in data:
+            user.last_name = data['last_name']
+        if 'email' in data:
+            user.email = data['email']
+        if 'phone' in data:
+            user.phone = data['phone']
+        if 'is_active' in data:
+            user.is_active = bool(data['is_active'])
+        if data.get('password'):
+            user.set_password(data['password'])
+        user.save()
+
+        if hasattr(user, 'teacher_profile') and user.teacher_profile:
+            tp = user.teacher_profile
+            if 'department' in data:
+                tp.department = data['department']
+            if 'specialization' in data:
+                tp.specialization = data['specialization']
+            if 'employee_id' in data:
+                tp.employee_id = data['employee_id']
+            tp.save()
+
+        if hasattr(user, 'student_profile') and user.student_profile:
+            sp = user.student_profile
+            if 'course' in data:
+                sp.course = data['course']
+            if 'year_level' in data:
+                sp.year_level = int(data['year_level'])
+            if 'student_id' in data:
+                sp.student_id = data['student_id']
+            sp.save()
+
+        return Response(CurrentUserProfileSerializer(user).data)
+
+    def delete(self, request, pk):
+        try:
+            user = CustomUser.objects.get(pk=pk)
+        except CustomUser.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if request.user.pk == user.pk:
+            return Response({'error': 'You cannot delete your own account.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class ProgramSectionListCreateAPIView(ListCreateAPIView):
     """GET /api/program-sections/ - List master catalog sections. POST /api/program-sections/ - Create section definition."""
     serializer_class = ProgramSectionSerializer

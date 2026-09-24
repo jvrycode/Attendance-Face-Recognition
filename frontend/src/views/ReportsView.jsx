@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart2, Camera, CircleDot, FileText, CheckCircle2 } from 'lucide-react';
+import { BarChart2, Camera, CircleDot, FileText, CheckCircle2, Users } from 'lucide-react';
 import { Api } from '../api';
+import ActionPopover from '../components/ActionPopover';
 
 export default function ReportsView({ user, onNavigate, onStartSession, onSetHeaderInfo }) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const role = user?.role || 'admin';
 
   useEffect(() => {
     async function loadSessions() {
       try {
         setLoading(true);
         const data = await Api.getSessions();
-        setSessions(data);
+        setSessions(data || []);
       } catch (err) {
         console.error('Failed to load session logs:', err);
       } finally {
@@ -42,6 +44,9 @@ export default function ReportsView({ user, onNavigate, onStartSession, onSetHea
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Date</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Section</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Subject</th>
+                {role !== 'teacher' && (
+                  <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Faculty</th>
+                )}
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Status</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>
               </tr>
@@ -49,13 +54,13 @@ export default function ReportsView({ user, onNavigate, onStartSession, onSetHea
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="5" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={role !== 'teacher' ? 6 : 5} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading session records...
                   </td>
                 </tr>
               ) : sessions.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={role !== 'teacher' ? 6 : 5} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No sessions logged yet.
                   </td>
                 </tr>
@@ -70,9 +75,14 @@ export default function ReportsView({ user, onNavigate, onStartSession, onSetHea
                     </td>
                     <td style={{ padding: '14px 18px' }}>
                       <span className="badge badge-accent" style={{ fontSize: '11px', fontWeight: '700' }}>
-                        CS 101
+                        {s.schedule_details?.subject_code || 'CS 101'}
                       </span>
                     </td>
+                    {role !== 'teacher' && (
+                      <td style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                        {s.started_by_name || '—'}
+                      </td>
+                    )}
                     <td style={{ padding: '14px 18px' }}>
                       {s.status === 'open' ? (
                         <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700' }}>
@@ -84,23 +94,33 @@ export default function ReportsView({ user, onNavigate, onStartSession, onSetHea
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        {s.status === 'open' && (
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            onClick={() => {
-                              if (onStartSession) onStartSession(s);
-                              else onNavigate('scanner');
-                            }}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                          >
-                            <Camera size={13} />
-                            <span>Live</span>
-                          </button>
-                        )}
-                      </div>
+                    <td style={{ padding: '14px 18px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <ActionPopover
+                        items={(() => {
+                          const items = [];
+                          // ONLY TEACHERS CAN ACCESS ATTENDANCE SCANNER
+                          if (role === 'teacher' && s.status === 'open') {
+                            items.push({
+                              label: 'Resume Scanner',
+                              icon: Camera,
+                              isPrimary: true,
+                              onClick: () => {
+                                if (onStartSession) onStartSession(s);
+                                else if (onNavigate) onNavigate('scanner');
+                              },
+                            });
+                            items.push({ isDivider: true });
+                          }
+                          items.push({
+                            label: 'Session Report',
+                            icon: FileText,
+                            onClick: () => {
+                              if (onNavigate) onNavigate('section_report');
+                            },
+                          });
+                          return items;
+                        })()}
+                      />
                     </td>
                   </tr>
                 ))

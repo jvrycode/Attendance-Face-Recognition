@@ -11,6 +11,7 @@ from attendance_fr.api_views import (
     ProgramSectionListCreateAPIView,
     ProgramSectionDetailAPIView,
     UserListCreateAPIView,
+    UserDetailAPIView,
     StudentListAPIView,
     SubjectListCreateAPIView,
     SubjectDetailAPIView,
@@ -39,6 +40,7 @@ urlpatterns = [
     path('program-sections/', ProgramSectionListCreateAPIView.as_view(), name='api_program_sections'),
     path('program-sections/<int:pk>/', ProgramSectionDetailAPIView.as_view(), name='api_program_section_detail'),
     path('users/', UserListCreateAPIView.as_view(), name='api_users'),
+    path('users/<int:pk>/', UserDetailAPIView.as_view(), name='api_user_detail'),
     path('students/', StudentListAPIView.as_view(), name='api_students'),
 
     # Academic Structure

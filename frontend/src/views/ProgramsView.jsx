@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Award, Plus, X, Check, BookOpen } from 'lucide-react';
+import { Award, Plus, X, Check, BookOpen, Trash2 } from 'lucide-react';
 import { Api } from '../api';
+import ActionPopover from '../components/ActionPopover';
 
 export default function ProgramsView({ user, onSetHeaderInfo }) {
   const [programs, setPrograms] = useState([]);
@@ -145,25 +146,26 @@ export default function ProgramsView({ user, onSetHeaderInfo }) {
                     </td>
                     {isAdmin && (
                       <td style={{ textAlign: 'right' }}>
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-sm text-danger"
-                          onClick={async () => {
-                            if (!window.confirm(`Are you sure you want to delete program "${prog.code}"?`)) return;
-                            try {
-                              await Api.deleteProgram(prog.id);
-                              setSuccessMsg(`Program ${prog.code} deleted.`);
-                              loadPrograms();
-                              setTimeout(() => setSuccessMsg(''), 4000);
-                            } catch (err) {
-                              setErrorMsg(err.message || 'Failed to delete program.');
-                            }
-                          }}
-                          title="Delete Program"
-                          style={{ padding: '4px 8px' }}
-                        >
-                          <X size={14} />
-                        </button>
+                        <ActionPopover
+                          items={[
+                            {
+                              label: 'Delete Program',
+                              icon: Trash2,
+                              isDanger: true,
+                              onClick: async () => {
+                                if (!window.confirm(`Are you sure you want to delete program "${prog.code}"?`)) return;
+                                try {
+                                  await Api.deleteProgram(prog.id);
+                                  setSuccessMsg(`Program ${prog.code} deleted.`);
+                                  loadPrograms();
+                                  setTimeout(() => setSuccessMsg(''), 4000);
+                                } catch (err) {
+                                  setErrorMsg(err.message || 'Failed to delete program.');
+                                }
+                              },
+                            },
+                          ]}
+                        />
                       </td>
                     )}
                   </tr>

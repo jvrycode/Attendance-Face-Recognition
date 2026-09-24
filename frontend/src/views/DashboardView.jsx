@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Api } from '../api';
 import { formatTime12h } from '../utils/time';
+import ActionPopover from '../components/ActionPopover';
 
 export default function DashboardView({ user, onNavigate, onStartSession, onSetHeaderInfo }) {
   const role = user?.role || 'admin';
@@ -381,14 +382,16 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
                           <span className="badge badge-muted">Finalized</span>
                         )}
                       </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-sm"
-                          onClick={() => onNavigate('session_logs')}
-                        >
-                          Open
-                        </button>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <ActionPopover
+                          items={[
+                            {
+                              label: 'Session Report',
+                              icon: FileText,
+                              onClick: () => onNavigate('session_logs'),
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                   ))
@@ -512,17 +515,25 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
                           </span>
                         </td>
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            onClick={() => {
-                              if (onStartSession) onStartSession(sec);
-                              else onNavigate('scanner');
-                            }}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                          >
-                            <Camera size={13} /> <span>Start Attendance</span>
-                          </button>
+                          <ActionPopover
+                            items={[
+                              {
+                                label: 'Start Attendance',
+                                icon: Camera,
+                                isPrimary: true,
+                                onClick: () => {
+                                  if (onStartSession) onStartSession(sec);
+                                  else onNavigate('scanner');
+                                },
+                              },
+                              { isDivider: true },
+                              {
+                                label: 'View Schedule',
+                                icon: Calendar,
+                                onClick: () => onNavigate('sections'),
+                              },
+                            ]}
+                          />
                         </td>
                       </tr>
                     ))}
@@ -627,26 +638,30 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
                           <span className="badge badge-muted" style={{ fontSize: '11.5px' }}>Finalized</span>
                         )}
                       </td>
-                      <td style={{ textAlign: 'right' }}>
-                        {session.status === 'open' ? (
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            onClick={() => onNavigate('scanner')}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                          >
-                            <Camera size={13} /> <span>Resume Scanner</span>
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-sm"
-                            onClick={() => onNavigate('section_report')}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                          >
-                            <FileText size={13} /> <span>View Report</span>
-                          </button>
-                        )}
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <ActionPopover
+                          items={(() => {
+                            const items = [];
+                            if (session.status === 'open') {
+                              items.push({
+                                label: 'Resume Scanner',
+                                icon: Camera,
+                                isPrimary: true,
+                                onClick: () => {
+                                  if (onStartSession) onStartSession(session);
+                                  else onNavigate('scanner');
+                                },
+                              });
+                              items.push({ isDivider: true });
+                            }
+                            items.push({
+                              label: 'View Report',
+                              icon: FileText,
+                              onClick: () => onNavigate('section_report'),
+                            });
+                            return items;
+                          })()}
+                        />
                       </td>
                     </tr>
                   ))

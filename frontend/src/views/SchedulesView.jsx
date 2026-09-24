@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, CalendarRange, Plus, X, Check, Clock, Building, Infinity, Trash2 } from 'lucide-react';
 import { Api } from '../api';
 import { formatTime12h } from '../utils/time';
+import ActionPopover from '../components/ActionPopover';
 
 export default function SchedulesView({ user, onSetHeaderInfo }) {
   const [schedules, setSchedules] = useState([]);
@@ -216,15 +217,16 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
                       </td>
                       {isAdmin && (
                         <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-sm text-danger"
-                            onClick={() => handleDelete(sch.id, sch.section_name)}
-                            title="Delete Schedule"
-                            style={{ padding: '4px 8px' }}
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          <ActionPopover
+                            items={[
+                              {
+                                label: 'Delete Schedule',
+                                icon: Trash2,
+                                isDanger: true,
+                                onClick: () => handleDelete(sch.id, sch.section_name),
+                              },
+                            ]}
+                          />
                         </td>
                       )}
                     </tr>

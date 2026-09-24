@@ -134,6 +134,27 @@ export const Api = {
     return res.json();
   },
 
+  updateUser: async (id, userData) => {
+    const res = await apiRequest(`/api/users/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(userData),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to update user');
+    }
+    return res.json();
+  },
+
+  deleteUser: async (id) => {
+    const res = await apiRequest(`/api/users/${id}/`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to delete user');
+    }
+    return true;
+  },
+
   // Academic Catalog
   getPrograms: async () => {
     const res = await apiRequest('/api/programs/');

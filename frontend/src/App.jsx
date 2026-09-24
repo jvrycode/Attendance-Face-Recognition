@@ -189,6 +189,7 @@ export default function App() {
           {activeTab === 'section_catalog' && (
             <SectionCatalogView
               user={user}
+              onNavigate={handleTabChange}
               onSetHeaderInfo={updateHeaderInfo}
             />
           )}
@@ -199,8 +200,10 @@ export default function App() {
               onNavigate={handleTabChange}
               onSetHeaderInfo={updateHeaderInfo}
               onStartSession={(sec) => {
-                setActiveSessionId(sec?.id);
-                handleTabChange('scanner');
+                if (user?.role === 'teacher') {
+                  setActiveSessionId(sec?.id);
+                  handleTabChange('scanner');
+                }
               }}
             />
           )}
@@ -246,8 +249,10 @@ export default function App() {
               onNavigate={handleTabChange}
               onSetHeaderInfo={updateHeaderInfo}
               onStartSession={(s) => {
-                setActiveSessionId(s.id);
-                handleTabChange('scanner');
+                if (user?.role === 'teacher') {
+                  setActiveSessionId(s.id);
+                  handleTabChange('scanner');
+                }
               }}
             />
           )}
@@ -260,7 +265,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'scanner' && (
+          {activeTab === 'scanner' && user?.role === 'teacher' && (
             <LiveScannerView
               user={user}
               onNavigate={handleTabChange}

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Layers, Plus, Filter, X, Check, Building } from 'lucide-react';
+import { Layers, Plus, Filter, X, Check, Building, Trash2, Calendar } from 'lucide-react';
 import { Api } from '../api';
+import ActionPopover from '../components/ActionPopover';
 
-export default function SectionCatalogView({ user, onSetHeaderInfo }) {
+export default function SectionCatalogView({ user, onNavigate, onSetHeaderInfo }) {
   const [sections, setSections] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [selectedProgramId, setSelectedProgramId] = useState(null);
@@ -185,25 +186,35 @@ export default function SectionCatalogView({ user, onSetHeaderInfo }) {
                     </td>
                     {isAdmin && (
                       <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-sm text-danger"
-                          onClick={async () => {
-                            if (!window.confirm(`Are you sure you want to delete definition "${sec.name}"?`)) return;
-                            try {
-                              await Api.deleteProgramSection(sec.id);
-                              setSuccessMsg(`Section definition ${sec.name} deleted.`);
-                              loadData();
-                              setTimeout(() => setSuccessMsg(''), 4000);
-                            } catch (err) {
-                              setErrorMsg(err.message || 'Failed to delete definition.');
-                            }
-                          }}
-                          title="Delete Definition"
-                          style={{ padding: '4px 8px' }}
-                        >
-                          <X size={14} />
-                        </button>
+                        <ActionPopover
+                          items={[
+                            {
+                              label: 'Open Semester Class',
+                              icon: Calendar,
+                              isPrimary: true,
+                              onClick: () => {
+                                if (onNavigate) onNavigate('sections');
+                              },
+                            },
+                            { isDivider: true },
+                            {
+                              label: 'Delete Definition',
+                              icon: Trash2,
+                              isDanger: true,
+                              onClick: async () => {
+                                if (!window.confirm(`Are you sure you want to delete definition "${sec.name}"?`)) return;
+                                try {
+                                  await Api.deleteProgramSection(sec.id);
+                                  setSuccessMsg(`Section definition ${sec.name} deleted.`);
+                                  loadData();
+                                  setTimeout(() => setSuccessMsg(''), 4000);
+                                } catch (err) {
+                                  setErrorMsg(err.message || 'Failed to delete definition.');
+                                }
+                              },
+                            },
+                          ]}
+                        />
                       </td>
                     )}
                   </tr>

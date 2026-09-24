@@ -10,16 +10,38 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 import { Api, apiRequest } from '../api';
+import ActionPopover from '../components/ActionPopover';
 
-export default function UsersView({ onSetHeaderInfo }) {
+export default function UsersView({ user, onSetHeaderInfo }) {
   const [users, setUsers] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Edit User State
+  const [editingUser, setEditingUser] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    phone: '',
+    is_active: true,
+    department: '',
+    specialization: '',
+    employee_id: '',
+    course: '',
+    year_level: 1,
+    student_id: '',
+    password: '',
+  });
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -139,6 +161,56 @@ export default function UsersView({ onSetHeaderInfo }) {
     }
   };
 
+  const handleOpenEditModal = (u) => {
+    setEditingUser(u);
+    setEditError('');
+    setEditFormData({
+      first_name: u.first_name || '',
+      last_name: u.last_name || '',
+      email: u.email || '',
+      phone: u.phone || '',
+      is_active: u.is_active !== undefined ? u.is_active : true,
+      department: u.teacher_profile?.department || '',
+      specialization: u.teacher_profile?.specialization || '',
+      employee_id: u.teacher_profile?.employee_id || '',
+      course: u.student_profile?.course || '',
+      year_level: u.student_profile?.year_level || 1,
+      student_id: u.student_profile?.student_id || '',
+      password: '',
+    });
+  };
+
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    try {
+      setEditLoading(true);
+      setEditError('');
+      await Api.updateUser(editingUser.id, editFormData);
+      setSuccessMsg(`User ${editingUser.username} updated successfully!`);
+      setEditingUser(null);
+      await loadUsers();
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      setEditError(err.message || 'Failed to update user.');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (u) => {
+    const displayName = u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.username;
+    if (!window.confirm(`Are you sure you want to permanently delete user "${displayName}" (@${u.username})?`)) return;
+    try {
+      await Api.deleteUser(u.id);
+      setSuccessMsg(`User "${displayName}" deleted.`);
+      await loadUsers();
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      alert(err.message || 'Failed to delete user.');
+    }
+  };
+
   const filteredUsers = users.filter((u) => {
     const q = search.toLowerCase();
     const matchesSearch =
@@ -203,12 +275,14 @@ export default function UsersView({ onSetHeaderInfo }) {
                 <th>Email</th>
                 <th>Phone</th>
                 <th>Profile Info</th>
+                <th>Status</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     No users match your filter.
                   </td>
                 </tr>
@@ -235,6 +309,38 @@ export default function UsersView({ onSetHeaderInfo }) {
                     <td>{u.phone || '—'}</td>
                     <td style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                       {u.teacher_profile?.department || u.student_profile?.course || 'Standard Access'}
+                    </td>
+                    <td>
+                      {u.is_active ? (
+                        <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+                          <CheckCircle2 size={11} /> Active
+                        </span>
+                      ) : (
+                        <span className="badge badge-danger" style={{ fontSize: '11px' }}>Inactive</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <ActionPopover
+                        items={(() => {
+                          const items = [
+                            {
+                              label: 'Edit User',
+                              icon: Edit2,
+                              onClick: () => handleOpenEditModal(u),
+                            },
+                          ];
+                          if (u.id !== user?.id && u.username !== user?.username) {
+                            items.push({ isDivider: true });
+                            items.push({
+                              label: 'Delete User',
+                              icon: Trash2,
+                              isDanger: true,
+                              onClick: () => handleDeleteUser(u),
+                            });
+                          }
+                          return items;
+                        })()}
+                      />
                     </td>
                   </tr>
                 ))
@@ -420,6 +526,202 @@ export default function UsersView({ onSetHeaderInfo }) {
                 <button type="submit" className="btn btn-primary" disabled={formLoading} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                   {formLoading ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
                   <span>Create Staff User</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── EDIT USER MODAL ─── */}
+      {editingUser && (
+        <div className="modal-backdrop open" style={{ display: 'flex' }} onClick={(e) => { if (e.target === e.currentTarget) setEditingUser(null); }}>
+          <div className="modal-card" style={{ maxWidth: '640px', width: '100%', borderRadius: 'var(--radius-lg)', background: 'var(--bg-card)', border: '1px solid var(--border)', overflow: 'hidden', boxShadow: 'var(--shadow-lg)' }}>
+            <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit2 size={18} color="var(--primary)" />
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700' }}>
+                  Edit User: <code style={{ color: 'var(--primary)' }}>@{editingUser.username}</code>
+                </h3>
+              </div>
+              <button type="button" onClick={() => setEditingUser(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateUser}>
+              <div className="modal-body" style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+                {editError && (
+                  <div className="alert alert-danger" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', fontSize: '13px' }}>
+                    <AlertCircle size={15} />
+                    <span>{editError}</span>
+                  </div>
+                )}
+
+                <div className="grid-2" style={{ gap: '14px', marginBottom: '14px' }}>
+                  <div className="form-group">
+                    <label className="form-label">First Name</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={editFormData.first_name}
+                      onChange={(e) => setEditFormData({ ...editFormData, first_name: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Last Name</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={editFormData.last_name}
+                      onChange={(e) => setEditFormData({ ...editFormData, last_name: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid-2" style={{ gap: '14px', marginBottom: '14px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Email</label>
+                    <input
+                      type="email"
+                      className="form-control"
+                      value={editFormData.email}
+                      onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Phone</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={editFormData.phone}
+                      onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid-2" style={{ gap: '14px', marginBottom: '14px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Account Status</label>
+                    <select
+                      className="form-select"
+                      value={editFormData.is_active ? 'active' : 'inactive'}
+                      onChange={(e) => setEditFormData({ ...editFormData, is_active: e.target.value === 'active' })}
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive / Suspended</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">New Password (optional)</label>
+                    <input
+                      type="password"
+                      className="form-control"
+                      placeholder="Leave blank to keep unchanged"
+                      value={editFormData.password}
+                      onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                {editingUser.role === 'teacher' && (
+                  <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px', color: 'var(--text-primary)' }}>
+                      Faculty Details
+                    </div>
+                    <div className="grid-2" style={{ gap: '14px' }}>
+                      <div className="form-group">
+                        <label className="form-label">Employee ID</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={editFormData.employee_id}
+                          onChange={(e) => setEditFormData({ ...editFormData, employee_id: e.target.value })}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Department / Program</label>
+                        <select
+                          className="form-select"
+                          value={editFormData.department}
+                          onChange={(e) => setEditFormData({ ...editFormData, department: e.target.value })}
+                        >
+                          <option value="">Select Department</option>
+                          {programs.map((p) => (
+                            <option key={p.id || p.code} value={p.name || p.code}>
+                              {p.code} - {p.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                        <label className="form-label">Specialization</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={editFormData.specialization}
+                          onChange={(e) => setEditFormData({ ...editFormData, specialization: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {editingUser.role === 'student' && (
+                  <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px', color: 'var(--text-primary)' }}>
+                      Student Academic Profile
+                    </div>
+                    <div className="grid-2" style={{ gap: '14px' }}>
+                      <div className="form-group">
+                        <label className="form-label">Student ID</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={editFormData.student_id}
+                          onChange={(e) => setEditFormData({ ...editFormData, student_id: e.target.value })}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Course / Program</label>
+                        <select
+                          className="form-select"
+                          value={editFormData.course}
+                          onChange={(e) => setEditFormData({ ...editFormData, course: e.target.value })}
+                        >
+                          <option value="">Select Course</option>
+                          {programs.map((p) => (
+                            <option key={p.id || p.code} value={p.code}>
+                              {p.code} - {p.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Year Level</label>
+                        <select
+                          className="form-select"
+                          value={editFormData.year_level}
+                          onChange={(e) => setEditFormData({ ...editFormData, year_level: Number(e.target.value) })}
+                        >
+                          <option value={1}>1st Year</option>
+                          <option value={2}>2nd Year</option>
+                          <option value={3}>3rd Year</option>
+                          <option value={4}>4th Year</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-footer" style={{ padding: '14px 20px', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn btn-outline" onClick={() => setEditingUser(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={editLoading} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  {editLoading ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
+                  <span>Save Changes</span>
                 </button>
               </div>
             </form>

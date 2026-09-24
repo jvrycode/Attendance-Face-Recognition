@@ -17,9 +17,11 @@ import {
   MapPin,
   CheckCircle,
   AlertTriangle,
+  FileText,
 } from 'lucide-react';
 import { Api } from '../api';
 import { formatTime12h } from '../utils/time';
+import ActionPopover from '../components/ActionPopover';
 
 export default function SectionsView({ user, onNavigate, onStartSession, onSetHeaderInfo }) {
   const [viewMode, setViewMode] = useState('table');
@@ -319,41 +321,63 @@ export default function SectionsView({ user, onNavigate, onStartSession, onSetHe
                           </button>
                         </td>
                         <td style={{ padding: '14px 18px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-sm"
-                              onClick={() => {
-                                if (onStartSession) onStartSession(sec);
-                                else onNavigate('scanner');
-                              }}
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Camera size={13} /> <span>Scan</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              className="btn btn-outline btn-sm"
-                              onClick={() => setSelectedSectionDetail(sec)}
-                              title="View Details"
-                              style={{ padding: '4px 8px' }}
-                            >
-                              <Eye size={13} />
-                            </button>
-
-                            {isAdmin && (
-                              <button
-                                type="button"
-                                className="btn btn-outline btn-sm text-danger"
-                                onClick={() => handleDeleteSection(sec.id, sec.name)}
-                                title="Delete Section"
-                                style={{ padding: '4px 8px' }}
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            )}
-                          </div>
+                          <ActionPopover
+                            items={(() => {
+                              if (role === 'teacher') {
+                                return [
+                                  {
+                                    label: 'Start Attendance',
+                                    icon: Camera,
+                                    isPrimary: true,
+                                    onClick: () => {
+                                      if (onStartSession) onStartSession(sec);
+                                      else onNavigate('scanner');
+                                    },
+                                  },
+                                  { isDivider: true },
+                                  {
+                                    label: 'Class List & Attendance',
+                                    icon: Users,
+                                    onClick: () => setSelectedSectionDetail(sec),
+                                  },
+                                  {
+                                    label: 'Attendance Report',
+                                    icon: FileText,
+                                    onClick: () => onNavigate('section_report'),
+                                  },
+                                ];
+                              } else if (role === 'student') {
+                                return [
+                                  {
+                                    label: 'Class List',
+                                    icon: Users,
+                                    onClick: () => setSelectedSectionDetail(sec),
+                                  },
+                                ];
+                              } else {
+                                // ADMIN: View Details, Attendance Report, Delete Section (NO ATTENDANCE SCANNER)
+                                return [
+                                  {
+                                    label: 'View Details',
+                                    icon: Eye,
+                                    onClick: () => setSelectedSectionDetail(sec),
+                                  },
+                                  {
+                                    label: 'Attendance Report',
+                                    icon: FileText,
+                                    onClick: () => onNavigate('section_report'),
+                                  },
+                                  { isDivider: true },
+                                  {
+                                    label: 'Delete Section',
+                                    icon: Trash2,
+                                    isDanger: true,
+                                    onClick: () => handleDeleteSection(sec.id, sec.name),
+                                  },
+                                ];
+                              }
+                            })()}
+                          />
                         </td>
                       </tr>
                     );
@@ -703,18 +727,20 @@ export default function SectionsView({ user, onNavigate, onStartSession, onSetHe
             </div>
 
             <div className="modal-footer" style={{ padding: '14px 22px', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => {
-                  const sec = selectedSectionDetail;
-                  setSelectedSectionDetail(null);
-                  if (onStartSession) onStartSession(sec);
-                  else onNavigate('scanner');
-                }}
-              >
-                <Camera size={14} /> <span>Open Attendance Scanner</span>
-              </button>
+              {role === 'teacher' && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    const sec = selectedSectionDetail;
+                    setSelectedSectionDetail(null);
+                    if (onStartSession) onStartSession(sec);
+                    else onNavigate('scanner');
+                  }}
+                >
+                  <Camera size={14} /> <span>Open Attendance Scanner</span>
+                </button>
+              )}
               <button type="button" className="btn btn-outline" onClick={() => setSelectedSectionDetail(null)}>
                 Close
               </button>
