@@ -260,6 +260,42 @@ export const Api = {
     return res.json();
   },
 
+  updateSubject: async (id, subjectData) => {
+    const res = await apiRequest(`/api/subjects/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(subjectData),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || err.error || 'Failed to update subject');
+    }
+    return res.json();
+  },
+
+  updateProgram: async (id, programData) => {
+    const res = await apiRequest(`/api/programs/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(programData),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || err.error || 'Failed to update program');
+    }
+    return res.json();
+  },
+
+  updateSection: async (id, sectionData) => {
+    const res = await apiRequest(`/api/sections/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(sectionData),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || err.error || 'Failed to update section');
+    }
+    return res.json();
+  },
+
   deleteProgram: async (id) => {
     const res = await apiRequest(`/api/programs/${id}/`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to delete program');
