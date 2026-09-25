@@ -24,14 +24,26 @@ def health_check(request):
         "database": db_status
     }, status=200 if db_status == "connected" else 503)
 
+def api_root(request):
+    """API root landing endpoint."""
+    return JsonResponse({
+        "status": "healthy",
+        "service": "AttendFR REST API Backend",
+        "version": "2.0.0",
+        "endpoints": {
+            "health": "/api/health/",
+            "auth": "/api/auth/login/",
+            "dashboard": "/api/dashboard/stats/",
+            "api_root": "/api/",
+            "admin": "/admin/",
+        }
+    })
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/health/', health_check, name='health_check'),
     path('api/', include('attendance_fr.api.urls')),
-    path('accounts/', include('accounts.urls')),
-    path('', include('core.urls')),
-    path('face/', include('face_app.urls')),
-    path('', lambda request: redirect('dashboard'), name='home'),
+    path('', api_root, name='home'),
 ]
 
 if settings.DEBUG:
