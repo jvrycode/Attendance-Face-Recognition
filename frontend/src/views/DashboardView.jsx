@@ -28,8 +28,9 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { Api } from '../api';
-import { formatTime12h } from '../utils/time';
+import { formatTime12h, formatSchoolScheduleParts } from '../utils/time';
 import ActionPopover from '../components/ActionPopover';
+import StudentAttendanceCalendarModal from '../components/StudentAttendanceCalendarModal';
 
 export default function DashboardView({ user, onNavigate, onStartSession, onSetHeaderInfo }) {
   const role = user?.role || 'admin';
@@ -48,6 +49,8 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
   const [sections, setSections] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [sessions, setSessions] = useState([]);
+  const [studentOverview, setStudentOverview] = useState(null);
+  const [selectedCalendarSection, setSelectedCalendarSection] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -62,6 +65,11 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
         setSections(secs || []);
         setSchedules(schs || []);
         setSessions(sess || []);
+
+        if (role === 'student') {
+          const overview = await Api.getStudentAttendanceOverview().catch(() => null);
+          setStudentOverview(overview);
+        }
 
         if (statRes) {
           setStats({
@@ -83,7 +91,8 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
       }
     }
     loadData();
-  }, []);
+  }, [role]);
+
 
   // Update Top Header in App.jsx (100% copycat of templates/accounts/dashboard_admin.html, dashboard_teacher.html, dashboard_student.html)
   useEffect(() => {
@@ -356,45 +365,131 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
                     </td>
                   </tr>
                 ) : (
-                  sessions.slice(0, 5).map((session) => (
-                    <tr key={session.id}>
-                      <td>
-                        <strong>{session.schedule?.section_name || 'Section'}</strong>
-                      </td>
-                      <td>
-                        <span className="badge badge-accent">
-                          {session.schedule?.subject_code || '—'}
-                        </span>
-                      </td>
-                      <td className="text-muted" style={{ fontSize: '13px' }}>
-                        {session.started_by_name || '—'}
-                      </td>
-                      <td style={{ fontSize: '13px' }}>
-                        {new Date(session.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </td>
-                      <td>
-                        {session.status === 'open' ? (
-                          <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <span className="pulse-dot" style={{ background: '#10b981', width: '6px', height: '6px' }} />
-                            Live
-                          </span>
-                        ) : (
-                          <span className="badge badge-muted">Finalized</span>
-                        )}
-                      </td>
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <ActionPopover
-                          items={[
-                            {
-                              label: 'Session Report',
-                              icon: FileText,
-                              onClick: () => onNavigate('session_logs'),
-                            },
-                          ]}
-                        />
-                      </td>
-                    </tr>
-                  ))
+                  sessions.slice(0, 5).map((session) => {
+                    const secName =
+                      session.section_name ||
+                      session.schedule_details?.section_name ||
+                      (typeof session.schedule === 'object' ? session.schedule?.section_name : null) ||
+                      (sections.find((s) => s.id === (session.schedule_details?.section || session.schedule))?.name) ||
+                      'Section';
+
+                    const subjCode =
+                      session.subject_code ||
+                      session.schedule_details?.subject_code ||
+                      (typeof session.schedule === 'object' ? session.schedule?.subject_code : null) ||
+                      (sections.find((s) => s.id === (session.schedule_details?.section || session.schedule))?.effective_subject_code) ||
+                      '—';
+
+                    const subjName =
+                      session.subject_name ||
+                      session.schedule_details?.subject_name ||
+                      (typeof session.schedule === 'object' ? session.schedule?.subject_name : null) ||
+                      (sections.find((s) => s.id === (session.schedule_details?.section || session.schedule))?.effective_subject_name) ||
+                      '';
+
+                    const teacherName =
+                      session.started_by_name ||
+                      session.teacher_name ||
+                      session.schedule_details?.teacher_name ||
+                      '—';
+
+                    const formattedDate = session.date
+                      ? new Date(session.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      : '—';
+
+                    return (
+                      <tr key={session.id}>
+                        <td>
+                          <div style={{ fontWeight: 800, fontSize: '13.5px', color: 'var(--text-primary)' }}>
+                            {secName}
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            <div>
+                              <span
+                                className="badge badge-accent"
+                                style={{
+                                  fontWeight: 700,
+                                  fontSize: '11px',
+                                  padding: '2px 8px',
+                                  letterSpacing: '0.3px',
+                                  background: 'var(--accent-light)',
+                                  color: 'var(--accent)',
+                                  border: '1px solid var(--border)',
+                                }}
+                              >
+                                {subjCode}
+                              </span>
+                            </div>
+                            {subjName && (
+                              <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                                {subjName}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="text-muted" style={{ fontSize: '13px' }}>
+                          {teacherName}
+                        </td>
+                        <td style={{ fontSize: '12.5px', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 500, color: 'var(--text-primary)' }}>
+                            <Calendar size={13} style={{ color: 'var(--text-muted)' }} />
+                            <span>{formattedDate}</span>
+                          </div>
+                        </td>
+                        <td>
+                          {session.status === 'open' ? (
+                            <span
+                              className="badge badge-success"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                fontWeight: 700,
+                                fontSize: '11px',
+                                padding: '3px 9px',
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                color: '#059669',
+                                border: '1px solid rgba(16, 185, 129, 0.25)',
+                              }}
+                            >
+                              <span className="pulse-dot" style={{ background: '#10b981', width: '6px', height: '6px' }} />
+                              Live
+                            </span>
+                          ) : (
+                            <span
+                              className="badge badge-muted"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontWeight: 600,
+                                fontSize: '11px',
+                                padding: '3px 9px',
+                                background: 'rgba(100, 116, 139, 0.08)',
+                                color: 'var(--text-secondary)',
+                                border: '1px solid var(--border)',
+                              }}
+                            >
+                              <CheckCircle size={11} style={{ opacity: 0.7 }} /> Finalized
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <ActionPopover
+                            items={[
+                              {
+                                label: 'Session Report',
+                                icon: FileText,
+                                onClick: () => onNavigate('session_logs'),
+                              },
+                            ]}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -411,37 +506,57 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
     const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
     const liveCount = sessions.filter((s) => s.status === 'open').length;
     const finalizedCount = sessions.filter((s) => s.status === 'closed').length;
+    const totalStudentsCount = sections.reduce((sum, s) => sum + (s.student_count || 0), 0) || stats.totalStudents || 0;
 
     return (
       <div className="page-content">
         {/* Key Metrics */}
-        <div className="stats-grid mb-3">
-          <div className="stat-card blue">
-            <div className="stat-icon blue"><Layers size={20} /></div>
-            <div className="stat-info">
-              <div className="value">{sections.length}</div>
-              <div className="label">Assigned Sections</div>
+        <div className="stats-grid mb-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+          <div className="stat-card" style={{ padding: '16px 20px', borderRadius: 'var(--radius-lg)', background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: 'var(--shadow-xs)' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb', flexShrink: 0 }}>
+              <Layers size={20} />
+            </div>
+            <div className="stat-info" style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, letterSpacing: '-0.5px' }}>{sections.length}</div>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginTop: '3px' }}>Assigned Sections</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{sections.length === 1 ? '1 active section' : `${sections.length} active sections`}</div>
             </div>
           </div>
-          <div className="stat-card purple">
-            <div className="stat-icon purple"><Users size={20} /></div>
-            <div className="stat-info">
-              <div className="value">{stats.totalStudents || 25}</div>
-              <div className="label">Enrolled Students</div>
+
+          <div className="stat-card" style={{ padding: '16px 20px', borderRadius: 'var(--radius-lg)', background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: 'var(--shadow-xs)' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(147, 51, 234, 0.08)', border: '1px solid rgba(147, 51, 234, 0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7c3aed', flexShrink: 0 }}>
+              <Users size={20} />
+            </div>
+            <div className="stat-info" style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, letterSpacing: '-0.5px' }}>{totalStudentsCount}</div>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginTop: '3px' }}>Enrolled Students</div>
+              <div style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 600, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <CheckCircle size={11} /> 100% Face Enrolled
+              </div>
             </div>
           </div>
-          <div className="stat-card orange">
-            <div className="stat-icon orange"><CalendarCheck size={20} /></div>
-            <div className="stat-info">
-              <div className="value">{schedules.length}</div>
-              <div className="label">Classes Today</div>
+
+          <div className="stat-card" style={{ padding: '16px 20px', borderRadius: 'var(--radius-lg)', background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: 'var(--shadow-xs)' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d97706', flexShrink: 0 }}>
+              <CalendarCheck size={20} />
+            </div>
+            <div className="stat-info" style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, letterSpacing: '-0.5px' }}>{sections.length}</div>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginTop: '3px' }}>Classes Today</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{finalizedCount} finalized &bull; {liveCount} live</div>
             </div>
           </div>
-          <div className="stat-card green">
-            <div className="stat-icon green"><Radio size={20} /></div>
-            <div className="stat-info">
-              <div className="value">{liveCount}</div>
-              <div className="label">Live Sessions</div>
+
+          <div className="stat-card" style={{ padding: '16px 20px', borderRadius: 'var(--radius-lg)', background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: 'var(--shadow-xs)' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: liveCount > 0 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(100, 116, 139, 0.08)', border: liveCount > 0 ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: liveCount > 0 ? '#10b981' : '#64748b', flexShrink: 0 }}>
+              <Radio size={20} />
+            </div>
+            <div className="stat-info" style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, letterSpacing: '-0.5px' }}>{liveCount}</div>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginTop: '3px' }}>Live Sessions</div>
+              <div style={{ fontSize: '11px', color: liveCount > 0 ? 'var(--success)' : 'var(--text-muted)', fontWeight: liveCount > 0 ? 600 : 400, marginTop: '2px' }}>
+                {liveCount > 0 ? 'Scanning in progress' : 'Ready to start'}
+              </div>
             </div>
           </div>
         </div>
@@ -451,92 +566,251 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
           <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
             <div
               className="card-header"
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Sun size={16} /> Today &mdash; {todayStr}
-              </span>
-              <span className="badge badge-outline" style={{ fontWeight: 600 }}>
-                {finalizedCount} finalized &bull; {liveCount} live
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sun size={16} style={{ color: '#f59e0b' }} />
+                <span style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-primary)' }}>Today&rsquo;s Classes</span>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 500 }}>&mdash; {todayStr}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="badge badge-outline" style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px' }}>
+                  {finalizedCount} finalized &bull; {liveCount} live
+                </span>
+              </div>
             </div>
 
             {sections.length === 0 ? (
-              <div className="card-body text-center text-muted" style={{ padding: '36px' }}>
-                <Coffee size={32} style={{ opacity: 0.45, margin: '0 auto 8px', display: 'block' }} />
-                No scheduled classes for today. Use{' '}
+              <div className="card-body text-center text-muted" style={{ padding: '42px 24px' }}>
+                <Coffee size={32} style={{ opacity: 0.45, margin: '0 auto 10px', display: 'block' }} />
+                <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                  No scheduled classes for today
+                </div>
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '340px', margin: '0 auto 14px' }}>
+                  You have no teaching sections assigned for today. Review your weekly timetable or section assignments.
+                </div>
                 <button
                   type="button"
-                  className="btn-link"
+                  className="btn btn-outline btn-sm"
                   onClick={() => onNavigate('sections')}
-                  style={{ color: 'var(--primary)', cursor: 'pointer', background: 'none', border: 'none', textDecoration: 'underline' }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                 >
-                  Section &amp; Schedule
-                </button>{' '}
-                to manage your weekly timetable.
+                  <Calendar size={14} /> <span>Open Section &amp; Schedule</span>
+                </button>
               </div>
             ) : (
               <div className="table-container" style={{ border: 'none', flex: 1 }}>
                 <table>
                   <thead>
                     <tr>
-                      <th>Section / Subject</th>
-                      <th>Time</th>
+                      <th>Section &amp; Subject</th>
+                      <th>Schedule &amp; Room</th>
                       <th>Status</th>
-                      <th style={{ textAlign: 'right' }}>Action</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sections.map((sec) => (
-                      <tr key={sec.id}>
-                        <td>
-                          <div style={{ fontWeight: 700 }}>{sec.name}</div>
-                          <div className="text-muted" style={{ fontSize: '12px' }}>
-                            {sec.subject_details?.code || 'CS 101'} &mdash; {sec.subject_details?.name || 'Class Subject'}
-                          </div>
-                        </td>
-                        <td style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>
-                          {sec.schedules && sec.schedules.length > 0
-                            ? `${formatTime12h(sec.schedules[0].time_display || `${sec.schedules[0].start_time} - ${sec.schedules[0].end_time}`)} @ ${sec.schedules[0].room || 'Room 204'}`
-                            : sec.schedule_display && sec.schedule_display !== 'No schedule set'
-                            ? formatTime12h(sec.schedule_display)
-                            : '8:00 AM – 9:30 AM @ Room 204'}
-                        </td>
-                        <td>
-                          <span
-                            className="badge badge-warning"
-                            style={{
-                              background: 'var(--warning-light)',
-                              color: 'var(--warning)',
-                              border: '1px solid var(--warning-border)',
-                            }}
-                          >
-                            Not Started
-                          </span>
-                        </td>
-                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          <ActionPopover
-                            items={[
-                              {
-                                label: 'Start Attendance',
-                                icon: Camera,
-                                isPrimary: true,
-                                onClick: () => {
-                                  if (onStartSession) onStartSession(sec);
-                                  else onNavigate('scanner');
-                                },
-                              },
-                              { isDivider: true },
-                              {
-                                label: 'View Schedule',
-                                icon: Calendar,
-                                onClick: () => onNavigate('sections'),
-                              },
-                            ]}
-                          />
-                        </td>
-                      </tr>
-                    ))}
+                    {sections.map((sec) => {
+                      const secSubjectCode =
+                        sec.effective_subject_code ||
+                        sec.subject_details?.code ||
+                        sec.schedules?.[0]?.subject_code ||
+                        sec.subjects?.[0]?.code ||
+                        '—';
+
+                      const secSubjectName =
+                        sec.effective_subject_name ||
+                        sec.subject_details?.name ||
+                        sec.schedules?.[0]?.subject_name ||
+                        sec.subjects?.[0]?.name ||
+                        '';
+
+                      const schedItem =
+                        sec.schedules && sec.schedules.length > 0
+                          ? formatSchoolScheduleParts(sec.schedules[0])
+                          : sec.schedule_display && sec.schedule_display !== 'No schedule set'
+                          ? formatSchoolScheduleParts(sec.schedule_display)
+                          : { fullTime: 'M/W 08:00AM-09:30AM/08:00AM-09:30AM', room: 'Room 101' };
+
+                      const activeSession = sessions.find(
+                        (s) => (s.schedule_details?.section === sec.id || s.section_name === sec.name) && s.status === 'open'
+                      );
+                      const closedSessionToday = sessions.find(
+                        (s) => (s.schedule_details?.section === sec.id || s.section_name === sec.name) && s.status === 'closed'
+                      );
+
+                      return (
+                        <tr key={sec.id}>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontWeight: 800, fontSize: '13.5px', color: 'var(--text-primary)' }}>{sec.name}</span>
+                                <span className="badge badge-outline" style={{ fontSize: '10px', padding: '1px 6px', fontWeight: 600 }}>
+                                  {sec.course || 'BSCS'}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                {secSubjectCode !== '—' && (
+                                  <span
+                                    className="badge badge-accent"
+                                    style={{
+                                      fontSize: '10.5px',
+                                      fontWeight: 700,
+                                      padding: '1px 6px',
+                                      letterSpacing: '0.2px',
+                                      background: 'var(--accent-light)',
+                                      color: 'var(--accent)',
+                                      border: '1px solid var(--border)',
+                                    }}
+                                  >
+                                    {secSubjectCode}
+                                  </span>
+                                )}
+                                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                  {secSubjectName}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <div
+                              style={{
+                                display: 'inline-flex',
+                                flexDirection: 'column',
+                                alignItems: 'flex-start',
+                                gap: '1px',
+                                padding: '4px 8px',
+                                background: 'rgba(99, 102, 241, 0.06)',
+                                border: '1px solid rgba(99, 102, 241, 0.18)',
+                                borderRadius: '5px',
+                                lineHeight: 1.25,
+                                color: '#4338ca',
+                              }}
+                            >
+                              {(schedItem.timeLines || [schedItem.fullTime]).map((tl, tIdx) => (
+                                <span key={tIdx} style={{ fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                  {tl}
+                                </span>
+                              ))}
+                              {schedItem.room && (
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                                  {schedItem.room}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            {activeSession ? (
+                              <span
+                                className="badge badge-success"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  fontWeight: 700,
+                                  fontSize: '11px',
+                                  padding: '3px 8px',
+                                  background: 'rgba(16, 185, 129, 0.1)',
+                                  color: '#059669',
+                                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                                }}
+                              >
+                                <span className="pulse-dot" style={{ width: '6px', height: '6px', background: '#10b981' }} /> Live Now
+                              </span>
+                            ) : closedSessionToday ? (
+                              <span
+                                className="badge badge-muted"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontWeight: 600,
+                                  fontSize: '11px',
+                                  padding: '3px 8px',
+                                  background: 'rgba(100, 116, 139, 0.08)',
+                                  border: '1px solid var(--border)',
+                                }}
+                              >
+                                <CheckCircle size={11} style={{ opacity: 0.7 }} /> Finalized
+                              </span>
+                            ) : (
+                              <span
+                                className="badge badge-warning"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontWeight: 600,
+                                  fontSize: '11px',
+                                  padding: '3px 8px',
+                                  background: 'rgba(245, 158, 11, 0.08)',
+                                  color: '#b45309',
+                                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                                }}
+                              >
+                                <Clock size={11} /> Not Started
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <ActionPopover
+                              items={(() => {
+                                const items = [];
+                                if (activeSession) {
+                                  items.push({
+                                    label: 'Resume Scanner',
+                                    icon: Camera,
+                                    isPrimary: true,
+                                    onClick: () => {
+                                      if (onStartSession) onStartSession(activeSession);
+                                      else onNavigate('scanner');
+                                    },
+                                  });
+                                  items.push({ isDivider: true });
+                                } else if (closedSessionToday) {
+                                  items.push({
+                                    label: 'Reopen Session',
+                                    icon: Radio,
+                                    onClick: async () => {
+                                      try {
+                                        await Api.reopenSession(closedSessionToday.id);
+                                        if (onStartSession) onStartSession({ ...closedSessionToday, status: 'open' });
+                                        else onNavigate('scanner');
+                                      } catch (err) {
+                                        console.error('Failed to reopen session:', err);
+                                      }
+                                    },
+                                  });
+                                  items.push({ isDivider: true });
+                                } else {
+                                  items.push({
+                                    label: 'Start Attendance',
+                                    icon: Camera,
+                                    isPrimary: true,
+                                    onClick: () => {
+                                      if (onStartSession) onStartSession(sec);
+                                      else onNavigate('scanner');
+                                    },
+                                  });
+                                  items.push({ isDivider: true });
+                                }
+                                items.push({
+                                  label: 'View Schedule',
+                                  icon: Calendar,
+                                  onClick: () => onNavigate('sections'),
+                                });
+                                items.push({
+                                  label: 'Section Report',
+                                  icon: FileText,
+                                  onClick: () => onNavigate('section_report'),
+                                });
+                                return items;
+                              })()}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -544,51 +818,96 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
           </div>
 
           {/* At a Glance */}
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Activity size={16} /> At a Glance
+          <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="card-header" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '14.5px', color: 'var(--text-primary)' }}>
+                <Activity size={16} style={{ color: 'var(--primary)' }} /> At a Glance
               </span>
+              <span className="badge badge-outline" style={{ fontSize: '11px', fontWeight: 600 }}>Active Overview</span>
             </div>
-            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div className="dashboard-mini-stat">
-                <span className="text-muted" style={{ fontSize: '12px' }}>Weekly class meetings</span>
-                <strong style={{ fontSize: '22px', display: 'block' }}>{schedules.length}</strong>
-              </div>
-              <div className="dashboard-mini-stat">
-                <span className="text-muted" style={{ fontSize: '12px' }}>Sessions recorded (recent)</span>
-                <strong style={{ fontSize: '22px', display: 'block' }}>{sessions.length}</strong>
+            <div className="card-body" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '14px', flex: 1 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div style={{ padding: '12px 14px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg-card)', boxShadow: 'var(--shadow-xs)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)' }}>Weekly Classes</span>
+                    <Calendar size={14} style={{ color: '#2563eb' }} />
+                  </div>
+                  <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{schedules.length}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>Class meeting slots</div>
+                </div>
+
+                <div style={{ padding: '12px 14px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg-card)', boxShadow: 'var(--shadow-xs)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)' }}>Total Sessions</span>
+                    <ClipboardList size={14} style={{ color: '#7c3aed' }} />
+                  </div>
+                  <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{sessions.length}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>Recorded history</div>
+                </div>
+
+                <div style={{ padding: '12px 14px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg-card)', boxShadow: 'var(--shadow-xs)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)' }}>Live Sessions</span>
+                    <Radio size={14} style={{ color: liveCount > 0 ? '#10b981' : '#64748b' }} />
+                  </div>
+                  <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>{liveCount}</div>
+                  <div style={{ fontSize: '11px', color: liveCount > 0 ? 'var(--success)' : 'var(--text-muted)', fontWeight: liveCount > 0 ? 600 : 400, marginTop: '3px' }}>
+                    {liveCount > 0 ? 'Live in progress' : 'No active live'}
+                  </div>
+                </div>
+
+                <div style={{ padding: '12px 14px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg-card)', boxShadow: 'var(--shadow-xs)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)' }}>Biometrics</span>
+                    <ScanFace size={14} style={{ color: '#f59e0b' }} />
+                  </div>
+                  <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>100%</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>Enrolled &amp; ready</div>
+                </div>
               </div>
 
-              <div className="alert alert-success" style={{ margin: 0, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <CheckCircle size={16} />
-                <span>All enrolled students in your sections have face data on file.</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', background: 'rgba(16, 185, 129, 0.06)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: 'var(--radius)', fontSize: '12px', color: '#065f46' }}>
+                <CheckCircle size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                <span>All enrolled students in your sections have biometric face embeddings on file.</span>
               </div>
 
-              <button
-                type="button"
-                className="btn btn-outline"
-                onClick={() => onNavigate('sections')}
-                style={{ marginTop: 'auto', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-              >
-                <Calendar size={15} /> <span>Open Section &amp; Schedule</span>
-              </button>
+              <div style={{ marginTop: 'auto', display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => onNavigate('sections')}
+                  style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                >
+                  <Calendar size={14} /> <span>Open Section &amp; Schedule</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => onNavigate('section_report')}
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  title="Attendance Reports"
+                >
+                  <FileText size={14} />
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Recent Attendance Sessions */}
         <div className="card">
-          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Clock size={16} /> Recent Attendance Sessions
-            </span>
+          <div className="card-header" style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Clock size={16} style={{ color: 'var(--text-muted)' }} />
+              <span style={{ fontWeight: 700, fontSize: '14.5px', color: 'var(--text-primary)' }}>Recent Attendance Sessions</span>
+            </div>
             <button
               type="button"
               className="btn btn-outline btn-sm"
               onClick={() => onNavigate('section_report')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
             >
-              Full Reports
+              <FileText size={13} /> <span>Full Reports</span>
             </button>
           </div>
           <div className="table-container" style={{ border: 'none' }}>
@@ -597,21 +916,23 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
                 <tr>
                   <th>Section</th>
                   <th>Subject</th>
+                  <th>Schedule &amp; Room</th>
                   <th>Session Date</th>
                   <th>Status</th>
-                  <th style={{ textAlign: 'right' }}>Action</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {sessions.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="text-center text-muted" style={{ padding: '32px' }}>
+                    <td colSpan="6" className="text-center text-muted" style={{ padding: '36px' }}>
+                      <Coffee size={28} style={{ opacity: 0.4, margin: '0 auto 8px', display: 'block' }} />
                       No attendance sessions recorded yet. Start from{' '}
                       <button
                         type="button"
                         className="btn-link"
                         onClick={() => onNavigate('sections')}
-                        style={{ color: 'var(--primary)', cursor: 'pointer', background: 'none', border: 'none', textDecoration: 'underline' }}
+                        style={{ color: 'var(--primary)', cursor: 'pointer', background: 'none', border: 'none', textDecoration: 'underline', fontWeight: 600 }}
                       >
                         Section &amp; Schedule
                       </button>{' '}
@@ -619,52 +940,174 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
                     </td>
                   </tr>
                 ) : (
-                  sessions.slice(0, 5).map((session) => (
-                    <tr key={session.id}>
-                      <td><strong>{session.schedule?.section_name || 'Section'}</strong></td>
-                      <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                        {session.schedule?.subject_code || '—'}
-                      </td>
-                      <td style={{ fontSize: '13px' }}>
-                        {new Date(session.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </td>
-                      <td>
-                        {session.status === 'open' ? (
-                          <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontWeight: 600 }}>
-                            <span className="pulse-dot" style={{ background: '#10b981', width: '7px', height: '7px' }} />
-                            Live / Open
-                          </span>
-                        ) : (
-                          <span className="badge badge-muted" style={{ fontSize: '11.5px' }}>Finalized</span>
-                        )}
-                      </td>
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <ActionPopover
-                          items={(() => {
-                            const items = [];
-                            if (session.status === 'open') {
+                  sessions.slice(0, 8).map((session) => {
+                    const secName =
+                      session.section_name ||
+                      session.schedule_details?.section_name ||
+                      (typeof session.schedule === 'object' ? session.schedule?.section_name : null) ||
+                      (sections.find((s) => s.id === (session.schedule_details?.section || session.schedule))?.name) ||
+                      'Section';
+
+                    const subjCode =
+                      session.subject_code ||
+                      session.schedule_details?.subject_code ||
+                      (typeof session.schedule === 'object' ? session.schedule?.subject_code : null) ||
+                      (sections.find((s) => s.id === (session.schedule_details?.section || session.schedule))?.effective_subject_code) ||
+                      '—';
+
+                    const subjName =
+                      session.subject_name ||
+                      session.schedule_details?.subject_name ||
+                      (typeof session.schedule === 'object' ? session.schedule?.subject_name : null) ||
+                      (sections.find((s) => s.id === (session.schedule_details?.section || session.schedule))?.effective_subject_name) ||
+                      '';
+
+                    const sessSched = formatSchoolScheduleParts(
+                      session.schedule_details ||
+                      (session.schedule_display && session.schedule_display !== '—' ? session.schedule_display : null) ||
+                      { room: session.room }
+                    );
+
+                    const formattedDate = session.date
+                      ? new Date(session.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      : '—';
+
+                    return (
+                      <tr key={session.id}>
+                        <td>
+                          <div style={{ fontWeight: 800, fontSize: '13.5px', color: 'var(--text-primary)' }}>
+                            {secName}
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            <div>
+                              <span
+                                className="badge badge-accent"
+                                style={{
+                                  fontWeight: 700,
+                                  fontSize: '11px',
+                                  padding: '2px 8px',
+                                  letterSpacing: '0.3px',
+                                  background: 'var(--accent-light)',
+                                  color: 'var(--accent)',
+                                  border: '1px solid var(--border)',
+                                }}
+                              >
+                                {subjCode}
+                              </span>
+                            </div>
+                            {subjName && (
+                              <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                                {subjName}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ fontSize: '12.5px', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                            {(sessSched.timeLines && sessSched.fullTime !== 'No schedule set'
+                              ? sessSched.timeLines
+                              : [sessSched.fullTime !== 'No schedule set' ? sessSched.fullTime : 'Standard Session']
+                            ).map((tl, tIdx) => (
+                              <span key={tIdx} style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                                {tl}
+                              </span>
+                            ))}
+                            {(sessSched.room || session.room) && (
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                {sessSched.room || session.room}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ fontSize: '12.5px', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 500, color: 'var(--text-primary)' }}>
+                            <Calendar size={13} style={{ color: 'var(--text-muted)' }} />
+                            <span>{formattedDate}</span>
+                          </div>
+                        </td>
+                        <td>
+                          {session.status === 'open' ? (
+                            <span
+                              className="badge badge-success"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                fontWeight: 700,
+                                fontSize: '11px',
+                                padding: '3px 9px',
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                color: '#059669',
+                                border: '1px solid rgba(16, 185, 129, 0.25)',
+                              }}
+                            >
+                              <span className="pulse-dot" style={{ background: '#10b981', width: '6px', height: '6px' }} />
+                              Live / Open
+                            </span>
+                          ) : (
+                            <span
+                              className="badge badge-muted"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontWeight: 600,
+                                fontSize: '11px',
+                                padding: '3px 9px',
+                                background: 'rgba(100, 116, 139, 0.08)',
+                                color: 'var(--text-secondary)',
+                                border: '1px solid var(--border)',
+                              }}
+                            >
+                              <CheckCircle size={11} style={{ opacity: 0.7 }} /> Finalized
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <ActionPopover
+                            items={(() => {
+                              const items = [];
+                              if (session.status === 'open') {
+                                items.push({
+                                  label: 'Resume Scanner',
+                                  icon: Camera,
+                                  isPrimary: true,
+                                  onClick: () => {
+                                    if (onStartSession) onStartSession(session);
+                                    else onNavigate('scanner');
+                                  },
+                                });
+                                items.push({ isDivider: true });
+                              } else {
+                                items.push({
+                                  label: 'Reopen Session',
+                                  icon: Radio,
+                                  onClick: async () => {
+                                    try {
+                                      await Api.reopenSession(session.id);
+                                      if (onStartSession) onStartSession({ ...session, status: 'open' });
+                                      else onNavigate('scanner');
+                                    } catch (err) {
+                                      console.error('Failed to reopen:', err);
+                                    }
+                                  },
+                                });
+                                items.push({ isDivider: true });
+                              }
                               items.push({
-                                label: 'Resume Scanner',
-                                icon: Camera,
-                                isPrimary: true,
-                                onClick: () => {
-                                  if (onStartSession) onStartSession(session);
-                                  else onNavigate('scanner');
-                                },
+                                label: 'View Report',
+                                icon: FileText,
+                                onClick: () => onNavigate('section_report'),
                               });
-                              items.push({ isDivider: true });
-                            }
-                            items.push({
-                              label: 'View Report',
-                              icon: FileText,
-                              onClick: () => onNavigate('section_report'),
-                            });
-                            return items;
-                          })()}
-                        />
-                      </td>
-                    </tr>
-                  ))
+                              return items;
+                            })()}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -677,8 +1120,11 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
   // ══════════════════════════════════════════════════════════════════════════
   // VIEW 3: STUDENT DASHBOARD (100% copycat of templates/accounts/dashboard_student.html)
   // ══════════════════════════════════════════════════════════════════════════
-  const student = user?.student_profile;
-  const fullName = `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.username;
+  const student = studentOverview?.student || user?.student_profile;
+  const fullName = student?.full_name || `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.username;
+  const studentStats = studentOverview?.overall_stats || { rate: 0, total_sessions: 0, present: 0, late: 0, absent: 0, excused: 0 };
+  const enrolledCards = studentOverview?.enrolled_cards || [];
+  const recentLogs = studentOverview?.recent_records || [];
 
   return (
     <div className="page-content">
@@ -693,9 +1139,13 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
           </div>
           <div className="card-body">
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
-              {user?.profile_image ? (
+              {student?.profile_image || user?.profile_image ? (
                 <img
-                  src={user.profile_image}
+                  src={student?.profile_image || user?.profile_image}
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=6366f1&color=fff`;
+                  }}
                   style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover' }}
                   alt="Profile"
                 />
@@ -758,22 +1208,22 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
             <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', marginBottom: '12px' }}>
               <div className="stat-card green" style={{ padding: '12px' }}>
                 <div className="stat-info">
-                  <div className="value" style={{ fontSize: '24px' }}>100%</div>
+                  <div className="value" style={{ fontSize: '24px' }}>{studentStats.rate}%</div>
                   <div className="label">Overall rate</div>
                 </div>
               </div>
               <div className="stat-card blue" style={{ padding: '12px' }}>
                 <div className="stat-info">
-                  <div className="value" style={{ fontSize: '24px' }}>12</div>
+                  <div className="value" style={{ fontSize: '24px' }}>{studentStats.total_sessions}</div>
                   <div className="label">Sessions logged</div>
                 </div>
               </div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '12px' }}>
-              <span className="badge badge-success">Present: 12</span>
-              <span className="badge badge-warning">Late: 0</span>
-              <span className="badge badge-danger">Absent: 0</span>
-              <span className="badge badge-info">Excused: 0</span>
+              <span className="badge badge-success">Present: {studentStats.present}</span>
+              <span className="badge badge-warning">Late: {studentStats.late}</span>
+              <span className="badge badge-danger">Absent: {studentStats.absent}</span>
+              <span className="badge badge-info">Excused: {studentStats.excused}</span>
             </div>
           </div>
         </div>
@@ -786,7 +1236,7 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
             <BookOpen size={16} /> Attendance by Subject / Section
           </span>
           <span className="text-muted" style={{ fontSize: '12px' }}>
-            {sections.length} enrolled class(es)
+            {enrolledCards.length} enrolled class(es)
           </span>
         </div>
         <div className="table-container" style={{ border: 'none' }}>
@@ -800,33 +1250,59 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
                 <th>Late</th>
                 <th>Absent</th>
                 <th>Rate</th>
-                <th>Last class</th>
+                <th>Last Class</th>
+                <th style={{ textAlign: 'right' }}>Calendar</th>
               </tr>
             </thead>
             <tbody>
-              {sections.length === 0 ? (
+              {enrolledCards.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="text-center text-muted" style={{ padding: '30px' }}>
+                  <td colSpan="9" className="text-center text-muted" style={{ padding: '30px' }}>
                     You are not enrolled in any sections yet.
                   </td>
                 </tr>
               ) : (
-                sections.map((sec) => (
-                  <tr key={sec.id}>
+                enrolledCards.map((card) => (
+                  <tr key={card.section_id}>
                     <td>
-                      <span className="badge badge-accent">{sec.subject_details?.code || 'CS 101'}</span>
+                      <span className="badge badge-accent">{card.subject_code}</span>
                       <div className="text-muted" style={{ fontSize: '11px', marginTop: '2px' }}>
-                        {sec.subject_details?.name || 'Computer Science'}
+                        {card.subject_name}
                       </div>
                     </td>
-                    <td><strong>{sec.name}</strong></td>
-                    <td>1</td>
-                    <td>1</td>
-                    <td>0</td>
-                    <td>0</td>
-                    <td><strong>100%</strong></td>
+                    <td><strong>{card.section_name}</strong></td>
+                    <td>{card.total_sessions}</td>
+                    <td>{card.present_count}</td>
+                    <td>{card.late_count}</td>
+                    <td>{card.absent_count}</td>
+                    <td>
+                      {card.rate !== null && card.rate !== undefined ? (
+                        <strong>{card.rate}%</strong>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
                     <td className="text-muted" style={{ fontSize: '12px' }}>
-                      Today <span className="badge badge-success" style={{ marginLeft: '4px' }}>P</span>
+                      {card.last_date ? (
+                        <span>
+                          {card.last_date}{' '}
+                          {card.last_status === 'present' && <span className="badge badge-success" style={{ marginLeft: '4px' }}>P</span>}
+                          {card.last_status === 'late' && <span className="badge badge-warning" style={{ marginLeft: '4px' }}>L</span>}
+                          {card.last_status === 'absent' && <span className="badge badge-danger" style={{ marginLeft: '4px' }}>A</span>}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        onClick={() => setSelectedCalendarSection(card)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <Calendar size={13} /> <span>View</span>
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -862,26 +1338,36 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
               </tr>
             </thead>
             <tbody>
-              {sections.length === 0 ? (
+              {recentLogs.length === 0 ? (
                 <tr>
                   <td colSpan="5" className="text-center text-muted" style={{ padding: '30px' }}>
                     No attendance records yet. Records appear after your instructor takes class attendance.
                   </td>
                 </tr>
               ) : (
-                sections.map((sec) => (
-                  <tr key={sec.id}>
-                    <td>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                recentLogs.map((log) => (
+                  <tr key={log.id}>
+                    <td>{log.date}</td>
                     <td>
-                      <span className="badge badge-accent">{sec.subject_details?.code || 'CS 101'}</span>
+                      <span className="badge badge-accent">{log.subject_code}</span>
                     </td>
-                    <td>{sec.name}</td>
+                    <td>{log.section_name}</td>
                     <td>
-                      <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                        <CheckCircle size={12} /> Present
-                      </span>
+                      {log.status === 'present' ? (
+                        <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle size={12} /> Present
+                        </span>
+                      ) : log.status === 'late' ? (
+                        <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={12} /> Late
+                        </span>
+                      ) : (
+                        <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <AlertTriangle size={12} /> Absent
+                        </span>
+                      )}
                     </td>
-                    <td className="text-muted">8:14 AM</td>
+                    <td className="text-muted">{log.time}</td>
                   </tr>
                 ))
               )}
@@ -889,6 +1375,19 @@ export default function DashboardView({ user, onNavigate, onStartSession, onSetH
           </table>
         </div>
       </div>
+
+      {/* Calendar Modal */}
+      {selectedCalendarSection && (
+        <StudentAttendanceCalendarModal
+          isOpen={Boolean(selectedCalendarSection)}
+          onClose={() => setSelectedCalendarSection(null)}
+          sectionId={selectedCalendarSection.section_id}
+          initialTitle={selectedCalendarSection.title}
+          initialSubject={selectedCalendarSection.subject_name}
+          initialInstructor={selectedCalendarSection.teacher_name}
+        />
+      )}
     </div>
   );
 }
+

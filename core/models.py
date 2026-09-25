@@ -35,6 +35,10 @@ class ProgramSection(models.Model):
     ]
 
     program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name='standard_sections')
+    course = models.CharField(
+        max_length=50, blank=True, default='',
+        help_text='Course/Degree program abbreviation (e.g., BSIT, BSCS, BSEMC, BSA, BSCrim)'
+    )
     name = models.CharField(max_length=50)
     year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, default=1)
     description = models.CharField(max_length=150, blank=True, default='')
@@ -44,10 +48,11 @@ class ProgramSection(models.Model):
         verbose_name = 'Program Section'
         verbose_name_plural = 'Program Sections'
         unique_together = ['program', 'name']
-        ordering = ['program__code', 'year_level', 'name']
+        ordering = ['program__code', 'course', 'year_level', 'name']
 
     def __str__(self):
-        return f"{self.program.code} - {self.name} ({self.get_year_level_display()})"
+        course_part = f" • {self.course}" if self.course else ""
+        return f"{self.program.code} - {self.name} ({self.get_year_level_display()}{course_part})"
 
 
 class Subject(models.Model):
@@ -89,6 +94,7 @@ class Section(models.Model):
     program_section = models.ForeignKey(
         ProgramSection, on_delete=models.SET_NULL, null=True, blank=True, related_name='offerings'
     )
+    course = models.CharField(max_length=50, blank=True, default='')
     name = models.CharField(max_length=50)
     year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, default=1)
     subject = models.ForeignKey(
@@ -111,6 +117,8 @@ class Section(models.Model):
             self.name = self.program_section.name
             self.program = self.program_section.program
             self.year_level = self.program_section.year_level
+            if self.program_section.course:
+                self.course = self.program_section.course
         super().save(*args, **kwargs)
 
     @property
@@ -146,17 +154,22 @@ class Section(models.Model):
 
 
 class StudentSection(models.Model):
-    """Enrollment: which student belongs to which section."""
+    """Enrollment: which student belongs to which section (Regular Block or Irregular Subject)."""
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='enrollments')
     section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name='enrollments')
+    subject = models.ForeignKey(
+        'Subject', on_delete=models.CASCADE, null=True, blank=True, related_name='student_enrollments',
+        help_text='Leave blank for regular block section; select subject for irregular student.'
+    )
     enrolled_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ['student', 'section']
+        unique_together = ['student', 'section', 'subject']
         verbose_name = 'Student Enrollment'
 
     def __str__(self):
-        return f"{self.student} → {self.section}"
+        subj = f" [{self.subject.code}]" if self.subject else ""
+        return f"{self.student} → {self.section}{subj}"
 
 
 class Schedule(models.Model):
@@ -171,6 +184,10 @@ class Schedule(models.Model):
     ]
 
     section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name='schedules')
+    subject = models.ForeignKey(
+        'Subject', on_delete=models.CASCADE, null=True, blank=True, related_name='schedules',
+        help_text='The specific academic course subject this schedule meeting belongs to.'
+    )
     day_of_week = models.CharField(max_length=3, choices=DAY_CHOICES, verbose_name='Day 1')
     day_2 = models.CharField(
         max_length=3, choices=DAY_CHOICES, null=True, blank=True,
@@ -185,15 +202,15 @@ class Schedule(models.Model):
     effective_from = models.DateField(null=True, blank=True, help_text='First date this schedule is active (leave blank = no start restriction)')
     effective_to = models.DateField(null=True, blank=True, help_text='Last date this schedule is active (leave blank = no end restriction)')
 
-    DAY_SHORT = {'Mon': 'M', 'Tue': 'T', 'Wed': 'W', 'Thu': 'TH', 'Fri': 'F', 'Sat': 'S', 'Sun': 'Su'}
+    DAY_SHORT = {'Mon': 'M', 'Tue': 'T', 'Wed': 'W', 'Thu': 'TH', 'Fri': 'F', 'Sat': 'S', 'Sun': 'SU'}
 
     @property
     def days_display(self):
-        """Returns e.g. 'T–TH', 'M–W', or 'Sat' for display."""
+        """Returns e.g. 'T/TH', 'M/W', or 'S' for display."""
         d1 = self.DAY_SHORT.get(self.day_of_week, self.day_of_week)
         if self.day_2:
             d2 = self.DAY_SHORT.get(self.day_2, self.day_2)
-            return f"{d1}–{d2}"
+            return f"{d1}/{d2}"
         return d1
 
     @property
@@ -215,12 +232,15 @@ class Schedule(models.Model):
 
     @property
     def time_display(self):
-        """Returns e.g. '6:00–8:30 PM' or '8:00–9:30 AM'."""
+        """Returns e.g. '06:00PM-07:30PM/06:00PM-07:30PM' or '09:00AM-10:30AM'."""
         def fmt(t):
             h = t.hour % 12 or 12
-            return f"{h}:{t.minute:02d}"
-        period = 'PM' if self.end_time.hour >= 12 else 'AM'
-        return f"{fmt(self.start_time)}–{fmt(self.end_time)} {period}"
+            period = 'PM' if t.hour >= 12 else 'AM'
+            return f"{h:02d}:{t.minute:02d}{period}"
+        slot = f"{fmt(self.start_time)}-{fmt(self.end_time)}"
+        if self.day_2:
+            return f"{slot}/{slot}"
+        return slot
 
     def __str__(self):
         return f"{self.section.name} | {self.days_display} {self.time_display} @ {self.room}"

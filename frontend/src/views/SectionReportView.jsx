@@ -50,22 +50,72 @@ export default function SectionReportView({ user, onSetHeaderInfo }) {
     async function loadSectionAttendance() {
       if (!selectedSectionId) return;
       try {
+        setLoading(true);
         const sessions = await Api.getSessions();
-        const secSessions = sessions.filter((s) => s.schedule_details?.section == selectedSectionId || true);
+        const secSessions = sessions.filter(
+          (s) => s.schedule_details?.section == selectedSectionId || s.schedule?.section == selectedSectionId
+        );
         if (secSessions.length > 0) {
-          const detail = await Api.getSessionDetail(secSessions[0].id);
-          setRecords(detail.records || []);
+          // Fetch details for the sessions and consolidate records
+          const detailPromises = secSessions.slice(0, 5).map((s) => Api.getSessionDetail(s.id).catch(() => null));
+          const details = await Promise.all(detailPromises);
+          const allRecs = [];
+          const seen = new Set();
+          for (const d of details) {
+            if (d && d.records) {
+              for (const r of d.records) {
+                const key = `${r.student || r.id}-${r.session}`;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  allRecs.push(r);
+                }
+              }
+            }
+          }
+          setRecords(allRecs.length > 0 ? allRecs : (details[0]?.records || []));
         } else {
           setRecords([]);
         }
       } catch (err) {
         console.error('Failed to load report:', err);
+      } finally {
+        setLoading(false);
       }
     }
     loadSectionAttendance();
   }, [selectedSectionId]);
 
   const selectedSection = sections.find((s) => s.id == selectedSectionId);
+
+  // Compute instructors & subjects string for selected section
+  const sectionSubjects = selectedSection?.subjects && selectedSection.subjects.length > 0
+    ? selectedSection.subjects.map((sub) => sub.code).join(', ')
+    : (selectedSection?.effective_subject_code || selectedSection?.subject_details?.code || 'CS 101');
+
+  const sectionInstructors = selectedSection?.subjects && selectedSection.subjects.length > 0
+    ? selectedSection.subjects
+        .map((sub) => sub.teacher_details?.user ? `${sub.teacher_details.user.first_name} ${sub.teacher_details.user.last_name}` : 'TBA')
+        .filter((val, idx, self) => self.indexOf(val) === idx)
+        .join(', ')
+    : (selectedSection?.teacher_details?.user?.first_name || 'Assigned Faculty');
+
+  const formatTimestamp = (ts) => {
+    if (!ts) return '—';
+    try {
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return ts;
+      return d.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      });
+    } catch {
+      return ts;
+    }
+  };
 
   return (
     <div className="page-content">
@@ -96,13 +146,13 @@ export default function SectionReportView({ user, onSetHeaderInfo }) {
               Subject:
             </span>
             <span className="badge badge-accent" style={{ fontWeight: '700' }}>
-              {selectedSection?.subject_details?.code || 'CS 101'}
+              {sectionSubjects}
             </span>
           </div>
         </div>
 
         <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-          Instructor: <strong>{selectedSection?.teacher_details?.user?.first_name || 'Assigned Faculty'}</strong>
+          Instructor: <strong>{sectionInstructors}</strong>
         </div>
       </div>
 
@@ -120,7 +170,13 @@ export default function SectionReportView({ user, onSetHeaderInfo }) {
               </tr>
             </thead>
             <tbody>
-              {records.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan="5" style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    Loading attendance records...
+                  </td>
+                </tr>
+              ) : records.length === 0 ? (
                 <tr>
                   <td colSpan="5" style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No attendance records logged for this section yet.
@@ -129,20 +185,29 @@ export default function SectionReportView({ user, onSetHeaderInfo }) {
               ) : (
                 records.map((rec) => {
                   const isPresent = rec.status === 'present';
+                  const isLate = rec.status === 'late';
+                  const st = rec.student_details || rec.student_info || (typeof rec.student === 'object' ? rec.student : {}) || {};
+                  const studentName = rec.student_name || (st.user ? `${st.user.first_name || ''} ${st.user.last_name || ''}`.trim() : '') || 'Student';
+                  const studentId = rec.student_id_number || st.student_id || '—';
+
                   return (
                     <tr key={rec.id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '14px 18px' }}>
                         <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
-                          {rec.student?.user?.first_name} {rec.student?.user?.last_name}
+                          {studentName}
                         </div>
                       </td>
                       <td style={{ padding: '14px 18px', fontWeight: '600' }}>
-                        {rec.student?.student_id}
+                        {studentId}
                       </td>
                       <td style={{ padding: '14px 18px' }}>
                         {isPresent ? (
                           <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                             <CheckCircle2 size={11} /> Present
+                          </span>
+                        ) : isLate ? (
+                          <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <Clock size={11} /> Late
                           </span>
                         ) : (
                           <span className="badge badge-muted" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -151,11 +216,11 @@ export default function SectionReportView({ user, onSetHeaderInfo }) {
                         )}
                       </td>
                       <td style={{ padding: '14px 18px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                        {rec.recognized_at || '—'}
+                        {formatTimestamp(rec.recognized_at)}
                       </td>
                       <td style={{ padding: '14px 18px' }}>
                         <span className="badge badge-outline" style={{ fontWeight: '700' }}>
-                          {isPresent ? '100%' : '0%'}
+                          {isPresent ? '100%' : isLate ? '80%' : '0%'}
                         </span>
                       </td>
                     </tr>

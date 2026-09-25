@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Award, Plus, X, Check, BookOpen, Trash2 } from 'lucide-react';
+import { Award, Plus, X, Check, BookOpen, Trash2, Edit2 } from 'lucide-react';
 import { Api } from '../api';
 import ActionPopover from '../components/ActionPopover';
+import Toast from '../components/Toast';
 
 export default function ProgramsView({ user, onSetHeaderInfo }) {
   const [programs, setPrograms] = useState([]);
@@ -16,6 +17,12 @@ export default function ProgramsView({ user, onSetHeaderInfo }) {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Edit state
+  const [editingProgram, setEditingProgram] = useState(null);
+  const [editFormData, setEditFormData] = useState({ code: '', name: '', college: '', description: '' });
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editErrorMsg, setEditErrorMsg] = useState('');
 
   const loadPrograms = async () => {
     try {
@@ -78,14 +85,42 @@ export default function ProgramsView({ user, onSetHeaderInfo }) {
     }
   };
 
+  const handleOpenEdit = (prog) => {
+    setEditingProgram(prog);
+    setEditErrorMsg('');
+    setEditFormData({
+      code: prog.code || '',
+      name: prog.name || '',
+      college: prog.college || '',
+      description: prog.description || '',
+    });
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editFormData.code || !editFormData.name || !editFormData.college) {
+      setEditErrorMsg('Please fill in all required fields.');
+      return;
+    }
+    try {
+      setEditSubmitting(true);
+      setEditErrorMsg('');
+      await Api.updateProgram(editingProgram.id, editFormData);
+      setSuccessMsg(`Program "${editFormData.code}" updated successfully!`);
+      setEditingProgram(null);
+      await loadPrograms();
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      setEditErrorMsg(err.message || 'Failed to update program.');
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
   return (
     <div className="page-content">
-      {successMsg && (
-        <div className="alert alert-success" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Check size={18} />
-          <span>{successMsg}</span>
-        </div>
-      )}
+      <Toast message={successMsg} type="success" onClose={() => setSuccessMsg('')} />
+      <Toast message={errorMsg} type="error" onClose={() => setErrorMsg('')} />
 
       {/* Programs Table */}
       <div className="card">
@@ -148,6 +183,12 @@ export default function ProgramsView({ user, onSetHeaderInfo }) {
                       <td style={{ textAlign: 'right' }}>
                         <ActionPopover
                           items={[
+                            {
+                              label: 'Edit Program',
+                              icon: Edit2,
+                              onClick: () => handleOpenEdit(prog),
+                            },
+                            { isDivider: true },
                             {
                               label: 'Delete Program',
                               icon: Trash2,
@@ -267,6 +308,59 @@ export default function ProgramsView({ user, onSetHeaderInfo }) {
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
                   <Check size={16} />
                   <span>{submitting ? 'Creating...' : 'Create Program'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Program Modal */}
+      {editingProgram && (
+        <div
+          className="modal-backdrop open"
+          style={{ display: 'flex', opacity: 1, zIndex: 1200 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setEditingProgram(null); }}
+        >
+          <div className="modal-card modal-md">
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit2 size={18} style={{ color: 'var(--primary)' }} />
+                <span>Edit Program</span>
+              </h3>
+              <button type="button" className="btn btn-outline btn-sm modal-close-btn" onClick={() => setEditingProgram(null)} style={{ padding: '4px', border: 'none', background: 'none', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleEditSubmit}>
+              <div className="modal-body" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {editErrorMsg && (
+                  <div className="alert alert-danger" style={{ fontSize: '13px', padding: '10px 14px' }}>{editErrorMsg}</div>
+                )}
+                <div className="grid-2">
+                  <div className="form-group">
+                    <label className="form-label">Program Code *</label>
+                    <input type="text" className="form-control" value={editFormData.code} onChange={(e) => setEditFormData({ ...editFormData, code: e.target.value })} required />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">College / Department *</label>
+                    <input type="text" className="form-control" value={editFormData.college} onChange={(e) => setEditFormData({ ...editFormData, college: e.target.value })} required />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Full Program Name *</label>
+                  <input type="text" className="form-control" value={editFormData.name} onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })} required />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Description (Optional)</label>
+                  <textarea className="form-control" rows="2" value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} />
+                </div>
+              </div>
+              <div className="modal-footer" style={{ padding: '14px 22px', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn btn-outline" onClick={() => setEditingProgram(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={editSubmitting}>
+                  <Check size={16} />
+                  <span>{editSubmitting ? 'Saving...' : 'Save Changes'}</span>
                 </button>
               </div>
             </form>

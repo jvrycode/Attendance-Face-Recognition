@@ -490,5 +490,146 @@ class CoreFeatureTests(TestCase):
         self.assertEqual(res_2027.status_code, 200)
         self.assertContains(res_2027, 'January 2027')
 
+    def test_fsuu_single_section_multiple_subjects_and_instructors(self):
+        """Verify FSUU model: 1 Section (e.g. IT-43) contains multiple dedicated subjects with separate instructors."""
+        teacher2_user = User.objects.create_user(
+            username='prof_subrastas', first_name='John Ray', last_name='Subrastas',
+            role='teacher', password='StrongPassword123!'
+        )
+        teacher2 = Teacher.objects.create(user=teacher2_user, employee_id='TCH-002', department='CITEC')
+
+        # Single section IT-43
+        sec_it43 = Section.objects.create(name='IT-43')
+
+        # Multiple subjects dedicated to IT-43
+        subj_it473 = Subject.objects.create(
+            name='System Integration Architecture', code='IT 473', units=3,
+            section=sec_it43, teacher=self.teacher
+        )
+        subj_ge119 = Subject.objects.create(
+            name='Living in IT Era', code='GE 119', units=3,
+            section=sec_it43, teacher=teacher2
+        )
+        subj_capstone = Subject.objects.create(
+            name='Capstone Project', code='IT 474', units=3,
+            section=sec_it43, teacher=None  # Unassigned instructor
+        )
+
+        self.assertEqual(sec_it43.subjects.count(), 3)
+        self.assertIn(subj_it473, sec_it43.subjects.all())
+        self.assertIn(subj_ge119, sec_it43.subjects.all())
+        self.assertIn(subj_capstone, sec_it43.subjects.all())
+        self.assertEqual(subj_it473.teacher, self.teacher)
+        self.assertEqual(subj_ge119.teacher, teacher2)
+        self.assertIsNone(subj_capstone.teacher)
+
+    def test_irregular_student_subject_specific_attendance(self):
+        """
+        Verify FSUU irregular student workflow:
+        A 4th year student enrolled in IT-11 for IT 101 ONLY appears in IT 101 attendance,
+        and is NOT included or falsely marked absent in MATH 101.
+        """
+        # Section IT-11
+        sec_it11 = Section.objects.create(name='IT-11')
+        subj_it101 = Subject.objects.create(name='Intro to Computing', code='IT 101', section=sec_it11, teacher=self.teacher)
+        subj_math101 = Subject.objects.create(name='Calculus', code='MATH 101', section=sec_it11, teacher=self.teacher)
+
+        sched_it101 = Schedule.objects.create(
+            section=sec_it11, subject=subj_it101, day_of_week='Mon',
+            start_time=time(8, 0), end_time=time(9, 30), room='Lab 1'
+        )
+        sched_math101 = Schedule.objects.create(
+            section=sec_it11, subject=subj_math101, day_of_week='Tue',
+            start_time=time(10, 0), end_time=time(11, 30), room='Room 301'
+        )
+
+        # 1st year regular student (regular block enrollment in IT-11: subject is NULL)
+        stud1_user = User.objects.create_user(username='stud_first_year', role='student', password='StrongPassword123!')
+        stud_regular = Student.objects.create(user=stud1_user, student_id='STU-2026-101', year_level=1)
+        StudentSection.objects.create(student=stud_regular, section=sec_it11, subject=None)
+
+        # 4th year irregular student (irregular subject-specific enrollment in IT-11: subject=subj_it101)
+        stud4_user = User.objects.create_user(username='stud_fourth_year_irreg', role='student', password='StrongPassword123!')
+        stud_irreg = Student.objects.create(user=stud4_user, student_id='STU-2022-401', year_level=4)
+        StudentSection.objects.create(student=stud_irreg, section=sec_it11, subject=subj_it101)
+
+        client = Client()
+        client.force_login(self.admin_user)
+
+        # Start Attendance Session for IT 101 (API endpoint)
+        res_it101 = client.post(
+            '/api/attendance/sessions/start/',
+            data={'schedule_id': sched_it101.pk},
+            content_type='application/json'
+        )
+        self.assertEqual(res_it101.status_code, 201)
+        session_it101_id = res_it101.data['id']
+        session_it101 = AttendanceSession.objects.get(pk=session_it101_id)
+
+        # Both regular student and irregular student MUST be on the roster for IT 101
+        it101_roster = AttendanceRecord.objects.filter(session=session_it101)
+        self.assertEqual(it101_roster.count(), 2)
+        it101_students = [r.student for r in it101_roster]
+        self.assertIn(stud_regular, it101_students)
+        self.assertIn(stud_irreg, it101_students)
+
+        # Start Attendance Session for MATH 101 (API endpoint)
+        res_math101 = client.post(
+            '/api/attendance/sessions/start/',
+            data={'schedule_id': sched_math101.pk},
+            content_type='application/json'
+        )
+        self.assertEqual(res_math101.status_code, 201)
+        session_math101_id = res_math101.data['id']
+        session_math101 = AttendanceSession.objects.get(pk=session_math101_id)
+
+        # Regular student MUST be on roster, but irregular student MUST NOT be included in MATH 101
+        math101_roster = AttendanceRecord.objects.filter(session=session_math101)
+        self.assertEqual(math101_roster.count(), 1)
+        self.assertEqual(math101_roster.first().student, stud_regular)
+        math101_students = [r.student for r in math101_roster]
+        self.assertNotIn(stud_irreg, math101_students)
+
+    def test_section_enrollment_api_endpoints(self):
+        """Verify GET/POST/DELETE on /api/sections/<pk>/enrollments/."""
+        client = Client()
+        client.force_login(self.admin_user)
+
+        sec = Section.objects.create(name='IT-43')
+        subj = Subject.objects.create(name='Living in IT Era', code='GE 119', section=sec)
+
+        # 1. Enroll regular student (subject=None)
+        res_reg = client.post(
+            f'/api/sections/{sec.pk}/enrollments/',
+            data={'student_id': self.student.pk},
+            content_type='application/json'
+        )
+        self.assertEqual(res_reg.status_code, 201)
+        self.assertIsNone(res_reg.data['subject'])
+        enrollment_id = res_reg.data['id']
+
+        # 2. List enrollments
+        res_list = client.get(f'/api/sections/{sec.pk}/enrollments/')
+        self.assertEqual(res_list.status_code, 200)
+        self.assertEqual(len(res_list.data), 1)
+
+        # 3. Enroll irregular student into GE 119
+        stud2_user = User.objects.create_user(username='stud_irreg2', role='student', password='StrongPassword123!')
+        stud2 = Student.objects.create(user=stud2_user, student_id='STU-IRREG-2')
+        res_irreg = client.post(
+            f'/api/sections/{sec.pk}/enrollments/',
+            data={'student_id': stud2.pk, 'subject_id': subj.pk},
+            content_type='application/json'
+        )
+        self.assertEqual(res_irreg.status_code, 201)
+        self.assertEqual(res_irreg.data['subject'], subj.pk)
+        self.assertEqual(res_irreg.data['subject_code'], 'GE 119')
+
+        # 4. Remove enrollment
+        res_del = client.delete(f'/api/sections/{sec.pk}/enrollments/{enrollment_id}/')
+        self.assertEqual(res_del.status_code, 200)
+        self.assertFalse(StudentSection.objects.filter(pk=enrollment_id).exists())
+
+
 
 

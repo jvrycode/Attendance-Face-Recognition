@@ -32,7 +32,9 @@ class FaceService:
     GLOBAL_CACHE_KEY = GLOBAL_CACHE_KEY
 
     @staticmethod
-    def get_section_cache_key(section_id):
+    def get_section_cache_key(section_id, subject_id=None):
+        if subject_id:
+            return f"{SECTION_CACHE_KEY_PREFIX}{section_id}_sub_{subject_id}"
         return f"{SECTION_CACHE_KEY_PREFIX}{section_id}"
 
     @staticmethod
@@ -44,6 +46,10 @@ class FaceService:
             pass
         if section_id:
             cache.delete(FaceService.get_section_cache_key(section_id))
+            try:
+                cache.clear()
+            except Exception:
+                pass
         else:
             try:
                 cache.clear()
@@ -98,19 +104,27 @@ class FaceService:
         return data
 
     @staticmethod
-    def get_section_student_encodings(section):
+    def get_section_student_encodings(section, subject=None):
         """
-        Retrieves enrolled students with face encodings for a section.
+        Retrieves enrolled students with face encodings for a section and optional subject.
         Pre-indexes encodings into a vectorized NumPy matrix for sub-millisecond matching.
         Uses Django cache to avoid repeated DB lookups and JSON parsing per video frame.
+        Supports FSUU irregular students: includes block section students (subject=null)
+        plus irregular students enrolled specifically in this subject.
         """
-        cache_key = FaceService.get_section_cache_key(section.pk)
+        subj_id = subject.pk if (subject and hasattr(subject, 'pk')) else (subject if isinstance(subject, int) else None)
+        cache_key = FaceService.get_section_cache_key(section.pk, subj_id)
         cached_data = cache.get(cache_key)
         if cached_data is not None:
             return cached_data
 
+        from django.db.models import Q
+        filter_q = Q(section=section)
+        if subj_id:
+            filter_q &= (Q(subject__isnull=True) | Q(subject_id=subj_id))
+
         enrollments = StudentSection.objects.filter(
-            section=section
+            filter_q
         ).select_related('student__user').exclude(
             student__face_encoding__isnull=True
         ).exclude(
@@ -119,9 +133,13 @@ class FaceService:
 
         students_list = []
         encodings_list = []
+        seen_student_ids = set()
 
         for enrollment in enrollments:
             student = enrollment.student
+            if student.pk in seen_student_ids:
+                continue
+            seen_student_ids.add(student.pk)
             try:
                 encoding = json.loads(student.face_encoding)
                 encodings_list.append(encoding)
@@ -205,7 +223,8 @@ class FaceService:
             frame_w, frame_h = 640, 480
 
         section = session.schedule.section
-        section_data = FaceService.get_section_student_encodings(section)
+        subject = session.schedule.subject
+        section_data = FaceService.get_section_student_encodings(section, subject=subject)
         students = section_data['students']
         section_matrix = section_data.get('matrix')
         if section_matrix is None and section_data.get('encodings'):

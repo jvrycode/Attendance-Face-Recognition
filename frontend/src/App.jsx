@@ -15,12 +15,51 @@ import SectionReportView from './views/SectionReportView';
 import ReportsView from './views/ReportsView';
 import ProfileView from './views/ProfileView';
 import LiveScannerView from './views/LiveScannerView';
+import StudentEnrollmentView from './views/StudentEnrollmentView';
+
+const VALID_TABS = [
+  'dashboard',
+  'programs',
+  'section_catalog',
+  'sections',
+  'subjects',
+  'schedules',
+  'users',
+  'face_enrollment',
+  'student_enrollment',
+  'section_report',
+  'session_logs',
+  'profile',
+  'scanner',
+];
+
+function getInitialTab() {
+  try {
+    const hash = window.location.hash.replace(/^#\/?/, '').trim();
+    if (hash && VALID_TABS.includes(hash)) {
+      return hash;
+    }
+    const saved = localStorage.getItem('attendfr_active_tab');
+    if (saved && VALID_TABS.includes(saved)) {
+      return saved;
+    }
+  } catch {
+    // fallback
+  }
+  return 'dashboard';
+}
 
 export default function App() {
   const [user, setUser] = useState(TokenStorage.getUser());
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+  const [activeSessionId, setActiveSessionId] = useState(() => {
+    try {
+      return localStorage.getItem('attendfr_active_session_id') || null;
+    } catch {
+      return null;
+    }
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [headerInfo, setHeaderInfo] = useState({
     title: '',
@@ -31,14 +70,26 @@ export default function App() {
   useEffect(() => {
     async function checkAuth() {
       const token = TokenStorage.getAccess();
-      if (token) {
+      const refreshToken = TokenStorage.getRefresh();
+      const cachedUser = TokenStorage.getUser();
+
+      // Optimistically restore cached profile so user stays logged in immediately
+      if (cachedUser) {
+        setUser(cachedUser);
+      }
+
+      if (token || refreshToken) {
         try {
           const profile = await Api.getMe();
           setUser(profile);
-          TokenStorage.set(token, TokenStorage.getRefresh(), profile);
+          TokenStorage.set(TokenStorage.getAccess(), TokenStorage.getRefresh(), profile);
         } catch {
-          TokenStorage.clear();
-          setUser(null);
+          // If token refresh also failed and tokens were cleared
+          if (!TokenStorage.getAccess() && !TokenStorage.getRefresh()) {
+            setUser(null);
+          } else if (!cachedUser) {
+            setUser(null);
+          }
         }
       } else {
         setUser(null);
@@ -74,6 +125,8 @@ export default function App() {
         return 'Users';
       case 'face_enrollment':
         return 'Select Student to Enroll';
+      case 'student_enrollment':
+        return 'Student Admission & Enrollment';
       case 'section_report':
         return user?.role === 'teacher' ? 'Attendance Reports' : 'Section Attendance Report';
       case 'session_logs':
@@ -102,6 +155,14 @@ export default function App() {
 
   const handleTabChange = useCallback((newTab) => {
     setActiveTab(newTab);
+    try {
+      localStorage.setItem('attendfr_active_tab', newTab);
+      if (window.location.hash.replace(/^#\/?/, '').trim() !== newTab) {
+        window.location.hash = `#/${newTab}`;
+      }
+    } catch {
+      // ignore
+    }
     setHeaderInfo({
       title: getTitle(newTab),
       subtitle: '',
@@ -109,15 +170,70 @@ export default function App() {
     });
   }, [getTitle]);
 
+  // Sync with browser URL hash change (e.g. forward/back buttons or direct URL change)
+  useEffect(() => {
+    const handleHashChange = () => {
+      try {
+        const hash = window.location.hash.replace(/^#\/?/, '').trim();
+        if (hash && VALID_TABS.includes(hash) && hash !== activeTab) {
+          setActiveTab(hash);
+          localStorage.setItem('attendfr_active_tab', hash);
+          setHeaderInfo({
+            title: getTitle(hash),
+            subtitle: '',
+            headerActions: null,
+          });
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [activeTab, getTitle]);
+
+  // Sync hash on mount if user is logged in
+  useEffect(() => {
+    if (user) {
+      const currentHash = window.location.hash.replace(/^#\/?/, '').trim();
+      if (!currentHash || currentHash !== activeTab) {
+        window.location.hash = `#/${activeTab}`;
+      }
+    }
+  }, [user, activeTab]);
+
+  const handleStartSession = useCallback((sec) => {
+    const secId = sec?.id || null;
+    setActiveSessionId(secId);
+    try {
+      if (secId) {
+        localStorage.setItem('attendfr_active_session_id', String(secId));
+      } else {
+        localStorage.removeItem('attendfr_active_session_id');
+      }
+    } catch {
+      // ignore
+    }
+    handleTabChange('scanner');
+  }, [handleTabChange]);
+
   const handleLoginSuccess = (userData) => {
     setUser(userData);
-    handleTabChange('dashboard');
+    const destTab = getInitialTab();
+    handleTabChange(destTab);
   };
 
   const handleLogout = () => {
     Api.logout();
+    try {
+      localStorage.removeItem('attendfr_active_tab');
+      localStorage.removeItem('attendfr_active_session_id');
+      window.location.hash = '';
+    } catch {
+      // ignore
+    }
     setUser(null);
-    handleTabChange('dashboard');
+    setActiveTab('dashboard');
     setActiveSessionId(null);
   };
 
@@ -172,10 +288,7 @@ export default function App() {
               user={user}
               onNavigate={handleTabChange}
               onSetHeaderInfo={updateHeaderInfo}
-              onStartSession={(sec) => {
-                setActiveSessionId(sec?.id);
-                handleTabChange('scanner');
-              }}
+              onStartSession={handleStartSession}
             />
           )}
 
@@ -199,12 +312,7 @@ export default function App() {
               user={user}
               onNavigate={handleTabChange}
               onSetHeaderInfo={updateHeaderInfo}
-              onStartSession={(sec) => {
-                if (user?.role === 'teacher') {
-                  setActiveSessionId(sec?.id);
-                  handleTabChange('scanner');
-                }
-              }}
+              onStartSession={handleStartSession}
             />
           )}
 
@@ -225,6 +333,7 @@ export default function App() {
           {activeTab === 'users' && (
             <UsersView
               user={user}
+              onNavigate={handleTabChange}
               onSetHeaderInfo={updateHeaderInfo}
             />
           )}
@@ -232,6 +341,15 @@ export default function App() {
           {activeTab === 'face_enrollment' && (
             <FaceEnrollmentView
               user={user}
+              onNavigate={handleTabChange}
+              onSetHeaderInfo={updateHeaderInfo}
+            />
+          )}
+
+          {activeTab === 'student_enrollment' && (
+            <StudentEnrollmentView
+              user={user}
+              onNavigate={handleTabChange}
               onSetHeaderInfo={updateHeaderInfo}
             />
           )}
@@ -248,12 +366,7 @@ export default function App() {
               user={user}
               onNavigate={handleTabChange}
               onSetHeaderInfo={updateHeaderInfo}
-              onStartSession={(s) => {
-                if (user?.role === 'teacher') {
-                  setActiveSessionId(s.id);
-                  handleTabChange('scanner');
-                }
-              }}
+              onStartSession={handleStartSession}
             />
           )}
 

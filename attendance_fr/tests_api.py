@@ -181,9 +181,16 @@ class RestAttendanceBiometricsApiTests(TestCase):
         self.section = Section.objects.create(
             name='IT-1A', program=self.program, subject=self.subject, teacher=self.teacher
         )
+        today = timezone.localdate()
+        weekday_map = {0: 'Mon', 1: 'Tue', 2: 'Wed', 3: 'Thu', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
+        today_code = weekday_map[today.weekday()]
+        now = timezone.localtime(timezone.now())
+        start_t = (now - timezone.timedelta(minutes=15)).time()
+        end_t = (now + timezone.timedelta(minutes=45)).time()
+
         self.schedule = Schedule.objects.create(
-            section=self.section, day_of_week='Mon',
-            start_time=time(8, 0), end_time=time(10, 0), room='Room 303'
+            section=self.section, day_of_week=today_code,
+            start_time=start_t, end_time=end_t, room='Room 303'
         )
         StudentSection.objects.create(student=self.student, section=self.section)
         self.client = Client()
@@ -203,7 +210,7 @@ class RestAttendanceBiometricsApiTests(TestCase):
         self.assertEqual(res.status_code, 200)
 
     def test_attendance_session_start_api(self):
-        """POST /api/attendance/sessions/start/ launches live session for assigned schedule."""
+        """POST /api/attendance/sessions/start/ launches live session for assigned schedule within class hours."""
         self.client.force_login(self.teacher_u)
         res = self.client.post(
             '/api/attendance/sessions/start/',
@@ -213,6 +220,22 @@ class RestAttendanceBiometricsApiTests(TestCase):
         self.assertIn(res.status_code, [200, 201])
         data = res.json()
         self.assertEqual(data.get('status'), 'open')
+
+    def test_attendance_session_start_outside_schedule_window(self):
+        """Teacher cannot start attendance session outside scheduled day/time."""
+        other_day = 'Tue' if self.schedule.day_of_week != 'Tue' else 'Wed'
+        off_schedule = Schedule.objects.create(
+            section=self.section, day_of_week=other_day,
+            start_time=time(1, 0), end_time=time(2, 0), room='Room 303'
+        )
+        self.client.force_login(self.teacher_u)
+        res = self.client.post(
+            '/api/attendance/sessions/start/',
+            {'schedule_id': off_schedule.pk},
+            content_type='application/json'
+        )
+        self.assertEqual(res.status_code, 403)
+        self.assertIn('cannot be started', res.json().get('error', ''))
 
     def test_attendance_session_close_api(self):
         """POST /api/attendance/sessions/{id}/close/ finalizes session roster."""

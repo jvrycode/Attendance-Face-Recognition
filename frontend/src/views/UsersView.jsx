@@ -4,9 +4,12 @@ import {
   Search,
   Plus,
   UserCheck,
+  UserX,
   Shield,
   GraduationCap,
+  UserPlus,
   X,
+  Check,
   CheckCircle2,
   AlertCircle,
   Loader2,
@@ -15,8 +18,12 @@ import {
 } from 'lucide-react';
 import { Api, apiRequest } from '../api';
 import ActionPopover from '../components/ActionPopover';
+import Toast from '../components/Toast';
+import PasswordInput from '../components/PasswordInput';
+import PhoneInput from '../components/PhoneInput';
+import { getPhPhoneValidationMessage, checkPasswordCriteria } from '../utils/validation';
 
-export default function UsersView({ user, onSetHeaderInfo }) {
+export default function UsersView({ user, onNavigate, onSetHeaderInfo }) {
   const [users, setUsers] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +67,7 @@ export default function UsersView({ user, onSetHeaderInfo }) {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     loadUsers();
@@ -72,15 +80,26 @@ export default function UsersView({ user, onSetHeaderInfo }) {
         title: 'Users',
         subtitle: 'System users, faculty, staff and students',
         headerActions: (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setShowAddModal(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Plus size={16} />
-            <span>Add User</span>
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => onNavigate && onNavigate('student_enrollment')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <UserPlus size={16} />
+              <span>Enroll Student (FSUU)</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setShowAddModal(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Plus size={16} />
+              <span>Add Staff/Teacher</span>
+            </button>
+          </div>
         ),
       });
     }
@@ -127,6 +146,22 @@ export default function UsersView({ user, onSetHeaderInfo }) {
       setFormError('Please fill in all required fields.');
       return;
     }
+
+    if (formData.phone) {
+      const phoneErr = getPhPhoneValidationMessage(formData.phone);
+      if (phoneErr) {
+        setFormError(phoneErr);
+        return;
+      }
+    }
+
+    const pwdCheck = checkPasswordCriteria(formData.password);
+    if (!pwdCheck.isStrong) {
+      const missing = pwdCheck.criteria.filter((c) => !c.met).map((c) => c.label).join(', ');
+      setFormError(`Password does not meet requirements: ${missing}`);
+      return;
+    }
+
     if (formData.password !== formData.confirm_password) {
       setFormError('Passwords do not match.');
       return;
@@ -169,7 +204,7 @@ export default function UsersView({ user, onSetHeaderInfo }) {
       last_name: u.last_name || '',
       email: u.email || '',
       phone: u.phone || '',
-      is_active: u.is_active !== undefined ? u.is_active : true,
+      is_active: u.is_active !== undefined ? Boolean(u.is_active) : true,
       department: u.teacher_profile?.department || '',
       specialization: u.teacher_profile?.specialization || '',
       employee_id: u.teacher_profile?.employee_id || '',
@@ -183,6 +218,24 @@ export default function UsersView({ user, onSetHeaderInfo }) {
   const handleUpdateUser = async (e) => {
     e.preventDefault();
     if (!editingUser) return;
+
+    if (editFormData.phone) {
+      const phoneErr = getPhPhoneValidationMessage(editFormData.phone);
+      if (phoneErr) {
+        setEditError(phoneErr);
+        return;
+      }
+    }
+
+    if (editFormData.password) {
+      const pwdCheck = checkPasswordCriteria(editFormData.password);
+      if (!pwdCheck.isStrong) {
+        const missing = pwdCheck.criteria.filter((c) => !c.met).map((c) => c.label).join(', ');
+        setEditError(`New password does not meet requirements: ${missing}`);
+        return;
+      }
+    }
+
     try {
       setEditLoading(true);
       setEditError('');
@@ -207,7 +260,26 @@ export default function UsersView({ user, onSetHeaderInfo }) {
       await loadUsers();
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
-      alert(err.message || 'Failed to delete user.');
+      setErrorMsg(err.message || 'Failed to delete user.');
+    }
+  };
+
+  const handleToggleStatus = async (u, nextActive) => {
+    const displayName = u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.username;
+    if (!nextActive && (u.id === user?.id || u.username === user?.username)) {
+      setErrorMsg('You cannot deactivate your own administrative account.');
+      setTimeout(() => setErrorMsg(''), 4000);
+      return;
+    }
+
+    try {
+      await Api.updateUser(u.id, { is_active: nextActive });
+      setSuccessMsg(`User "${displayName}" (@${u.username}) is now ${nextActive ? 'Active' : 'Inactive'}.`);
+      await loadUsers();
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to update user status.');
+      setTimeout(() => setErrorMsg(''), 4000);
     }
   };
 
@@ -225,13 +297,8 @@ export default function UsersView({ user, onSetHeaderInfo }) {
 
   return (
     <div className="page-content">
-
-      {successMsg && (
-        <div className="alert alert-success" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-          <CheckCircle2 size={16} />
-          <span>{successMsg}</span>
-        </div>
-      )}
+      <Toast message={successMsg} type="success" onClose={() => setSuccessMsg('')} />
+      <Toast message={errorMsg} type="error" onClose={() => setErrorMsg('')} />
 
       {/* Filter Tabs & Search Bar */}
       <div className="card" style={{ padding: '16px', border: '1px solid var(--border)', background: 'var(--bg-card)', borderRadius: 'var(--radius)', marginBottom: '20px' }}>
@@ -312,16 +379,59 @@ export default function UsersView({ user, onSetHeaderInfo }) {
                     </td>
                     <td>
                       {u.is_active ? (
-                        <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Deactivate user "${u.first_name || u.username}"?`)) {
+                              handleToggleStatus(u, false);
+                            }
+                          }}
+                          className="badge badge-success"
+                          title="Account is Active. Click to deactivate."
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            border: '1px solid rgba(34, 197, 94, 0.35)',
+                            background: 'rgba(34, 197, 94, 0.1)',
+                            padding: '4px 9px',
+                            borderRadius: '5px',
+                            fontWeight: '600',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
                           <CheckCircle2 size={11} /> Active
-                        </span>
+                        </button>
                       ) : (
-                        <span className="badge badge-danger" style={{ fontSize: '11px' }}>Inactive</span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStatus(u, true)}
+                          className="badge badge-danger"
+                          title="Account is Inactive. Click to activate."
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            border: '1px solid rgba(239, 68, 68, 0.35)',
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            padding: '4px 9px',
+                            borderRadius: '5px',
+                            fontWeight: '600',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <AlertCircle size={11} /> Inactive
+                        </button>
                       )}
                     </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <ActionPopover
                         items={(() => {
+                          const isSelf = u.id === user?.id || u.username === user?.username;
                           const items = [
                             {
                               label: 'Edit User',
@@ -329,7 +439,28 @@ export default function UsersView({ user, onSetHeaderInfo }) {
                               onClick: () => handleOpenEditModal(u),
                             },
                           ];
-                          if (u.id !== user?.id && u.username !== user?.username) {
+                          if (u.is_active) {
+                            if (!isSelf) {
+                              items.push({
+                                label: 'Deactivate Account',
+                                icon: UserX,
+                                isDanger: true,
+                                onClick: () => {
+                                  if (window.confirm(`Deactivate user "${u.first_name || u.username}"?`)) {
+                                    handleToggleStatus(u, false);
+                                  }
+                                },
+                              });
+                            }
+                          } else {
+                            items.push({
+                              label: 'Activate Account',
+                              icon: UserCheck,
+                              isSuccess: true,
+                              onClick: () => handleToggleStatus(u, true),
+                            });
+                          }
+                          if (!isSelf) {
                             items.push({ isDivider: true });
                             items.push({
                               label: 'Delete User',
@@ -436,35 +567,58 @@ export default function UsersView({ user, onSetHeaderInfo }) {
 
                   <div className="form-group">
                     <label className="form-label">Phone</label>
-                    <input
-                      type="text"
-                      className="form-control"
+                    <PhoneInput
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       placeholder="e.g. 09123456789"
                     />
                   </div>
 
-                  <div className="form-group">
+                  <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                     <label className="form-label">Password *</label>
-                    <input
-                      type="password"
-                      className="form-control"
+                    <PasswordInput
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="Create secure password"
                       required
+                      showStrength={true}
                     />
                   </div>
 
-                  <div className="form-group">
+                  <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                     <label className="form-label">Confirm Password *</label>
-                    <input
-                      type="password"
-                      className="form-control"
+                    <PasswordInput
                       value={formData.confirm_password}
                       onChange={(e) => setFormData({ ...formData, confirm_password: e.target.value })}
+                      placeholder="Confirm your password"
                       required
+                      showStrength={false}
                     />
+                    {formData.confirm_password && (
+                      <div
+                        style={{
+                          marginTop: '6px',
+                          fontSize: '11.5px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          color: formData.password === formData.confirm_password ? '#16a34a' : '#dc2626',
+                          fontWeight: '600',
+                        }}
+                      >
+                        {formData.password === formData.confirm_password ? (
+                          <>
+                            <Check size={13} style={{ strokeWidth: 2.5 }} />
+                            <span>Passwords match</span>
+                          </>
+                        ) : (
+                          <>
+                            <X size={13} style={{ strokeWidth: 2.5 }} />
+                            <span>Passwords do not match</span>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -591,9 +745,7 @@ export default function UsersView({ user, onSetHeaderInfo }) {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Phone</label>
-                    <input
-                      type="text"
-                      className="form-control"
+                    <PhoneInput
                       value={editFormData.phone}
                       onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
                     />
@@ -614,12 +766,11 @@ export default function UsersView({ user, onSetHeaderInfo }) {
                   </div>
                   <div className="form-group">
                     <label className="form-label">New Password (optional)</label>
-                    <input
-                      type="password"
-                      className="form-control"
+                    <PasswordInput
                       placeholder="Leave blank to keep unchanged"
                       value={editFormData.password}
                       onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
+                      showStrength={true}
                     />
                   </div>
                 </div>

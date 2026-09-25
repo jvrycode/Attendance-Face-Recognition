@@ -418,11 +418,13 @@ def section_enroll_student_api(request, pk):
 
     if request.method == 'POST':
         student_id = request.POST.get('student_id')
+        subject_id = request.POST.get('subject_id') or request.POST.get('subject')
         if not student_id:
             try:
                 import json
                 body = json.loads(request.body)
                 student_id = body.get('student_id')
+                subject_id = body.get('subject_id') or body.get('subject')
             except Exception:
                 pass
 
@@ -430,7 +432,11 @@ def section_enroll_student_api(request, pk):
             return JsonResponse({'success': False, 'error': 'Student ID is required.'}, status=400)
 
         student = get_object_or_404(Student, pk=student_id)
-        enrollment, created = StudentSection.objects.get_or_create(student=student, section=section)
+        subject = None
+        if subject_id:
+            subject = get_object_or_404(Subject, pk=subject_id, section=section)
+
+        enrollment, created = StudentSection.objects.get_or_create(student=student, section=section, subject=subject)
 
         from face_app.services.face_service import FaceService
         FaceService.invalidate_cache(section.pk)
@@ -511,17 +517,34 @@ def api_section_details(request, pk):
         for s in section.schedules.all()
     ]
 
+    subjects_data = [
+        {
+            'id': s.id,
+            'code': s.code,
+            'name': s.name,
+            'units': s.units,
+            'teacher_name': s.teacher.user.get_full_name() if s.teacher and s.teacher.user else 'Unassigned',
+            'teacher_id': s.teacher.id if s.teacher else None,
+        }
+        for s in section.subjects.all()
+    ]
+
     students_data = [
         {
             'id': e.student.pk,
+            'enrollment_id': e.pk,
             'name': e.student.user.get_full_name() or e.student.user.username,
             'student_id': e.student.student_id,
             'course': e.student.course,
             'year_level': e.student.year_level,
             'is_face_enrolled': e.student.is_face_enrolled,
             'avatar_letter': (e.student.user.first_name or e.student.user.username)[0].upper(),
+            'is_irregular': e.subject_id is not None,
+            'subject_id': e.subject_id,
+            'subject_code': e.subject.code if e.subject else None,
+            'subject_name': e.subject.name if e.subject else None,
         }
-        for e in section.enrollments.select_related('student__user').all()
+        for e in section.enrollments.select_related('student__user', 'subject').all()
     ]
 
     data = {
@@ -536,7 +559,8 @@ def api_section_details(request, pk):
         'teacher_email': section.teacher.user.email if section.teacher else '',
         'school_year': section.school_year,
         'semester': section.get_semester_display() if hasattr(section, 'get_semester_display') else section.semester,
-        'student_count': section.enrollments.count(),
+        'student_count': section.enrollments.values('student_id').distinct().count(),
+        'subjects': subjects_data,
         'schedules': schedules_data,
         'students': students_data,
     }
@@ -675,11 +699,20 @@ def session_start(request, schedule_pk):
             status='open',
         )
         # Pre-populate attendance records as "absent" for all enrolled students
-        enrollments = StudentSection.objects.filter(section=schedule.section).select_related('student')
-        records = [
-            AttendanceRecord(session=session, student=e.student, status='absent')
-            for e in enrollments
-        ]
+        from django.db.models import Q
+        if schedule.subject:
+            enrollments = StudentSection.objects.filter(
+                Q(section=schedule.section) & (Q(subject__isnull=True) | Q(subject=schedule.subject))
+            ).select_related('student').distinct()
+        else:
+            enrollments = StudentSection.objects.filter(section=schedule.section).select_related('student')
+
+        seen_students = set()
+        records = []
+        for e in enrollments:
+            if e.student_id not in seen_students:
+                seen_students.add(e.student_id)
+                records.append(AttendanceRecord(session=session, student=e.student, status='absent'))
         AttendanceRecord.objects.bulk_create(records)
         messages.success(request, f'Attendance session started for {schedule.section.name}.')
         return redirect('session_live', pk=session.pk)
@@ -699,6 +732,7 @@ def _user_can_manage_session(user, session):
             return False
         return (
             (session.started_by == teacher) or
+            (session.schedule.subject and session.schedule.subject.teacher == teacher) or
             (session.schedule.section.teacher == teacher) or
             session.schedule.section.subjects.filter(teacher=teacher).exists()
         )
@@ -1347,9 +1381,19 @@ def mark_present_api(request):
         if not _user_can_manage_session(request.user, session):
             return JsonResponse({'error': 'Forbidden: You are not assigned to manage this attendance session.'}, status=403)
 
-        # Verification: student must be enrolled in this section
-        if not StudentSection.objects.filter(section=session.schedule.section, student=student).exists():
-            return JsonResponse({'error': f'Student {student.student_id} is not enrolled in this section.'}, status=400)
+        # Verification: student must be enrolled in this section and subject (if irregular)
+        from django.db.models import Q
+        sched_subject = session.schedule.subject
+        if sched_subject:
+            enrolled = StudentSection.objects.filter(
+                Q(section=session.schedule.section, student=student) &
+                (Q(subject__isnull=True) | Q(subject=sched_subject))
+            ).exists()
+        else:
+            enrolled = StudentSection.objects.filter(section=session.schedule.section, student=student).exists()
+
+        if not enrolled:
+            return JsonResponse({'error': f'Student {student.student_id} is not enrolled in this section or subject.'}, status=400)
 
         record, is_new = AttendanceService.mark_attendance(
             session=session,

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { User, Save, Info, Check, AlertCircle } from 'lucide-react';
 import { Api } from '../api';
+import Toast from '../components/Toast';
+import PhoneInput from '../components/PhoneInput';
+import { getPhPhoneValidationMessage } from '../utils/validation';
 
 export default function ProfileView({ user, onUserUpdated, onSetHeaderInfo }) {
   const [formData, setFormData] = useState({
@@ -25,6 +28,13 @@ export default function ProfileView({ user, onUserUpdated, onSetHeaderInfo }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (formData.phone) {
+      const phoneErr = getPhPhoneValidationMessage(formData.phone);
+      if (phoneErr) {
+        setErrorMsg(phoneErr);
+        return;
+      }
+    }
     try {
       setSubmitting(true);
       setErrorMsg('');
@@ -41,19 +51,8 @@ export default function ProfileView({ user, onUserUpdated, onSetHeaderInfo }) {
 
   return (
     <div className="page-content">
-
-      {successMsg && (
-        <div className="alert alert-success" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Check size={16} />
-          <span>{successMsg}</span>
-        </div>
-      )}
-      {errorMsg && (
-        <div className="alert alert-danger" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <AlertCircle size={16} />
-          <span>{errorMsg}</span>
-        </div>
-      )}
+      <Toast message={successMsg} type="success" onClose={() => setSuccessMsg('')} />
+      <Toast message={errorMsg} type="error" onClose={() => setErrorMsg('')} />
 
       <div className="grid-2" style={{ alignItems: 'start', gap: '24px' }}>
         {/* Left Card: Profile Settings */}
@@ -106,11 +105,10 @@ export default function ProfileView({ user, onUserUpdated, onSetHeaderInfo }) {
                 <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
                   Phone Number
                 </label>
-                <input
-                  type="text"
-                  className="form-control"
+                <PhoneInput
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="e.g. 09123456789"
                 />
               </div>
 

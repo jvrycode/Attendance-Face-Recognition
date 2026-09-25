@@ -15,8 +15,9 @@ import {
 } from 'lucide-react';
 import { Api } from '../api';
 import ActionPopover from '../components/ActionPopover';
+import PasswordInput from '../components/PasswordInput';
 
-export default function FaceEnrollmentView({ user, onSetHeaderInfo }) {
+export default function FaceEnrollmentView({ user, onNavigate, onSetHeaderInfo }) {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -74,7 +75,7 @@ export default function FaceEnrollmentView({ user, onSetHeaderInfo }) {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => setShowRegisterModal(true)}
+            onClick={() => (onNavigate ? onNavigate('student_enrollment') : setShowRegisterModal(true))}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             <UserPlus size={16} />
@@ -290,10 +291,10 @@ export default function FaceEnrollmentView({ user, onSetHeaderInfo }) {
             <button
               type="button"
               className="btn btn-outline btn-sm"
-              onClick={() => setShowRegisterModal(true)}
+              onClick={() => (onNavigate ? onNavigate('student_enrollment') : setShowRegisterModal(true))}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
             >
-              <Plus size={14} /> <span>Add Student</span>
+              <Plus size={14} /> <span>Enroll Student (FSUU)</span>
             </button>
           </div>
         </div>
@@ -345,6 +346,10 @@ export default function FaceEnrollmentView({ user, onSetHeaderInfo }) {
                           <img
                             src={student.face_image}
                             alt=""
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(student.user?.first_name || 'Student')}&background=6366f1&color=fff`;
+                            }}
                             style={{
                               width: '36px',
                               height: '36px',
@@ -556,15 +561,62 @@ export default function FaceEnrollmentView({ user, onSetHeaderInfo }) {
                       flexDirection: 'column',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '8px',
-                      color: 'var(--text-muted)',
                       padding: '24px',
+                      textAlign: 'center',
                     }}
                   >
-                    <Camera size={44} style={{ opacity: 0.35 }} />
-                    <p style={{ margin: 0, fontSize: '13px' }}>
-                      Camera is off. Click "Start Camera" below to begin.
-                    </p>
+                    <div
+                      style={{
+                        width: '54px',
+                        height: '54px',
+                        borderRadius: '50%',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: '12px',
+                      }}
+                    >
+                      <Camera size={24} style={{ color: '#94a3b8' }} />
+                    </div>
+                    <div style={{ fontSize: '15px', fontWeight: '700', color: '#f1f5f9' }}>
+                      Camera Feed Offline
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px', maxWidth: '300px', lineHeight: 1.4 }}>
+                      Click &ldquo;Start Camera&rdquo; to begin student biometric enrollment
+                    </div>
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      style={{
+                        marginTop: '16px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 22px',
+                        fontWeight: '700',
+                        fontSize: '13px',
+                        borderRadius: 'var(--radius)',
+                        background: '#ffffff',
+                        color: '#0f172a',
+                        border: 'none',
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.35)',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#f1f5f9';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = '#ffffff';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                      }}
+                    >
+                      <Camera size={16} style={{ color: '#0f172a' }} />
+                      <span>Start Camera</span>
+                    </button>
                   </div>
                 )}
 
@@ -621,48 +673,37 @@ export default function FaceEnrollmentView({ user, onSetHeaderInfo }) {
               </div>
 
               {/* Controls */}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  gap: '10px',
-                  flexWrap: 'wrap',
-                  marginTop: '16px',
-                }}
-              >
-                {!cameraActive ? (
+              {cameraActive && (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    gap: '10px',
+                    flexWrap: 'wrap',
+                    marginTop: '16px',
+                  }}
+                >
                   <button
                     type="button"
-                    className="btn btn-primary"
-                    onClick={startCamera}
+                    className="btn btn-success"
+                    onClick={captureAndEnroll}
+                    disabled={enrolling}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                   >
-                    <Camera size={16} /> <span>Start Camera</span>
+                    <Target size={16} />
+                    <span>{enrolling ? 'Processing...' : 'Capture & Enroll'}</span>
                   </button>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="btn btn-success"
-                      onClick={captureAndEnroll}
-                      disabled={enrolling}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      <Target size={16} />
-                      <span>{enrolling ? 'Processing...' : 'Capture & Enroll'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-outline"
-                      onClick={stopCamera}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      <Square size={16} /> <span>Stop Camera</span>
-                    </button>
-                  </>
-                )}
-              </div>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={stopCamera}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Square size={16} /> <span>Stop Camera</span>
+                  </button>
+                </div>
+              )}
 
               {/* Results Alert */}
               {resultMsg && (
@@ -881,48 +922,31 @@ export default function FaceEnrollmentView({ user, onSetHeaderInfo }) {
                     />
                   </div>
 
-                  <div>
+                  <div style={{ gridColumn: 'span 2' }}>
                     <label className="form-label" style={{ fontWeight: 600, fontSize: '13px', display: 'block', marginBottom: '4px' }}>
                       Degree Course *
                     </label>
                     <input
                       type="text"
                       className="form-control"
-                      placeholder="e.g. BSIT"
+                      placeholder="e.g. BSCS, BSIT"
                       required
                       value={registerForm.course}
                       onChange={(e) => setRegisterForm({ ...registerForm, course: e.target.value })}
                     />
                   </div>
 
-                  <div>
-                    <label className="form-label" style={{ fontWeight: 600, fontSize: '13px', display: 'block', marginBottom: '4px' }}>
-                      Year Level *
-                    </label>
-                    <select
-                      className="form-control"
-                      value={registerForm.year_level}
-                      onChange={(e) => setRegisterForm({ ...registerForm, year_level: Number(e.target.value) })}
-                    >
-                      <option value={1}>1st Year</option>
-                      <option value={2}>2nd Year</option>
-                      <option value={3}>3rd Year</option>
-                      <option value={4}>4th Year</option>
-                    </select>
-                  </div>
-
                   <div style={{ gridColumn: 'span 2' }}>
                     <label className="form-label" style={{ fontWeight: 600, fontSize: '13px', display: 'block', marginBottom: '4px' }}>
                       Account Password
                     </label>
-                    <input
-                      type="password"
-                      className="form-control"
+                    <PasswordInput
                       placeholder="Leave blank to use default student123"
                       value={registerForm.password}
                       onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
+                      showStrength={registerForm.password.length > 0}
                     />
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                       Default password is <code>student123</code>
                     </div>
                   </div>

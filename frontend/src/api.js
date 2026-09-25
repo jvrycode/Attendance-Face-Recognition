@@ -56,14 +56,14 @@ export async function apiRequest(endpoint, options = {}) {
       });
       if (refreshRes.ok) {
         const data = await refreshRes.json();
-        TokenStorage.set(data.access, null, null);
+        TokenStorage.set(data.access, data.refresh || null, null);
         headers['Authorization'] = `Bearer ${data.access}`;
         response = await fetch(url, { ...options, headers });
-      } else {
+      } else if (refreshRes.status === 401 || refreshRes.status === 400) {
         TokenStorage.clear();
       }
     } catch {
-      TokenStorage.clear();
+      // Network failure during refresh - avoid wiping stored credentials on transient offline state
     }
   }
 
@@ -223,8 +223,18 @@ export const Api = {
     return res.json();
   },
 
-  getProgramSections: async (programId = null) => {
-    const q = programId ? `?program=${programId}` : '';
+  getProgramSections: async (filters = null) => {
+    let q = '';
+    if (typeof filters === 'number' || (typeof filters === 'string' && filters)) {
+      q = `?program=${filters}`;
+    } else if (filters && typeof filters === 'object') {
+      const params = new URLSearchParams();
+      if (filters.program) params.append('program', filters.program);
+      if (filters.course) params.append('course', filters.course);
+      if (filters.year_level) params.append('year_level', filters.year_level);
+      const str = params.toString();
+      if (str) q = `?${str}`;
+    }
     const res = await apiRequest(`/api/program-sections/${q}`);
     if (!res.ok) return [];
     return res.json();
@@ -314,6 +324,38 @@ export const Api = {
     return true;
   },
 
+  getSectionEnrollments: async (sectionId) => {
+    const res = await apiRequest(`/api/sections/${sectionId}/enrollments/`);
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  enrollStudent: async (sectionId, studentId, subjectId = null) => {
+    const res = await apiRequest(`/api/sections/${sectionId}/enrollments/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        student: studentId,
+        subject: subjectId || null,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.detail || 'Failed to enroll student');
+    }
+    return res.json();
+  },
+
+  unenrollStudent: async (sectionId, enrollmentId) => {
+    const res = await apiRequest(`/api/sections/${sectionId}/enrollments/${enrollmentId}/`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.detail || 'Failed to unenroll student');
+    }
+    return true;
+  },
+
   deleteSchedule: async (id) => {
     const res = await apiRequest(`/api/schedules/${id}/`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to delete schedule');
@@ -336,6 +378,12 @@ export const Api = {
     const q = search ? `?search=${encodeURIComponent(search)}` : '';
     const res = await apiRequest(`/api/students/${q}`);
     if (!res.ok) return [];
+    return res.json();
+  },
+
+  getNextStudentId: async () => {
+    const res = await apiRequest('/api/students/next-id/');
+    if (!res.ok) return { next_student_id: '' };
     return res.json();
   },
 
@@ -380,6 +428,17 @@ export const Api = {
     return res.json();
   },
 
+  reopenSession: async (sessionId) => {
+    const res = await apiRequest(`/api/attendance/sessions/${sessionId}/reopen/`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to reopen attendance session');
+    }
+    return res.json();
+  },
+
   getSessionDetail: async (sessionId) => {
     const res = await apiRequest(`/api/attendance/sessions/${sessionId}/`);
     if (!res.ok) throw new Error('Failed to load session details');
@@ -394,6 +453,9 @@ export const Api = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (err.session_closed) {
+        return { success: false, session_closed: true, error: err.error };
+      }
       throw new Error(err.error || 'Face recognition service error');
     }
     return res.json();
@@ -410,4 +472,40 @@ export const Api = {
     }
     return res.json();
   },
+  markAttendance: async (sessionId, studentId, status = 'present') => {
+    const res = await apiRequest('/api/attendance/records/mark/', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId, student_id: studentId, status }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to mark attendance');
+    }
+    return res.json();
+  },
+
+  // Student Attendance Overview & Monthly Calendar
+  getStudentAttendanceOverview: async (studentId = null) => {
+    let endpoint = '/api/attendance/student/overview/';
+    if (studentId) endpoint += `?student_id=${studentId}`;
+    const res = await apiRequest(endpoint);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to load student attendance overview');
+    }
+    return res.json();
+  },
+
+  getStudentAttendanceCalendar: async (sectionId, year = null, month = null, studentId = null) => {
+    let endpoint = `/api/attendance/student/calendar/${sectionId}/?format=json`;
+    if (year && month) endpoint += `&year=${year}&month=${month}`;
+    if (studentId) endpoint += `&student_id=${studentId}`;
+    const res = await apiRequest(endpoint);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to load attendance calendar');
+    }
+    return res.json();
+  },
 };
+

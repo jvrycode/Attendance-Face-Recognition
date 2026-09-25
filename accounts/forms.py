@@ -82,6 +82,12 @@ class TeacherProfileForm(forms.ModelForm):
             if self.instance and getattr(self.instance, 'pk', None) and self.instance.department:
                 if self.instance.department not in seen:
                     choices.append((self.instance.department, self.instance.department))
+                    seen.add(self.instance.department)
+
+            dept_input = self.data.get('department') if self.data else None
+            if dept_input and dept_input not in seen:
+                choices.append((dept_input, dept_input))
+                seen.add(dept_input)
 
             self.fields['department'].choices = choices
         except Exception:

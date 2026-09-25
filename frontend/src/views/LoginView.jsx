@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { GraduationCap, Lock, AlertCircle, Loader2 } from 'lucide-react';
 import { Api } from '../api';
+import PasswordInput from '../components/PasswordInput';
 
 export default function LoginView({ onLoginSuccess }) {
   const [username, setUsername] = useState('admin');
@@ -58,33 +59,32 @@ export default function LoginView({ onLoginSuccess }) {
 
         <form onSubmit={handleSubmit} id="login-form">
           <div className="form-group">
-            <label className="form-label" htmlFor="id_username">
-              Username or Student ID
-            </label>
-            <input
-              type="text"
-              id="id_username"
-              className="form-control"
-              placeholder="Username or Student ID"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-              autoFocus
-            />
+            <div className="floating-field">
+              <input
+                type="text"
+                id="id_username"
+                className="floating-input"
+                placeholder=" "
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                autoFocus
+              />
+              <label className="floating-label" htmlFor="id_username">
+                Username or Student ID
+              </label>
+            </div>
           </div>
 
           <div className="form-group">
-            <label className="form-label" htmlFor="id_password">
-              Password
-            </label>
-            <input
-              type="password"
+            <PasswordInput
               id="id_password"
-              className="form-control"
-              placeholder="Password"
+              floatingLabel="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              showStrength={false}
+              autoComplete="current-password"
             />
           </div>
 

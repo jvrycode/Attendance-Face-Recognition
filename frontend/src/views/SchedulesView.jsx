@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, CalendarRange, Plus, X, Check, Clock, Building, Infinity, Trash2, Edit2 } from 'lucide-react';
 import { Api } from '../api';
-import { formatTime12h } from '../utils/time';
+import { formatTime12h, formatSchoolScheduleParts } from '../utils/time';
 import ActionPopover from '../components/ActionPopover';
+import Toast from '../components/Toast';
 
 export default function SchedulesView({ user, onSetHeaderInfo }) {
   const [schedules, setSchedules] = useState([]);
@@ -11,6 +12,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [formData, setFormData] = useState({
     section: '',
+    subject: '',
     day_of_week: 'Mon',
     day_2: '',
     start_time: '08:00',
@@ -27,6 +29,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [editFormData, setEditFormData] = useState({
     section: '',
+    subject: '',
     day_of_week: 'Mon',
     day_2: '',
     start_time: '08:00',
@@ -92,6 +95,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
       setErrorMsg('');
       const payload = {
         section: formData.section,
+        subject: formData.subject || null,
         day_of_week: formData.day_of_week,
         day_2: formData.day_2 || null,
         start_time: formData.start_time,
@@ -105,6 +109,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
       setShowAddModal(false);
       setFormData({
         section: '',
+        subject: '',
         day_of_week: 'Mon',
         day_2: '',
         start_time: '08:00',
@@ -139,6 +144,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
     setEditErrorMsg('');
     setEditFormData({
       section: sch.section || '',
+      subject: sch.subject || '',
       day_of_week: sch.day_of_week || 'Mon',
       day_2: sch.day_2 || '',
       start_time: sch.start_time ? sch.start_time.slice(0, 5) : '08:00',
@@ -162,6 +168,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
       setEditErrorMsg('');
       const payload = {
         section: editFormData.section,
+        subject: editFormData.subject || null,
         day_of_week: editFormData.day_of_week,
         day_2: editFormData.day_2 || null,
         start_time: editFormData.start_time,
@@ -184,18 +191,8 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
 
   return (
     <div className="page-content">
-      {successMsg && (
-        <div className="alert alert-success" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Check size={18} />
-          <span>{successMsg}</span>
-        </div>
-      )}
-
-      {errorMsg && (
-        <div className="alert alert-danger" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span>{errorMsg}</span>
-        </div>
-      )}
+      <Toast message={successMsg} type="success" onClose={() => setSuccessMsg('')} />
+      <Toast message={errorMsg} type="error" onClose={() => setErrorMsg('')} />
 
       <div className="card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
         <div className="table-container" style={{ border: 'none', margin: 0 }}>
@@ -237,7 +234,8 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
                 </tr>
               ) : (
                 schedules.map((sch) => {
-                  const displayTime = formatTime12h(
+                  const schParts = formatSchoolScheduleParts(sch);
+                  const displayTime = schParts.time || formatTime12h(
                     sch.time_display || (sch.start_time && sch.end_time ? `${sch.start_time} - ${sch.end_time}` : '')
                   );
                   return (
@@ -253,28 +251,30 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
                       <td style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '13px' }}>
                         {sch.teacher_name || '—'}
                       </td>
-                      <td style={{ padding: '14px 18px' }}>
-                        <span className="badge badge-info" style={{ fontWeight: '700', letterSpacing: '.5px' }}>
-                          {sch.days_display || sch.day_display}
-                        </span>
+                      <td style={{ padding: '14px 18px', fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                        {schParts.days || sch.days_display || sch.day_display}
                       </td>
-                      <td style={{ padding: '14px 18px', fontSize: '13px', fontWeight: '500' }}>
-                        {displayTime}
+                      <td style={{ padding: '14px 18px', fontSize: '11.5px', fontWeight: '600' }}>
+                        {displayTime && displayTime.includes('/') ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                            <span style={{ whiteSpace: 'nowrap' }}>{displayTime.split('/')[0]}</span>
+                            <span style={{ whiteSpace: 'nowrap' }}>/{displayTime.split('/')[1]}</span>
+                          </div>
+                        ) : (
+                          <span style={{ whiteSpace: 'nowrap' }}>{displayTime}</span>
+                        )}
                       </td>
                       <td style={{ padding: '14px 18px', color: 'var(--text-secondary)', fontSize: '13px' }}>
                         {sch.room || '—'}
                       </td>
                       <td style={{ padding: '14px 18px' }}>
                         {sch.effective_from || sch.effective_to ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--text-primary)' }}>
-                            <CalendarRange size={13} style={{ color: 'var(--primary)' }} />
-                            <span>
-                              {sch.effective_from || 'Any'} &rarr; {sch.effective_to || 'Ongoing'}
-                            </span>
-                          </div>
+                          <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>
+                            {sch.effective_from || 'Any'} &rarr; {sch.effective_to || 'Ongoing'}
+                          </span>
                         ) : (
-                          <span className="text-muted" style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Infinity size={13} /> No restriction
+                          <span className="text-muted" style={{ fontSize: '12px' }}>
+                            No restriction
                           </span>
                         )}
                       </td>
@@ -351,13 +351,55 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
                     required
                   >
                     <option value="">Select section...</option>
-                    {sections.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.school_year} - {s.semester})
-                      </option>
-                    ))}
+                    {sections.map((s) => {
+                      const subj = s.effective_subject_code || s.subject_details?.code || '';
+                      const teacher = s.teacher_details?.user ? `${s.teacher_details.user.first_name} ${s.teacher_details.user.last_name || ''}` : '';
+                      const extra = [subj, teacher].filter(Boolean).join(' • ');
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.name} {extra ? `(${extra})` : `(${s.school_year} - ${s.semester})`}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
+
+                {/* Course Subject Selection (Dedicated to this section) */}
+                {(() => {
+                  const selectedSec = sections.find((s) => String(s.id) === String(formData.section));
+                  const secSubjects = selectedSec?.subjects || (selectedSec?.subject_details ? [selectedSec.subject_details] : []);
+                  return (
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
+                        Course Subject Offering *
+                      </label>
+                      <select
+                        className="form-select"
+                        value={formData.subject}
+                        onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                        required
+                        disabled={!formData.section}
+                      >
+                        <option value="">{formData.section ? 'Select course subject...' : 'Choose a section first...'}</option>
+                        {secSubjects.map((sub) => {
+                          const tName = sub.teacher_details?.user
+                            ? `${sub.teacher_details.user.first_name} ${sub.teacher_details.user.last_name}`
+                            : 'Unassigned';
+                          return (
+                            <option key={sub.id} value={sub.id}>
+                              {sub.code} - {sub.name} (Instructor: {tName})
+                            </option>
+                          );
+                        })}
+                      </select>
+                      {secSubjects.length === 0 && formData.section && (
+                        <span className="form-text" style={{ fontSize: '11px', color: 'var(--warning)', display: 'block', marginTop: '4px' }}>
+                          No subjects found in this section. Add subjects in Subjects view first.
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div className="grid-2">
                   <div className="form-group">
@@ -527,13 +569,50 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
                     required
                   >
                     <option value="">Select section...</option>
-                    {sections.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.school_year} - {s.semester})
-                      </option>
-                    ))}
+                    {sections.map((s) => {
+                      const subj = s.effective_subject_code || s.subject_details?.code || '';
+                      const teacher = s.teacher_details?.user ? `${s.teacher_details.user.first_name} ${s.teacher_details.user.last_name || ''}` : '';
+                      const extra = [subj, teacher].filter(Boolean).join(' • ');
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.name} {extra ? `(${extra})` : `(${s.school_year} - ${s.semester})`}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
+
+                {/* Course Subject Selection (Dedicated to this section) */}
+                {(() => {
+                  const selectedSec = sections.find((s) => String(s.id) === String(editFormData.section));
+                  const secSubjects = selectedSec?.subjects || (selectedSec?.subject_details ? [selectedSec.subject_details] : []);
+                  return (
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
+                        Course Subject Offering *
+                      </label>
+                      <select
+                        className="form-select"
+                        value={editFormData.subject}
+                        onChange={(e) => setEditFormData({ ...editFormData, subject: e.target.value })}
+                        required
+                        disabled={!editFormData.section}
+                      >
+                        <option value="">{editFormData.section ? 'Select course subject...' : 'Choose a section first...'}</option>
+                        {secSubjects.map((sub) => {
+                          const tName = sub.teacher_details?.user
+                            ? `${sub.teacher_details.user.first_name} ${sub.teacher_details.user.last_name}`
+                            : 'Unassigned';
+                          return (
+                            <option key={sub.id} value={sub.id}>
+                              {sub.code} - {sub.name} (Instructor: {tName})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  );
+                })()}
 
                 <div className="grid-2">
                   <div className="form-group">

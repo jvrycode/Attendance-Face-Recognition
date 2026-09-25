@@ -58,6 +58,33 @@ class Student(models.Model):
     student_id = models.CharField(max_length=20, unique=True)
     year_level = models.PositiveSmallIntegerField(default=1)
     course = models.CharField(max_length=100, blank=True)
+    # FSUU Comprehensive Personal Profile
+    middle_name = models.CharField(max_length=100, blank=True, default='')
+    gender = models.CharField(max_length=10, blank=True, default='Male')
+    birth_date = models.DateField(null=True, blank=True)
+    birth_place = models.CharField(max_length=150, blank=True, default='')
+    civil_status = models.CharField(max_length=30, blank=True, default='Single')
+    blood_type = models.CharField(max_length=10, blank=True, default='')
+    height = models.CharField(max_length=20, blank=True, default='')
+    religion = models.CharField(max_length=100, blank=True, default='Roman Catholic')
+    citizenship = models.CharField(max_length=50, blank=True, default='Filipino')
+    languages_spoken = models.CharField(max_length=255, blank=True, default='English, Filipino, Cebuano')
+
+    # FSUU Address Information
+    current_address = models.CharField(max_length=255, blank=True, default='')
+    current_region = models.CharField(max_length=100, blank=True, default='REGION XIII (Caraga)')
+    current_province = models.CharField(max_length=100, blank=True, default='Agusan del Norte')
+    current_municipality = models.CharField(max_length=100, blank=True, default='Butuan City')
+
+    permanent_address = models.CharField(max_length=255, blank=True, default='')
+    permanent_region = models.CharField(max_length=100, blank=True, default='REGION XIII (Caraga)')
+    permanent_province = models.CharField(max_length=100, blank=True, default='Agusan del Norte')
+    permanent_municipality = models.CharField(max_length=100, blank=True, default='Butuan City')
+
+    # FSUU Contact Details
+    telephone = models.CharField(max_length=30, blank=True, default='')
+    mobile_number = models.CharField(max_length=30, blank=True, default='')
+
     # Face encoding stored as JSON string (list of 128 floats per face)
     face_encoding = models.TextField(blank=True, null=True)
     face_enrolled_at = models.DateTimeField(blank=True, null=True)
