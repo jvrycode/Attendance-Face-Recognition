@@ -1,6 +1,6 @@
 """
 API Views Package
-Exports modular views for Auth, Students/Users, Classes, Attendance, Face Recognition, and Reports.
+Exports modular views for Auth, Students/Users, Classes, Courses, Attendance, Face Recognition, and Reports.
 """
 from attendance_fr.api.views.auth import CurrentUserAPIView
 from attendance_fr.api.views.students import (
@@ -22,6 +22,10 @@ from attendance_fr.api.views.classes import (
     SectionEnrollmentDestroyAPIView,
     ScheduleListCreateAPIView,
     ScheduleDetailAPIView,
+)
+from attendance_fr.api.views.courses import (
+    CourseListCreateAPIView,
+    CourseDetailAPIView,
 )
 from attendance_fr.api.views.attendance import (
     AttendanceSessionListAPIView,
@@ -47,6 +51,8 @@ __all__ = [
     'UserListCreateAPIView',
     'UserDetailAPIView',
     'StudentListAPIView',
+    'CourseListCreateAPIView',
+    'CourseDetailAPIView',
     'ProgramListCreateAPIView',
     'ProgramDetailAPIView',
     'ProgramSectionListCreateAPIView',

@@ -37,6 +37,7 @@ ENV/
 
 # Media uploads (face images, profile photos)
 media/
+private_media/
 staticfiles/
 *.sql
 

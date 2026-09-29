@@ -130,14 +130,17 @@ class ArtisanTestRunner(DiscoverRunner):
         return ArtisanStyleTestResult
 
 
+FEATURE_TEST_LABELS = ('accounts', 'core', 'face_app')
+
+
 class Command(BaseCommand):
-    help = "Runs all feature tests with AttendFR Test Suite formatting"
+    help = "Runs the maintained feature tests with Artisan-style output"
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--tag',
-            type=str,
-            help='Run specific test suite (accounts, core, or face_app)',
+            choices=FEATURE_TEST_LABELS,
+            help='Run one feature area only (accounts, core, or face_app)',
         )
         parser.add_argument(
             '--api',
@@ -164,11 +167,11 @@ class Command(BaseCommand):
             self.stdout.write(f"\n{BOLD}{CYAN}AttendFR REST API Test Suite{RESET}")
             self.stdout.write(f"{DIM}Running automated endpoints & contract checks...{RESET}\n")
         else:
-            test_labels = ['accounts', 'core', 'face_app']
-            if tag:
-                test_labels = [tag]
-            self.stdout.write(f"\n{BOLD}{CYAN}AttendFR Test Suite{RESET}")
-            self.stdout.write(f"{DIM}Running automated feature checks against test database...{RESET}\n")
+            # Keep the feature suite separate from attendance_fr.tests_api.
+            # The latter is intentionally available through --api/test_api.
+            test_labels = [tag] if tag else list(FEATURE_TEST_LABELS)
+            self.stdout.write(f"\n{BOLD}{CYAN}AttendFR Feature Test Suite{RESET}")
+            self.stdout.write(f"{DIM}Running {', '.join(test_labels)} feature checks against test database...{RESET}\n")
 
         start_total = time.time()
         runner = ArtisanTestRunner(verbosity=0, interactive=False, keepdb=True)

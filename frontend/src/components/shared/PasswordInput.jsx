@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Check, X } from 'lucide-react';
-import { checkPasswordCriteria } from '../utils/validation';
+import { checkPasswordCriteria } from '../../utils/validation';
 
 export default function PasswordInput({
   value = '',
@@ -11,7 +11,7 @@ export default function PasswordInput({
   required = false,
   showStrength = true,
   disabled = false,
-  autoComplete = 'current-password',
+  autoComplete = 'new-password',
   floatingLabel,
   style = {},
 }) {

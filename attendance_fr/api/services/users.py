@@ -4,6 +4,8 @@ Handles business logic for user creation, updates, and student ID generation.
 Extracted from api_views.py (UserListCreateAPIView, UserDetailAPIView, NextStudentIdAPIView).
 """
 import re
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 
 from accounts.models import CustomUser, Teacher, Student
@@ -21,8 +23,13 @@ def validate_ph_phone(phone):
     return None
 
 
-def validate_password_strength(password):
-    """Validates 5 password criteria: min 8 chars, 1 number, 1 lower, 1 upper, 1 special."""
+def validate_password_strength(password, user=None):
+    """
+    Validates a password against the single project policy.
+    Returns a friendly error string, or None when the password is acceptable.
+    Checks the 5 character rules first (clear checklist message), then runs
+    Django's AUTH_PASSWORD_VALIDATORS (common passwords, similarity to the user, etc.).
+    """
     if not password:
         return 'Password cannot be empty.'
     p = str(password)
@@ -39,6 +46,11 @@ def validate_password_strength(password):
         missing.append('at least 1 special character')
     if missing:
         return f"Password must contain: {', '.join(missing)}."
+
+    try:
+        validate_password(p, user=user)
+    except DjangoValidationError as exc:
+        return ' '.join(exc.messages)
     return None
 
 
@@ -83,7 +95,7 @@ class UserService:
                 student_id = str(raw_sid).strip()
 
         username = data.get('username') or (student_id if role == 'student' else '')
-        password = data.get('password') or ('student123' if role == 'student' else '')
+        password = data.get('password') or ''
         first_name = data.get('first_name', '')
         last_name = data.get('last_name', '')
         email = data.get('email', '') or (f"{student_id.lower()}@student.urios.edu.ph" if role == 'student' else '')
@@ -92,11 +104,12 @@ class UserService:
         if not username or not password:
             raise ValueError('Username and password are required.')
 
-        # Allow default password 'student123' for student onboarding
-        if not (role == 'student' and password == 'student123'):
-            pwd_err = validate_password_strength(password)
-            if pwd_err:
-                raise ValueError(pwd_err)
+        # Unsaved stand-in so the similarity check can compare against name/username/email.
+        pwd_err = validate_password_strength(password, user=CustomUser(
+            username=username, first_name=first_name, last_name=last_name, email=email,
+        ))
+        if pwd_err:
+            raise ValueError(pwd_err)
 
         phone_val = str(phone).strip()
         if phone_val:
@@ -133,9 +146,18 @@ class UserService:
             if role == 'teacher':
                 Teacher.objects.create(
                     user=user,
-                    employee_id=data.get('employee_id', f'EMP-{user.id:04d}'),
+                    employee_id=data.get('employee_id') or f'FAC-{user.id:04d}',
                     department=data.get('department', ''),
                     specialization=data.get('specialization', ''),
+                    title=data.get('title', ''),
+                    date_hired=data.get('date_hired') or None,
+                    employment_status=data.get('employment_status', 'Regular'),
+                    position=data.get('position', ''),
+                    contact_number=data.get('contact_number', ''),
+                    office_location=data.get('office_location', ''),
+                    consultation_hours=data.get('consultation_hours', ''),
+                    education_background=data.get('education_background', ''),
+                    certifications=data.get('certifications', ''),
                 )
             elif role == 'student':
                 Student.objects.create(
@@ -143,6 +165,7 @@ class UserService:
                     student_id=student_id or f'STU-{user.id:04d}',
                     year_level=int(data.get('year_level', 1)),
                     course=data.get('course', ''),
+                    course_ref_id=data.get('course_ref') or None,
                     middle_name=data.get('middle_name', ''),
                     gender=data.get('gender', 'Male'),
                     birth_date=data.get('birth_date') or None,
@@ -199,7 +222,7 @@ class UserService:
                 user.is_active = bool(raw_active)
 
         if data.get('password'):
-            pwd_err = validate_password_strength(data['password'])
+            pwd_err = validate_password_strength(data['password'], user=user)
             if pwd_err:
                 raise ValueError(pwd_err)
             user.set_password(data['password'])
@@ -208,18 +231,23 @@ class UserService:
 
         if hasattr(user, 'teacher_profile') and user.teacher_profile:
             tp = user.teacher_profile
-            if 'department' in data:
-                tp.department = data['department']
-            if 'specialization' in data:
-                tp.specialization = data['specialization']
-            if 'employee_id' in data:
-                tp.employee_id = data['employee_id']
+            teacher_fields = [
+                'department', 'specialization', 'employee_id', 'title', 
+                'date_hired', 'employment_status', 'position', 'contact_number',
+                'office_location', 'consultation_hours', 'education_background', 'certifications'
+            ]
+            for field in teacher_fields:
+                if field in data:
+                    val = data[field]
+                    if field == 'date_hired' and not val:
+                        val = None
+                    setattr(tp, field, val)
             tp.save()
 
         if hasattr(user, 'student_profile') and user.student_profile:
             sp = user.student_profile
             fsuu_fields = [
-                'course', 'year_level', 'student_id', 'middle_name', 'gender',
+                'course', 'course_ref', 'year_level', 'student_id', 'middle_name', 'gender',
                 'birth_date', 'birth_place', 'civil_status', 'blood_type', 'height',
                 'religion', 'citizenship', 'languages_spoken',
                 'current_address', 'current_region', 'current_province', 'current_municipality',
@@ -231,25 +259,23 @@ class UserService:
                     val = data[field]
                     if field == 'year_level':
                         val = int(val)
-                    elif field == 'birth_date' and not val:
-                        val = None
+                    elif field == 'birth_date':
+                        # Handle empty string or None for birth_date
+                        if not val or val == '':
+                            val = None
                     setattr(sp, field, val)
-            sp.save()
+            if sp.course_ref_id:
+                sp.course = sp.course_ref.code
+            sp.save()  # This will trigger _sync_biometric() to update StudentBiometric table
 
         return user
 
     @staticmethod
     def update_current_user_profile(user, data):
-        """
-        Updates limited self-editable fields on the current authenticated user.
-        Raises ValueError on validation failures.
-        """
-        if 'first_name' in data:
-            user.first_name = data['first_name']
-        if 'last_name' in data:
-            user.last_name = data['last_name']
-        if 'email' in data:
-            user.email = data['email']
+        """Updates the explicit, role-appropriate self-service profile fields."""
+        for field in ('first_name', 'last_name', 'email'):
+            if field in data:
+                setattr(user, field, data[field])
 
         if 'phone' in data:
             phone_val = str(data['phone']).strip()
@@ -260,6 +286,20 @@ class UserService:
                 user.phone = re.sub(r'\D', '', phone_val)
             else:
                 user.phone = ''
-
         user.save()
+
+        if user.role == 'teacher' and hasattr(user, 'teacher_profile'):
+            profile = user.teacher_profile
+            for field in ('specialization', 'title', 'contact_number', 'office_location', 'consultation_hours', 'education_background', 'certifications'):
+                if field in data:
+                    setattr(profile, field, data[field])
+            profile.save()
+
+        if user.role == 'student' and hasattr(user, 'student_profile'):
+            profile = user.student_profile
+            for field in ('middle_name', 'gender', 'birth_date', 'birth_place', 'civil_status', 'blood_type', 'height', 'religion', 'citizenship', 'languages_spoken', 'current_address', 'current_region', 'current_province', 'current_municipality', 'permanent_address', 'permanent_region', 'permanent_province', 'permanent_municipality', 'telephone', 'mobile_number'):
+                if field in data:
+                    setattr(profile, field, data[field])
+            profile.save()
+
         return user

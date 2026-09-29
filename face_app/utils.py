@@ -6,6 +6,7 @@ Falls back gracefully if opencv-contrib is not available.
 """
 import os
 import base64
+import binascii
 import logging
 import numpy as np
 from io import BytesIO
@@ -376,8 +377,11 @@ def check_face_liveness(img_rgb: np.ndarray, box: dict) -> tuple:
     Returns:
         (is_live: bool, confidence_score: float, details: str)
     """
-    if img_rgb is None or img_rgb.size == 0 or not OPENCV_AVAILABLE:
-        return True, 1.0, "Liveness bypass: OpenCV unavailable"
+    # Fail closed: if the check cannot run, the face is NOT accepted as live.
+    if img_rgb is None or img_rgb.size == 0:
+        return False, 0.0, "Liveness check failed: no image data"
+    if not OPENCV_AVAILABLE:
+        return False, 0.0, "Liveness check unavailable: OpenCV not installed"
 
     try:
         h, w = img_rgb.shape[:2]
@@ -429,8 +433,133 @@ def check_face_liveness(img_rgb: np.ndarray, box: dict) -> tuple:
         confidence = min(1.0, max(0.6, (lap_var / 300.0) * 0.4 + 0.6))
         return True, round(confidence, 3), "Live human verified"
     except Exception as e:
-        logger.warning(f"Liveness verification warning: {e}")
-        return True, 0.85, "Liveness check default"
+        logger.warning(f"Liveness verification error (rejecting face): {e}")
+        return False, 0.0, "Liveness check error: please try again"
+
+
+# ── Head pose (landmarks) ─────────────────────────────────────────────────────
+
+def estimate_head_yaw(img_rgb: np.ndarray, box: dict):
+    """
+    Horizontal head-turn estimate from dlib landmarks, or None if landmarks are unavailable.
+    yaw = (nose-tip x - midpoint of the eyes x) / distance between the eyes.
+    ~0 when facing the camera; grows (±) as the head turns. In the raw (unmirrored)
+    camera frame a turn to the subject's own LEFT gives a positive value.
+    A flat photo turned in the hand cannot change this ratio (everything shrinks
+    together), which is what makes it useful for liveness.
+    """
+    if not FACE_RECOGNITION_AVAILABLE or img_rgb is None:
+        return None
+    try:
+        location = (int(box['top']), int(box['right']), int(box['bottom']), int(box['left']))
+        marks = fr.face_landmarks(img_rgb, face_locations=[location])
+        if not marks:
+            return None
+        m = marks[0]
+        left_eye, right_eye, nose = m.get('left_eye'), m.get('right_eye'), m.get('nose_tip')
+        if not left_eye or not right_eye or not nose:
+            return None
+        le = np.mean(np.array(left_eye, dtype=np.float32), axis=0)
+        re_ = np.mean(np.array(right_eye, dtype=np.float32), axis=0)
+        nose_x = float(np.mean(np.array(nose, dtype=np.float32)[:, 0]))
+        interocular = float(np.linalg.norm(le - re_))
+        if interocular < 1.0:
+            return None
+        eyes_mid_x = float((le[0] + re_[0]) / 2.0)
+        return round((nose_x - eyes_mid_x) / interocular, 4)
+    except Exception as e:
+        logger.warning(f"estimate_head_yaw error: {e}")
+        return None
+
+
+# ── Enrollment: strict detection + quality gate ───────────────────────────────
+
+class EnrollmentQualityError(ValueError):
+    """An enrollment photo was rejected (no/multiple faces, blurry, dark, tiny, turned)."""
+
+
+def detect_and_encode_strict(frame_bytes: bytes):
+    """
+    Enrollment-grade detection: dlib HOG on the original image only (upsample 0, then 1).
+    No contrast/gamma enhancement, no lowered-threshold dlib, no Haar cascade, no LBPH,
+    so a poor or wrong crop is never stored. Returns (img_rgb, [{'encoding', 'box'}]).
+    """
+    if not FACE_RECOGNITION_AVAILABLE:
+        raise EnrollmentQualityError('Face engine (dlib) is not available on the server.')
+    img = _decode_image_to_rgb(frame_bytes)
+    locations = fr.face_locations(img, number_of_times_to_upsample=0, model='hog')
+    if not locations:
+        locations = fr.face_locations(img, number_of_times_to_upsample=1, model='hog')
+    if not locations:
+        return img, []
+    encodings = fr.face_encodings(img, locations)
+    faces = [
+        {'encoding': enc.tolist(), 'box': {'top': t, 'right': r, 'bottom': b, 'left': l}}
+        for enc, (t, r, b, l) in zip(encodings, locations)
+    ]
+    return img, faces
+
+
+def assess_face_quality(img_rgb: np.ndarray, box: dict):
+    """
+    Returns (ok, reason, metrics). Checks face size, brightness, sharpness and head turn.
+    Thresholds come from FACE_ENROLL_* settings.
+    """
+    s = lambda name, default: getattr(settings, name, default)
+    h, w = img_rgb.shape[:2]
+    top, bottom = max(0, int(box['top'])), min(h, int(box['bottom']))
+    left, right = max(0, int(box['left'])), min(w, int(box['right']))
+    face_w, face_h = right - left, bottom - top
+    metrics = {'face_px': min(face_w, face_h)}
+
+    min_px = s('FACE_ENROLL_MIN_FACE_PX', 80)
+    if min(face_w, face_h) < min_px:
+        return False, f'Face is too small ({min(face_w, face_h)}px). Move closer to the camera.', metrics
+
+    roi = img_rgb[top:bottom, left:right]
+    gray = (np.dot(roi[..., :3], [0.299, 0.587, 0.114])).astype(np.float32) if roi.ndim == 3 else roi.astype(np.float32)
+    brightness = float(gray.mean())
+    metrics['brightness'] = round(brightness, 1)
+    if brightness < s('FACE_ENROLL_MIN_BRIGHTNESS', 50):
+        return False, 'Face is too dark. Add more light in front of the student.', metrics
+    if brightness > s('FACE_ENROLL_MAX_BRIGHTNESS', 215):
+        return False, 'Face is overexposed. Reduce direct light or glare.', metrics
+
+    if OPENCV_AVAILABLE:
+        sharpness = float(cv2.Laplacian(gray.astype(np.uint8), cv2.CV_64F).var())
+        metrics['sharpness'] = round(sharpness, 1)
+        if sharpness < s('FACE_ENROLL_MIN_SHARPNESS', 40):
+            return False, 'Photo is blurry. Hold still and keep the camera steady.', metrics
+
+    yaw = estimate_head_yaw(img_rgb, box)
+    metrics['yaw'] = yaw
+    if yaw is None:
+        return False, 'Could not locate eyes and nose clearly. Face the camera directly.', metrics
+    if abs(yaw) > s('FACE_ENROLL_MAX_YAW', 0.6):
+        return False, 'Head is turned too far. Turn only slightly.', metrics
+
+    return True, 'ok', metrics
+
+
+def extract_enrollment_sample(frame_bytes: bytes) -> dict:
+    """
+    One enrollment photo -> {'encoding', 'box', 'yaw', 'metrics', 'img_rgb'}.
+    Raises EnrollmentQualityError with a user-facing reason.
+    """
+    img, faces = detect_and_encode_strict(frame_bytes)
+    if not faces:
+        raise EnrollmentQualityError('No face detected. Center the face and make sure it is well lit.')
+    if len(faces) > 1:
+        raise EnrollmentQualityError('Multiple faces detected. Only the student should be in the frame.')
+    face = faces[0]
+    ok, reason, metrics = assess_face_quality(img, face['box'])
+    if not ok:
+        raise EnrollmentQualityError(reason)
+    # Same single-frame anti-spoof heuristic as attendance scanning (fails closed).
+    is_live, _score, live_reason = check_face_liveness(img, face['box'])
+    if not is_live:
+        raise EnrollmentQualityError(f'{live_reason}. Use the live student, not a photo or screen.')
+    return {'encoding': face['encoding'], 'box': face['box'], 'yaw': metrics.get('yaw'), 'metrics': metrics}
 
 
 # ── Public API: Comparison ────────────────────────────────────────────────────
@@ -566,18 +695,9 @@ def pick_face_for_next_attendance(
         return detected_faces
 
     marked_student_ids = set(marked_student_ids or [])
-    unmarked_indices = [
-        i for i, student in enumerate(students)
-        if student.get('id') not in marked_student_ids
-    ]
-    if (
-        not unmarked_indices
-        or section_matrix is None
-        or len(section_matrix) == 0
-    ):
+    if section_matrix is None or len(section_matrix) == 0:
         return pick_primary_face(detected_faces, frame_w, frame_h)
 
-    sub_matrix = section_matrix[unmarked_indices]
     best_face = None
     best_confidence = -1.0
 
@@ -585,10 +705,16 @@ def pick_face_for_next_attendance(
         encoding = face.get('encoding')
         if not encoding:
             continue
-        is_match, sub_idx, _dist, confidence, _margin = batch_compare_faces(
-            sub_matrix, encoding, tolerance
+        # Match against the full roster so a marked student's face is never
+        # mistaken for an unmarked look-alike; then keep only unmarked owners.
+        is_match, idx, _dist, confidence, _margin = batch_compare_faces(
+            section_matrix, encoding, tolerance
         )
-        if is_match and sub_idx is not None and confidence > best_confidence:
+        if not is_match or idx is None or idx >= len(students):
+            continue
+        if students[idx].get('id') in marked_student_ids:
+            continue
+        if confidence > best_confidence:
             best_confidence = confidence
             best_face = face
 
@@ -626,11 +752,67 @@ def detect_faces_in_frame(frame_bytes: bytes):
 
 # ── Utility ───────────────────────────────────────────────────────────────────
 
-def base64_to_bytes(base64_str: str) -> bytes:
-    """Convert a base64 data URL or plain base64 string to bytes."""
+class InvalidImageError(ValueError):
+    """Uploaded frame is not an acceptable image (bad encoding, too big, wrong type)."""
+
+
+ALLOWED_FRAME_FORMATS = ('JPEG', 'PNG', 'WEBP')
+
+
+def base64_to_bytes(base64_str: str, max_bytes: int = None) -> bytes:
+    """
+    Convert a base64 data URL or plain base64 string to bytes.
+    Strict: rejects non-base64 characters and payloads larger than max_bytes
+    (defaults to settings.FACE_MAX_FRAME_BYTES) before decoding.
+    """
+    if not isinstance(base64_str, str) or not base64_str:
+        raise InvalidImageError('Frame must be a base64-encoded image string.')
+    if max_bytes is None:
+        max_bytes = getattr(settings, 'FACE_MAX_FRAME_BYTES', 2 * 1024 * 1024)
+
     if ',' in base64_str:
         base64_str = base64_str.split(',', 1)[1]
-    return base64.b64decode(base64_str)
+    base64_str = ''.join(base64_str.split())  # drop any whitespace/newlines
+
+    # Each 4 base64 chars decode to 3 bytes; reject oversize input without decoding it.
+    if (len(base64_str) * 3) // 4 > max_bytes:
+        raise InvalidImageError(f'Frame is too large (max {max_bytes // (1024 * 1024)} MB).')
+    try:
+        return base64.b64decode(base64_str, validate=True)
+    except (binascii.Error, ValueError):
+        raise InvalidImageError('Frame is not valid base64 data.')
+
+
+def validate_image_bytes(data: bytes, max_dimension: int = None) -> None:
+    """
+    Ensure decoded bytes are a real JPEG/PNG/WEBP image within size limits.
+    Reads only the header for format/dimensions, so oversized "image bombs" are rejected cheaply.
+    """
+    from PIL import UnidentifiedImageError
+
+    if max_dimension is None:
+        max_dimension = getattr(settings, 'FACE_MAX_FRAME_DIMENSION', 4096)
+    if not data:
+        raise InvalidImageError('Frame is empty.')
+    try:
+        with Image.open(BytesIO(data)) as img:
+            img_format = img.format
+            width, height = img.size
+            img.verify()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        raise InvalidImageError('Frame is not a valid image.')
+
+    if img_format not in ALLOWED_FRAME_FORMATS:
+        raise InvalidImageError('Only JPEG, PNG, or WEBP frames are allowed.')
+    if width < 1 or height < 1 or width > max_dimension or height > max_dimension:
+        raise InvalidImageError(f'Frame dimensions must be at most {max_dimension}x{max_dimension} pixels.')
+
+
+def decode_frame(base64_str: str) -> bytes:
+    """base64 frame -> validated image bytes. Raises InvalidImageError."""
+    data = base64_to_bytes(base64_str)
+    validate_image_bytes(data)
+    return data
 
 
 def draw_face_boxes(frame_bytes: bytes, results: list) -> bytes:

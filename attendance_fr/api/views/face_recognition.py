@@ -6,12 +6,16 @@ from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.throttling import ScopedRateThrottle
 from django.utils import timezone
 
 from accounts.models import Student
-from face_app.utils import FR_AVAILABLE
-from attendance_fr.permissions import IsAdminRole, IsSessionManager
+from attendance_fr.face_photos import face_photo_link
+from face_app.utils import FR_AVAILABLE, InvalidImageError
+from attendance_fr.api.services.attendance import AttendanceService
+from attendance_fr.permissions import IsAdminRole, IsSessionManager, can_manage_session
 from attendance_fr.api.services.face_recognition import (
+    FaceEnrollConflict,
     FaceEnrollService,
     FaceRecognitionService,
 )
@@ -20,6 +24,8 @@ from attendance_fr.api.services.face_recognition import (
 class FaceRecognizeAPIView(APIView):
     """POST /api/face/recognize/ - Process camera frame, recognize faces, mark attendance."""
     permission_classes = [IsSessionManager]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'face_recognize'
 
     def post(self, request):
         session_id = request.data.get('session_id')
@@ -31,46 +37,72 @@ class FaceRecognizeAPIView(APIView):
         if not FR_AVAILABLE:
             return Response({'error': 'Face recognition engine unavailable'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
-        # Resolve session by ID or schedule ID
+        # Authorize BEFORE revealing anything about the session: a session that does not
+        # exist and one the teacher does not manage get the same "not found" answer.
         session = FaceRecognitionService.get_session(session_id)
-        if not session:
+        if not session or not can_manage_session(request.user, session):
             return Response(
                 {'success': False, 'error': f'Attendance session #{session_id} not found', 'session_closed': True},
-                status=status.HTTP_200_OK,
+                status=status.HTTP_404_NOT_FOUND,
             )
 
         if session.status != 'open':
-            if session.date == timezone.localdate():
-                session.status = 'open'
-                session.closed_at = None
-                session.save(update_fields=['status', 'closed_at'])
-            else:
-                return Response(
-                    {'success': False, 'error': f'Attendance session #{session_id} is closed', 'session_closed': True},
-                    status=status.HTTP_200_OK,
-                )
+            return Response(
+                {'success': False, 'error': f'Attendance session #{session_id} is closed', 'session_closed': True},
+                status=status.HTTP_409_CONFLICT,
+            )
 
-        self.check_object_permissions(request, session)
-        result = FaceRecognitionService.recognize_faces_for_session(session, frame_b64)
+        error = AttendanceService.validate_session_time_window(session)
+        if error:
+            return Response(
+                {'success': False, 'error': error, 'attendance_unavailable': True},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            result = FaceRecognitionService.recognize_faces_for_session(session, frame_b64)
+        except InvalidImageError as e:
+            return Response({'success': False, 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(result)
 
 
 class FaceEnrollAPIView(APIView):
     """POST /api/face/enroll/ - Enroll student face vector from camera frame (Admin only)."""
     permission_classes = [IsAdminRole]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'face_enroll'
 
     def post(self, request):
         student_id = request.data.get('student_id')
-        frame_b64 = request.data.get('frame')
+        # 3-5 photos in "frames"; a single legacy "frame" is still accepted but will be
+        # rejected by the minimum photo count unless FACE_ENROLL_MIN_SAMPLES is 1.
+        frames = request.data.get('frames')
+        if not frames and request.data.get('frame'):
+            frames = [request.data.get('frame')]
 
-        if not student_id or not frame_b64:
-            return Response({'error': 'student_id and frame are required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not student_id or not frames:
+            return Response({'error': 'student_id and frames are required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(frames, list) or not all(isinstance(f, str) for f in frames):
+            return Response({'error': 'frames must be a list of base64 images'}, status=status.HTTP_400_BAD_REQUEST)
+        if not FR_AVAILABLE:
+            return Response({'error': 'Face recognition engine unavailable'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         student = get_object_or_404(Student, pk=student_id)
+        replace = request.data.get('replace') in (True, 'true', 'True', '1', 1)
 
         try:
-            message = FaceEnrollService.enroll_student_face(student, frame_b64)
+            message = FaceEnrollService.enroll_student_face(student, frames, replace=replace)
+        except FaceEnrollConflict as e:
+            return Response({
+                'success': False,
+                'code': e.code,
+                'message': str(e),
+                'conflict_student': e.conflict_student,
+            }, status=status.HTTP_409_CONFLICT)
         except ValueError as e:
             return Response({'success': False, 'message': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({'success': True, 'message': message})
+        return Response({
+            'success': True,
+            'message': message,
+            'face_image': face_photo_link(student, user=request.user),
+        })

@@ -227,17 +227,27 @@ If a student enrolled in Section B steps in front of the camera during Section A
 
 AttendFR features comprehensive test suites covering model validations, conflict checks, RBAC, and face recognition:
 
-### Run Standard Django Unit Tests (22 Tests)
+### Run the Standard Django Discovery Suite
 ```bash
 python manage.py test
 ```
 
-### Run Feature Test Suite (Laravel Artisan-Style, 19 Tests)
+### Run the Feature Test Suite (Laravel Artisan-Style)
 ```bash
+# Runs the maintained accounts, core, and face_app feature tests
 python manage.py test_features
+
+# Run one feature area only
+python manage.py test_features --tag core
 ```
 
-Both test suites use an isolated test database and will report `PASS` with zero failures.
+### Run the Separate REST API Contract Suite
+```bash
+python manage.py test_api
+# Equivalent to: python manage.py test_features --api
+```
+
+The feature command is the phase/feature test workflow for the application. It does not include the centralized `attendance_fr.tests_api` suite unless `--api` is explicitly supplied. All Django commands use the isolated test database configured for test runs.
 
 ---
 

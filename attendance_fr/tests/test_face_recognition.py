@@ -46,7 +46,7 @@ class RestFaceRecognitionApiTests(TestCase):
         with patch('attendance_fr.api.services.face_recognition.FaceRecognitionService.recognize_faces_for_session', return_value={
             'faces': [{'student_id': self.student.pk, 'name': 'Ada Lovelace', 'confidence': 0.95}],
             'recognized': True
-        }):
+        }), patch('attendance_fr.api.views.face_recognition.AttendanceService.validate_session_time_window', return_value=None):
             res = self.client.post(
                 '/api/face/recognize/',
                 {'session_id': session.pk, 'frame': 'dummy_b64'},
@@ -54,3 +54,225 @@ class RestFaceRecognitionApiTests(TestCase):
             )
             self.assertEqual(res.status_code, 200)
             self.assertTrue(res.json().get('recognized'))
+
+
+class FaceEnrollOneStudentOneFaceTests(TestCase):
+    """Enrollment enforces 1 student = 1 face."""
+
+    def setUp(self):
+        import base64
+        import json
+        from io import BytesIO
+        from PIL import Image
+
+        self.json = json
+        self.admin_u = CustomUser.objects.create_user(
+            username='fr_admin', role='admin', password='StrongPassword123!'
+        )
+        self.alice = Student.objects.create(
+            user=CustomUser.objects.create_user(
+                username='alice', role='student', first_name='Alice', last_name='Reyes',
+                password='StrongPassword123!'
+            ),
+            student_id='STU-A', face_encoding=json.dumps([0.1] * 128),
+        )
+        self.bob = Student.objects.create(
+            user=CustomUser.objects.create_user(
+                username='bob', role='student', first_name='Bob', last_name='Cruz',
+                password='StrongPassword123!'
+            ),
+            student_id='STU-B',
+        )
+        buf = BytesIO()
+        Image.new('RGB', (200, 200), (120, 100, 90)).save(buf, format='JPEG')
+        self.frame = 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+        self.client = Client()
+        self.client.force_login(self.admin_u)
+
+    BOX = {'top': 20, 'right': 180, 'bottom': 180, 'left': 20}
+
+    def _samples(self, encoding, yaws=(0.0, 0.3, -0.3)):
+        """3 photos of one person: front + slight turns, tiny natural variation."""
+        base = encoding[0]
+        return [
+            {'encoding': [base + 0.002 * i] * 128, 'box': dict(self.BOX), 'yaw': yaw, 'metrics': {}}
+            for i, yaw in enumerate(yaws)
+        ]
+
+    def _post(self, student, samples, replace=None, frames=None):
+        payload = {'student_id': student.pk, 'frames': frames or [self.frame] * len(samples)}
+        if replace is not None:
+            payload['replace'] = replace
+        with patch('attendance_fr.api.services.face_recognition.extract_enrollment_sample',
+                   side_effect=samples), \
+             patch('django.db.models.fields.files.FieldFile.save', autospec=True):
+            return self.client.post('/api/face/enroll/', payload, content_type='application/json')
+
+    def _enroll(self, student, encoding, replace=None):
+        return self._post(student, self._samples(encoding), replace=replace)
+
+    def test_requires_at_least_three_photos(self):
+        res = self._post(self.bob, self._samples([0.9] * 128)[:2])
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('at least 3', res.json()['message'])
+
+    def test_rejects_more_than_five_photos(self):
+        res = self._post(self.bob, self._samples([0.9] * 128, yaws=(0.0,) * 6))
+        self.assertEqual(res.status_code, 400)
+
+    def test_rejects_photos_of_different_people(self):
+        samples = self._samples([0.9] * 128)
+        samples[2]['encoding'] = [0.2] * 128  # a different person slipped in
+        res = self._post(self.bob, samples)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('same person', res.json()['message'])
+        self.bob.refresh_from_db()
+        self.assertFalse(self.bob.face_encoding)
+
+    def test_requires_one_frontal_photo(self):
+        res = self._post(self.bob, self._samples([0.9] * 128, yaws=(0.4, 0.3, -0.3)))
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('face the camera', res.json()['message'])
+
+    def test_rejects_same_still_image_repeated(self):
+        same = {'encoding': [0.9] * 128, 'box': dict(self.BOX), 'yaw': 0.0, 'metrics': {}}
+        res = self._post(self.bob, [dict(same), dict(same), dict(same)])
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('same still image', res.json()['message'])
+
+    def test_auto_capture_all_frontal_frames_enroll(self):
+        """The countdown capture sends 3 frontal frames; that is enough."""
+        res = self._post(self.bob, self._samples([0.9] * 128, yaws=(0.02, -0.03, 0.01)))
+        self.assertEqual(res.status_code, 200)
+
+    def test_quality_failure_names_the_photo(self):
+        from face_app.utils import EnrollmentQualityError
+        samples = self._samples([0.9] * 128)
+        samples[1] = EnrollmentQualityError('Photo is blurry. Hold still and keep the camera steady.')
+        res = self._post(self.bob, samples)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('Photo 2', res.json()['message'])
+        self.assertIn('blurry', res.json()['message'])
+
+    def test_stored_identity_is_mean_of_photos(self):
+        res = self._enroll(self.bob, [0.9] * 128)
+        self.assertEqual(res.status_code, 200)
+        self.bob.refresh_from_db()
+        self.assertAlmostEqual(self.json.loads(self.bob.face_encoding)[0], 0.902, places=5)
+
+    def test_duplicate_detected_from_any_single_photo(self):
+        samples = self._samples([0.9] * 128)
+        # Mean stays far from Alice, but one photo is Alice's face... consistency check would
+        # also catch this; loosen it to prove the per-photo duplicate check on its own.
+        samples[1]['encoding'] = [0.1] * 128
+        with self.settings(FACE_ENROLL_CONSISTENCY_TOLERANCE=100):
+            res = self._post(self.bob, samples)
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.json()['code'], 'duplicate_face')
+
+    def test_face_already_owned_by_another_student_is_rejected(self):
+        res = self._enroll(self.bob, [0.1] * 128)
+        self.assertEqual(res.status_code, 409)
+        body = res.json()
+        self.assertEqual(body['code'], 'duplicate_face')
+        self.assertEqual(body['conflict_student']['student_id'], 'STU-A')
+        self.bob.refresh_from_db()
+        self.assertFalse(self.bob.face_encoding)
+
+    def test_duplicate_rejected_even_with_replace(self):
+        res = self._enroll(self.bob, [0.1] * 128, replace=True)
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.json()['code'], 'duplicate_face')
+
+    def test_distinct_face_enrolls(self):
+        res = self._enroll(self.bob, [0.9] * 128)
+        self.assertEqual(res.status_code, 200)
+        self.bob.refresh_from_db()
+        self.assertAlmostEqual(self.json.loads(self.bob.face_encoding)[0], 0.9, places=2)
+
+    def test_reenroll_same_person_is_allowed(self):
+        res = self._enroll(self.alice, [0.11] * 128)
+        self.assertEqual(res.status_code, 200)
+
+    def test_reenroll_different_person_requires_replace(self):
+        res = self._enroll(self.alice, [0.9] * 128)
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.json()['code'], 'face_mismatch')
+        self.alice.refresh_from_db()
+        self.assertEqual(self.json.loads(self.alice.face_encoding)[0], 0.1)
+
+        res = self._enroll(self.alice, [0.9] * 128, replace=True)
+        self.assertEqual(res.status_code, 200)
+        self.alice.refresh_from_db()
+        self.assertAlmostEqual(self.json.loads(self.alice.face_encoding)[0], 0.9, places=2)
+
+
+class EnrollmentQualityGateTests(TestCase):
+    """assess_face_quality / extract_enrollment_sample on synthetic images (landmarks mocked)."""
+
+    def _img(self, value=128, noise=True):
+        import numpy as np
+        rng = np.random.default_rng(0)
+        img = np.full((300, 300, 3), value, dtype=np.uint8)
+        if noise:
+            img = np.clip(img.astype(int) + rng.integers(-40, 40, img.shape), 0, 255).astype(np.uint8)
+        return img
+
+    BOX = {'top': 50, 'right': 250, 'bottom': 250, 'left': 50}
+
+    def _assess(self, img, box=None, yaw=0.0):
+        from face_app.utils import assess_face_quality
+        with patch('face_app.utils.estimate_head_yaw', return_value=yaw):
+            return assess_face_quality(img, box or self.BOX)
+
+    def test_sample_rejected_when_liveness_fails(self):
+        from face_app import utils
+        face = {'encoding': [0.1] * 128, 'box': dict(self.BOX)}
+        with patch.object(utils, 'detect_and_encode_strict', return_value=(self._img(), [face])), \
+             patch.object(utils, 'assess_face_quality', return_value=(True, 'ok', {'yaw': 0.0})), \
+             patch.object(utils, 'check_face_liveness', return_value=(False, 0.0, 'Excessive specular glare')):
+            with self.assertRaises(utils.EnrollmentQualityError) as ctx:
+                utils.extract_enrollment_sample(b'jpeg')
+        self.assertIn('not a photo or screen', str(ctx.exception))
+
+    def test_good_face_passes(self):
+        ok, reason, _ = self._assess(self._img())
+        self.assertTrue(ok, reason)
+
+    def test_small_face_rejected(self):
+        ok, reason, _ = self._assess(self._img(), box={'top': 10, 'right': 60, 'bottom': 60, 'left': 10})
+        self.assertFalse(ok)
+        self.assertIn('too small', reason)
+
+    def test_dark_face_rejected(self):
+        ok, reason, _ = self._assess(self._img(value=15, noise=False))
+        self.assertFalse(ok)
+        self.assertIn('dark', reason)
+
+    def test_blurry_face_rejected(self):
+        ok, reason, _ = self._assess(self._img(noise=False))  # perfectly flat = no detail
+        self.assertFalse(ok)
+        self.assertIn('blurry', reason)
+
+    def test_turned_or_unreadable_face_rejected(self):
+        self.assertFalse(self._assess(self._img(), yaw=0.9)[0])
+        self.assertFalse(self._assess(self._img(), yaw=None)[0])
+
+    def test_strict_detector_uses_no_loose_fallbacks(self):
+        """Only HOG on the original image; no Haar/LBPH/enhanced retries."""
+        from face_app import utils
+        if not utils.FACE_RECOGNITION_AVAILABLE:
+            self.skipTest('dlib not installed')
+        with patch.object(utils.fr, 'face_locations', return_value=[]) as locate, \
+             patch.object(utils, '_detect_faces_cv') as haar:
+            _img, faces = utils.detect_and_encode_strict(self._jpeg())
+        self.assertEqual(faces, [])
+        self.assertEqual(locate.call_count, 2)
+        haar.assert_not_called()
+
+    def _jpeg(self):
+        from io import BytesIO
+        from PIL import Image
+        buf = BytesIO()
+        Image.new('RGB', (120, 120), (120, 100, 90)).save(buf, format='JPEG')
+        return buf.getvalue()

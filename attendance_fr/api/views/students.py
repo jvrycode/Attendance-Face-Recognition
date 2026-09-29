@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from accounts.models import CustomUser
-from attendance_fr.permissions import IsAdminRole, IsAdminOrReadOnly
+from attendance_fr.permissions import IsAdminRole
 from attendance_fr.api.serializers.students import (
     CustomUserSerializer,
     StudentSerializer,
@@ -32,7 +32,7 @@ class NextStudentIdAPIView(APIView):
 
 class UserListCreateAPIView(APIView):
     """GET /api/users/ - List users. POST /api/users/ - Create user (Admin only)."""
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminRole]
 
     def get(self, request):
         from django.db.models import Q

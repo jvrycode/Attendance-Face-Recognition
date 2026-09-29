@@ -1,0 +1,211 @@
+"""Authorization and attendance-integrity regression tests."""
+from datetime import time
+
+from django.test import Client, TestCase
+from django.utils import timezone
+
+from accounts.models import CustomUser, Student, Teacher
+from core.models import AttendanceSession, Program, Schedule, Section, StudentSection, Subject
+
+
+class AuthorizationAndAttendanceIntegrityTests(TestCase):
+    def setUp(self):
+        self.admin = CustomUser.objects.create_user(username='admin', role='admin', password='StrongPassword123!')
+        self.teacher_user = CustomUser.objects.create_user(username='teacher', role='teacher', password='StrongPassword123!')
+        self.teacher = Teacher.objects.create(user=self.teacher_user, employee_id='T-001')
+        self.other_teacher_user = CustomUser.objects.create_user(username='other_teacher', role='teacher', password='StrongPassword123!')
+        self.other_teacher = Teacher.objects.create(user=self.other_teacher_user, employee_id='T-002')
+        self.student_user = CustomUser.objects.create_user(username='student', role='student', password='StrongPassword123!')
+        self.student = Student.objects.create(user=self.student_user, student_id='S-001')
+        self.other_student_user = CustomUser.objects.create_user(username='other_student', role='student', password='StrongPassword123!')
+        self.other_student = Student.objects.create(user=self.other_student_user, student_id='S-002')
+
+        program = Program.objects.create(code='AUTH', name='Authorization')
+        subject = Subject.objects.create(code='AUTH101', name='Access Control')
+        self.section = Section.objects.create(name='AUTH-1A', program=program, subject=subject, teacher=self.teacher)
+        self.other_section = Section.objects.create(name='AUTH-1B', program=program, subject=subject, teacher=self.other_teacher)
+        self.schedule = Schedule.objects.create(section=self.section, day_of_week='Mon', start_time=time(9), end_time=time(10), room='101')
+        other_schedule = Schedule.objects.create(section=self.other_section, day_of_week='Tue', start_time=time(9), end_time=time(10), room='102')
+        StudentSection.objects.create(student=self.student, section=self.section)
+        StudentSection.objects.create(student=self.other_student, section=self.other_section)
+        self.session = AttendanceSession.objects.create(schedule=self.schedule, date=timezone.localdate(), started_by=self.teacher)
+        self.other_session = AttendanceSession.objects.create(schedule=other_schedule, date=timezone.localdate(), started_by=self.other_teacher)
+        self.client = Client()
+
+    def test_student_cannot_list_user_profiles(self):
+        self.client.force_login(self.student_user)
+        self.assertEqual(self.client.get('/api/users/').status_code, 403)
+
+    def test_student_sees_only_enrolled_sessions(self):
+        self.client.force_login(self.student_user)
+        response = self.client.get('/api/attendance/sessions/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({item['id'] for item in response.json()}, {self.session.id})
+
+    def test_teacher_cannot_view_unrelated_student_report(self):
+        self.client.force_login(self.teacher_user)
+        response = self.client.get(f'/api/attendance/student/overview/?student_id={self.other_student.student_id}')
+        self.assertEqual(response.status_code, 403)
+
+    def test_student_cannot_view_unenrolled_section_calendar(self):
+        self.client.force_login(self.student_user)
+        response = self.client.get(f'/api/attendance/student/calendar/{self.other_section.id}/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_manual_mark_rejects_unenrolled_student(self):
+        from unittest.mock import patch
+
+        self.client.force_login(self.teacher_user)
+        with patch(
+            'attendance_fr.api.views.attendance.AttendanceService.validate_session_time_window',
+            return_value=None,
+        ):
+            response = self.client.post('/api/attendance/records/mark/', {
+                'session_id': self.session.id, 'student_id': self.other_student.id, 'status': 'present',
+            }, content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_manual_mark_rejects_closed_session(self):
+        self.session.status = 'closed'
+        self.session.save(update_fields=['status'])
+        self.client.force_login(self.teacher_user)
+        response = self.client.post('/api/attendance/records/mark/', {
+            'session_id': self.session.id, 'student_id': self.student.id, 'status': 'present',
+        }, content_type='application/json')
+        self.assertEqual(response.status_code, 409)
+
+    def test_recognition_does_not_reopen_closed_session(self):
+        self.session.status = 'closed'
+        self.session.save(update_fields=['status'])
+        self.client.force_login(self.teacher_user)
+        response = self.client.post('/api/face/recognize/', {
+            'session_id': self.session.id, 'frame': 'not-a-frame',
+        }, content_type='application/json')
+        self.assertEqual(response.status_code, 409)
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, 'closed')
+
+    def test_admin_cannot_start_or_manage_attendance(self):
+        self.client.force_login(self.admin)
+        start = self.client.post('/api/attendance/sessions/start/', {
+            'schedule_id': self.schedule.id,
+        }, content_type='application/json')
+        close = self.client.post(f'/api/attendance/sessions/{self.session.id}/close/')
+        reopen = self.client.post(f'/api/attendance/sessions/{self.session.id}/reopen/')
+        manual = self.client.post('/api/attendance/records/mark/', {
+            'session_id': self.session.id, 'student_id': self.student.id, 'status': 'present',
+        }, content_type='application/json')
+        self.assertEqual(start.status_code, 403)
+        self.assertEqual(close.status_code, 403)
+        self.assertEqual(reopen.status_code, 403)
+        self.assertEqual(manual.status_code, 403)
+
+    def test_teacher_cannot_reopen_or_manually_mark_outside_schedule_window(self):
+        from unittest.mock import patch
+
+        self.session.status = 'closed'
+        self.session.save(update_fields=['status'])
+        self.client.force_login(self.teacher_user)
+        with patch(
+            'attendance_fr.api.views.attendance.AttendanceService.validate_session_time_window',
+            return_value='Attendance cannot be started. Your class schedule already ended at 10:00 AM.',
+        ):
+            reopen = self.client.post(
+                f'/api/attendance/sessions/{self.session.id}/reopen/',
+                {'reason': 'Late-arriving students'},
+                content_type='application/json',
+            )
+        self.assertEqual(reopen.status_code, 403)
+
+        self.session.status = 'open'
+        self.session.save(update_fields=['status'])
+        with patch(
+            'attendance_fr.api.views.attendance.AttendanceService.validate_session_time_window',
+            return_value='Attendance cannot be started. Your class schedule already ended at 10:00 AM.',
+        ):
+            manual = self.client.post('/api/attendance/records/mark/', {
+                'session_id': self.session.id, 'student_id': self.student.id, 'status': 'present',
+            }, content_type='application/json')
+        self.assertEqual(manual.status_code, 403)
+
+    # ── Another teacher must not touch someone else's session ────────────────
+    def _as_other_teacher_open_session(self):
+        self.session.status = 'open'
+        self.session.save(update_fields=['status'])
+        self.client.force_login(self.other_teacher_user)
+
+    def test_other_teacher_cannot_view_session_detail(self):
+        self._as_other_teacher_open_session()
+        response = self.client.get(f'/api/attendance/sessions/{self.session.id}/')
+        self.assertIn(response.status_code, (403, 404))
+
+    def test_other_teacher_cannot_close_session(self):
+        self._as_other_teacher_open_session()
+        response = self.client.post(f'/api/attendance/sessions/{self.session.id}/close/')
+        self.assertIn(response.status_code, (403, 404))
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, 'open')
+
+    def test_other_teacher_cannot_reopen_session(self):
+        self.session.status = 'closed'
+        self.session.save(update_fields=['status'])
+        self.client.force_login(self.other_teacher_user)
+        response = self.client.post(
+            f'/api/attendance/sessions/{self.session.id}/reopen/',
+            {'reason': 'Trying to reopen'}, content_type='application/json',
+        )
+        self.assertIn(response.status_code, (403, 404))
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, 'closed')
+
+    def test_other_teacher_cannot_manually_mark(self):
+        from unittest.mock import patch
+
+        self._as_other_teacher_open_session()
+        with patch(
+            'attendance_fr.api.views.attendance.AttendanceService.validate_session_time_window',
+            return_value=None,
+        ):
+            response = self.client.post('/api/attendance/records/mark/', {
+                'session_id': self.session.id, 'student_id': self.student.id, 'status': 'present',
+            }, content_type='application/json')
+        self.assertIn(response.status_code, (403, 404))
+        self.assertFalse(self.session.records.filter(student=self.student, status='present').exists())
+
+    def test_other_teacher_cannot_scan_session_and_learns_nothing(self):
+        """Recognition on someone else's session looks exactly like a missing session."""
+        self._as_other_teacher_open_session()
+        foreign = self.client.post('/api/face/recognize/', {
+            'session_id': self.session.id, 'frame': 'not-a-frame',
+        }, content_type='application/json')
+        missing = self.client.post('/api/face/recognize/', {
+            'session_id': 999999, 'frame': 'not-a-frame',
+        }, content_type='application/json')
+        self.assertEqual(foreign.status_code, 404)
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual(
+            foreign.json()['error'].replace(str(self.session.id), 'N'),
+            missing.json()['error'].replace('999999', 'N'),
+        )
+
+    def test_recognition_does_not_resolve_schedule_id_as_session(self):
+        """A schedule id must never be accepted in place of a session id."""
+        self.client.force_login(self.teacher_user)
+        AttendanceSession.objects.filter(pk=self.schedule.id).exclude(pk=self.session.id).delete()
+        from attendance_fr.api.services.face_recognition import FaceRecognitionService
+        self.assertIsNone(FaceRecognitionService.get_session('not-a-number'))
+        self.assertEqual(FaceRecognitionService.get_session(self.session.id), self.session)
+
+    def test_teacher_recognition_is_blocked_outside_schedule_window(self):
+        from unittest.mock import patch
+
+        self.client.force_login(self.teacher_user)
+        with patch(
+            'attendance_fr.api.views.face_recognition.AttendanceService.validate_session_time_window',
+            return_value='Attendance cannot be started. Your class schedule already ended at 10:00 AM.',
+        ):
+            response = self.client.post('/api/face/recognize/', {
+                'session_id': self.session.id, 'frame': 'not-a-frame',
+            }, content_type='application/json')
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(response.json()['attendance_unavailable'])

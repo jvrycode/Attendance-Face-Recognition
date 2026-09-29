@@ -4,9 +4,12 @@ Maps all /api/ routes to the appropriate modular view classes.
 No business logic lives here — only URL ↔ View binding.
 """
 from django.urls import path
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-
-from attendance_fr.api.views.auth import CurrentUserAPIView
+from attendance_fr.api.views.auth import (
+    CurrentUserAPIView,
+    LogoutAPIView,
+    ThrottledTokenObtainPairView,
+    ThrottledTokenRefreshView,
+)
 from attendance_fr.api.views.students import (
     UserListCreateAPIView,
     UserDetailAPIView,
@@ -27,6 +30,10 @@ from attendance_fr.api.views.classes import (
     ScheduleListCreateAPIView,
     ScheduleDetailAPIView,
 )
+from attendance_fr.api.views.courses import (
+    CourseListCreateAPIView,
+    CourseDetailAPIView,
+)
 from attendance_fr.api.views.attendance import (
     AttendanceSessionListAPIView,
     AttendanceSessionStartAPIView,
@@ -35,6 +42,7 @@ from attendance_fr.api.views.attendance import (
     AttendanceSessionDetailAPIView,
     ManualAttendanceMarkAPIView,
 )
+from attendance_fr.api.views.media import FacePhotoAPIView
 from attendance_fr.api.views.face_recognition import (
     FaceRecognizeAPIView,
     FaceEnrollAPIView,
@@ -47,14 +55,17 @@ from attendance_fr.api.views.reports import (
 
 urlpatterns = [
     # ── JWT Authentication ────────────────────────────────────────────────────
-    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('token/', ThrottledTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', ThrottledTokenRefreshView.as_view(), name='token_refresh'),
     path('auth/me/', CurrentUserAPIView.as_view(), name='api_auth_me'),
+    path('auth/logout/', LogoutAPIView.as_view(), name='api_auth_logout'),
 
     # ── Dashboard & Users ────────────────────────────────────────────────────
     path('dashboard/stats/', DashboardStatsAPIView.as_view(), name='api_dashboard_stats'),
     path('programs/', ProgramListCreateAPIView.as_view(), name='api_programs'),
     path('programs/<int:pk>/', ProgramDetailAPIView.as_view(), name='api_program_detail'),
+    path('courses/', CourseListCreateAPIView.as_view(), name='api_courses'),
+    path('courses/<int:pk>/', CourseDetailAPIView.as_view(), name='api_course_detail'),
     path('program-sections/', ProgramSectionListCreateAPIView.as_view(), name='api_program_sections'),
     path('program-sections/<int:pk>/', ProgramSectionDetailAPIView.as_view(), name='api_program_section_detail'),
     path('users/', UserListCreateAPIView.as_view(), name='api_users'),
@@ -85,4 +96,5 @@ urlpatterns = [
     # ── Face Recognition ─────────────────────────────────────────────────────
     path('face/recognize/', FaceRecognizeAPIView.as_view(), name='api_face_recognize'),
     path('face/enroll/', FaceEnrollAPIView.as_view(), name='api_face_enroll'),
+    path('media/face/<int:student_pk>/', FacePhotoAPIView.as_view(), name='api_face_photo'),
 ]

@@ -1,18 +1,40 @@
 from django.contrib import admin
-from .models import Subject, Section, Schedule, AttendanceSession, AttendanceRecord, StudentSection
+from django.contrib import admin
+from .models import Course, Program, ProgramSection, Subject, Section, Schedule, AttendanceSession, AttendanceRecord, StudentSection
+
+
+@admin.register(Course)
+class CourseAdmin(admin.ModelAdmin):
+    list_display = ['code', 'name', 'program', 'is_active', 'created_at']
+    list_filter = ['program', 'is_active']
+    search_fields = ['code', 'name', 'program__code', 'program__name']
+
+
+@admin.register(Program)
+class ProgramAdmin(admin.ModelAdmin):
+    list_display = ['code', 'name', 'college', 'created_at']
+    search_fields = ['code', 'name', 'college']
+
+
+@admin.register(ProgramSection)
+class ProgramSectionAdmin(admin.ModelAdmin):
+    list_display = ['name', 'program', 'course', 'year_level']
+    list_filter = ['program', 'course', 'year_level']
+    search_fields = ['name', 'course', 'program__code']
 
 
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
-    list_display = ['code', 'name', 'units']
+    list_display = ['code', 'name', 'program', 'units']
+    list_filter = ['program']
     search_fields = ['code', 'name']
 
 
 @admin.register(Section)
 class SectionAdmin(admin.ModelAdmin):
-    list_display = ['name', 'subject', 'teacher', 'school_year', 'semester']
-    list_filter = ['school_year', 'semester']
-    search_fields = ['name', 'subject__name']
+    list_display = ['name', 'program', 'course', 'year_level', 'teacher', 'school_year', 'semester']
+    list_filter = ['program', 'course', 'name', 'year_level', 'school_year', 'semester']
+    search_fields = ['name', 'course', 'program__code']
     raw_id_fields = ['teacher']
 
 

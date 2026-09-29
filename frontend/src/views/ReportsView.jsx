@@ -1,22 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import { TableLoadingRow } from '../ui';
 import {
-  BarChart2,
   Camera,
   CircleDot,
   FileText,
   BookOpen,
-  Calendar,
+  
   Clock,
   User as UserIcon,
   CheckCircle,
-  AlertTriangle,
   XCircle,
   BookX,
-  List
+  List,
 } from 'lucide-react';
 import { Api } from '../api';
 import { formatSchoolScheduleParts } from '../utils/time';
-import ActionPopover from '../components/ActionPopover';
+import ActionPopover from '../components/shared/ActionPopover';
 import StudentAttendanceCalendarModal from '../components/StudentAttendanceCalendarModal';
 
 export default function ReportsView({ user, onNavigate, onStartSession, onSetHeaderInfo }) {
@@ -276,7 +275,7 @@ export default function ReportsView({ user, onNavigate, onStartSession, onSetHea
                         fontWeight: 600,
                       }}
                     >
-                      <Calendar size={14} /> <span>View Attendance</span>
+                      <span>View Attendance</span>
                     </button>
                   </div>
                 </div>
@@ -409,11 +408,7 @@ export default function ReportsView({ user, onNavigate, onStartSession, onSetHea
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={role !== 'teacher' ? 6 : 5} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Loading session records...
-                  </td>
-                </tr>
+                <TableLoadingRow colSpan={role !== 'teacher' ? 6 : 5} label="Loading session records…" />
               ) : sessions.length === 0 ? (
                 <tr>
                   <td colSpan={role !== 'teacher' ? 6 : 5} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>

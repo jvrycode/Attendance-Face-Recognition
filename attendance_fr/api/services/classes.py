@@ -29,9 +29,13 @@ class ClassService:
         """
         section = get_object_or_404(Section, pk=section_id)
         student = get_object_or_404(Student, pk=student_id)
+        if student.course_ref_id and section.course_ref_id and student.course_ref_id != section.course_ref_id:
+            raise DRFValidationError({'student_id': 'This student belongs to a different Course than the selected Section.'})
         subject = None
         if subject_id:
-            subject = get_object_or_404(Subject, pk=subject_id, section=section)
+            subject = get_object_or_404(Subject, pk=subject_id)
+            if subject.section_id and subject.section_id != section.pk:
+                raise DRFValidationError({'subject_id': 'The selected Subject does not belong to this Section.'})
 
         enrollment, created = StudentSection.objects.get_or_create(
             student=student,

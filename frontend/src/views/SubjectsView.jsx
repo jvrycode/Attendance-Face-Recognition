@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Plus, X, Check, Building, Trash2, Edit2, Filter, RotateCcw } from 'lucide-react';
+import { BookOpen, X, Trash2, Edit2, Filter, Power } from 'lucide-react';
 import { Api } from '../api';
-import ActionPopover from '../components/ActionPopover';
-import Toast from '../components/Toast';
+import ActionPopover from '../components/shared/ActionPopover';
+import Toast from '../components/shared/Toast';
+import { confirmAction, TableLoadingRow, StatusBadge, changeActiveStatus, ModalBackdrop } from '../ui';
 
 export default function SubjectsView({ user, onSetHeaderInfo }) {
   const [subjects, setSubjects] = useState([]);
   const [programs, setPrograms] = useState([]);
+  const [courses, setCourses] = useState([]);
   const [sections, setSections] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,6 +25,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
     units: 3,
     description: '',
     program: '',
+    course_ref: '',
     section: '',
     teacher: '',
   });
@@ -32,22 +35,23 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
 
   // Edit subject state
   const [editingSubject, setEditingSubject] = useState(null);
-  const [editFormData, setEditFormData] = useState({ code: '', name: '', units: 3, description: '', program: '', section: '', teacher: '' });
+  const [editFormData, setEditFormData] = useState({ code: '', name: '', units: 3, description: '', program: '', course_ref: '', section: '', teacher: '' });
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editErrorMsg, setEditErrorMsg] = useState('');
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const [subjList, progList, secList, teacherList] = await Promise.all([
+      const [subjList, progList, courseList, secList, teacherList] = await Promise.all([
         Api.getSubjects(),
         Api.getPrograms(),
+        Api.getCourses(),
         Api.getSections(),
         Api.getTeachers(),
       ]);
       setSubjects(subjList);
       setPrograms(progList);
-      // Always use fresh sections list so newly created sections appear immediately
+      setCourses(courseList);
       setSections(secList);
       setTeachers(teacherList);
     } catch (err) {
@@ -75,7 +79,6 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
             onClick={() => setShowAddModal(true)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            <Plus size={16} />
             <span>Add Subject</span>
           </button>
         ) : null,
@@ -99,13 +102,14 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
         units: parseInt(formData.units, 10) || 3,
         description: formData.description || '',
         program: formData.program || null,
+        course_ref: formData.course_ref ? Number(formData.course_ref) : null,
         section: formData.section || null,
         teacher: formData.teacher || null,
       };
       await Api.createSubject(payload);
       setSuccessMsg(`Subject "${formData.code}" created successfully!`);
       setShowAddModal(false);
-      setFormData({ code: '', name: '', units: 3, description: '', program: '', section: '', teacher: '' });
+      setFormData({ code: '', name: '', units: 3, description: '', program: '', course_ref: '', section: '', teacher: '' });
       await loadData();
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
@@ -116,7 +120,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
   };
 
   const handleDelete = async (id, code) => {
-    if (!window.confirm(`Are you sure you want to delete subject "${code}"?`)) return;
+    if (!(await confirmAction({ title: `Delete subject ${code}?`, message: 'This subject offering and its schedule links will be removed. This cannot be undone.', confirmLabel: 'Delete subject', tone: 'danger' }))) return;
     try {
       await Api.deleteSubject(id);
       setSuccessMsg(`Subject ${code} deleted.`);
@@ -136,6 +140,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
       units: sub.units || 3,
       description: sub.description || '',
       program: sub.program || '',
+      course_ref: sub.course_ref || sub.course_details?.id || '',
       section: sub.section || '',
       teacher: sub.teacher || '',
     });
@@ -156,6 +161,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
         units: parseInt(editFormData.units, 10) || 3,
         description: editFormData.description || '',
         program: editFormData.program || null,
+        course_ref: editFormData.course_ref ? Number(editFormData.course_ref) : null,
         section: editFormData.section || null,
         teacher: editFormData.teacher || null,
       });
@@ -262,10 +268,12 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
 
   // Filter sections if program is selected for modal
   // Handles both s.program (integer FK) and s.program_details?.id (nested object)
-  const filteredSections = formData.program
+  const filteredSections = (formData.program || formData.course_ref)
     ? sections.filter((s) => {
         const pId = s.program_details?.id ?? s.program;
-        return String(pId) === String(formData.program);
+        const matchesProgram = !formData.program || String(pId) === String(formData.program);
+        const matchesCourse = !formData.course_ref || String(s.course_ref || s.course_details?.id) === String(formData.course_ref);
+        return matchesProgram && matchesCourse;
       })
     : sections;
 
@@ -374,7 +382,6 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                 onClick={handleResetFilters}
                 style={{ height: '36px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', whiteSpace: 'nowrap' }}
               >
-                <RotateCcw size={14} />
                 <span>Reset Filters</span>
               </button>
             </div>
@@ -393,19 +400,16 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Section</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Instructor</th>
                 <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Units</th>
+                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Status</th>
                 {isAdmin && <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={isAdmin ? 7 : 6} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Loading subjects...
-                  </td>
-                </tr>
+                <TableLoadingRow colSpan={isAdmin ? 8 : 7} label="Loading subjects…" />
               ) : subjects.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 7 : 6} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={isAdmin ? 8 : 7} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No subjects found.{' '}
                     {isAdmin && (
                       <button
@@ -421,7 +425,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                 </tr>
               ) : displayedSubjects.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 7 : 6} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={isAdmin ? 8 : 7} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No subjects match the selected filters.{' '}
                     <button
                       type="button"
@@ -435,11 +439,9 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                 </tr>
               ) : (
                 displayedSubjects.map((sub) => (
-                  <tr key={sub.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <tr key={sub.id} className={sub.is_active === false ? 'row-inactive' : undefined}>
                     <td style={{ padding: '14px 18px' }}>
-                      <span className="badge badge-accent" style={{ fontSize: '12px', fontWeight: '700' }}>
-                        {sub.code}
-                      </span>
+                      <span className="code-tag">{sub.code}</span>
                     </td>
                     <td style={{ padding: '14px 18px' }}>
                       <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{sub.name}</div>
@@ -451,16 +453,14 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                     </td>
                     <td style={{ padding: '14px 18px' }}>
                       {sub.program_details ? (
-                        <span className="badge badge-info">{sub.program_details.code}</span>
+                        <span className="code-tag code-tag-info">{sub.program_details.code}</span>
                       ) : (
                         <span className="text-muted">—</span>
                       )}
                     </td>
                     <td style={{ padding: '14px 18px' }}>
                       {sub.section_name ? (
-                        <span className="badge badge-outline" style={{ fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          <Building size={12} /> {sub.section_name}
-                        </span>
+                        <strong>{sub.section_name}</strong>
                       ) : (
                         <span className="text-muted">—</span>
                       )}
@@ -473,6 +473,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                     <td style={{ padding: '14px 18px', fontSize: '13px', fontWeight: '600' }}>
                       {sub.units || 3}
                     </td>
+                    <td style={{ padding: '14px 18px' }}><StatusBadge active={sub.is_active !== false} /></td>
                     {isAdmin && (
                       <td style={{ padding: '14px 18px', textAlign: 'right' }}>
                         <ActionPopover
@@ -481,6 +482,20 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                               label: 'Edit Subject',
                               icon: Edit2,
                               onClick: () => handleOpenEdit(sub),
+                            },
+                            {
+                              label: sub.is_active !== false ? 'Deactivate Subject' : 'Activate Subject',
+                              icon: Power,
+                              isSuccess: sub.is_active === false,
+                              onClick: () => changeActiveStatus({
+                                entity: 'Subject',
+                                name: sub.code,
+                                isActive: sub.is_active !== false,
+                                impact: `Subject ${sub.code} will be temporarily closed. Its schedules and records are kept, but attendance cannot be taken for it until it is activated again.`,
+                                update: (data) => Api.updateSubject(sub.id, data),
+                                onSuccess: (msg) => { setSuccessMsg(msg); loadData(); },
+                                onError: setErrorMsg,
+                              }),
                             },
                             { isDivider: true },
                             {
@@ -503,13 +518,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
 
       {/* Add Subject Modal */}
       {showAddModal && (
-        <div
-          className="modal-backdrop open"
-          style={{ display: 'flex', opacity: 1, zIndex: 1200 }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowAddModal(false);
-          }}
-        >
+        <ModalBackdrop onClose={() => setShowAddModal(false)} busy={submitting}>
           <div className="modal-card modal-lg" style={{ width: '100%', maxWidth: '580px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             <div className="modal-header" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h3 className="modal-title" style={{ fontSize: '16px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -518,7 +527,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
               </h3>
               <button
                 type="button"
-                className="btn btn-outline btn-sm modal-close-btn"
+                className="btn btn-icon btn-outline btn-sm modal-close-btn"
                 onClick={() => setShowAddModal(false)}
                 style={{ padding: '4px', border: 'none', background: 'none', cursor: 'pointer' }}
               >
@@ -542,7 +551,7 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                     <select
                       className="form-select"
                       value={formData.program}
-                      onChange={(e) => setFormData({ ...formData, program: e.target.value, section: '' })}
+                      onChange={(e) => setFormData({ ...formData, program: e.target.value, course_ref: '', section: '' })}
                       required
                     >
                       <option value="">Select program...</option>
@@ -557,7 +566,17 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
 
                   <div className="form-group">
                     <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                      2. Section (Optional)
+                      2. Course *
+                    </label>
+                    <select className="form-select" value={formData.course_ref} onChange={(e) => setFormData({ ...formData, course_ref: e.target.value, section: '' })} required>
+                      <option value="">Select course...</option>
+                      {courses.filter((course) => !formData.program || String(course.program) === String(formData.program)).map((course) => <option key={course.id} value={course.id}>{course.code} - {course.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
+                      3. Section (Optional)
                     </label>
                     <select
                       className="form-select"
@@ -657,33 +676,28 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
               </div>
 
               <div className="modal-footer" style={{ padding: '14px 22px', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>
+                <button type="button" className="btn btn-outline" data-modal-close onClick={() => setShowAddModal(false)}>
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
-                  <Check size={16} />
                   <span>{submitting ? 'Saving...' : 'Save Subject'}</span>
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       {/* Edit Subject Modal */}
       {editingSubject && (
-        <div
-          className="modal-backdrop open"
-          style={{ display: 'flex', opacity: 1, zIndex: 1200 }}
-          onClick={(e) => { if (e.target === e.currentTarget) setEditingSubject(null); }}
-        >
+        <ModalBackdrop onClose={() => setEditingSubject(null)} busy={editSubmitting}>
           <div className="modal-card modal-lg" style={{ width: '100%', maxWidth: '580px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             <div className="modal-header" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h3 className="modal-title" style={{ fontSize: '16px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Edit2 size={18} style={{ color: 'var(--primary)' }} />
                 <span>Edit Subject Offering</span>
               </h3>
-              <button type="button" className="btn btn-outline btn-sm modal-close-btn" onClick={() => setEditingSubject(null)} style={{ padding: '4px', border: 'none', background: 'none', cursor: 'pointer' }}>
+              <button type="button" className="btn btn-icon btn-outline btn-sm modal-close-btn" onClick={() => setEditingSubject(null)} style={{ padding: '4px', border: 'none', background: 'none', cursor: 'pointer' }}>
                 <X size={18} />
               </button>
             </div>
@@ -695,17 +709,29 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                 <div className="grid-2">
                   <div className="form-group">
                     <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>1. Academic Program *</label>
-                    <select className="form-select" value={editFormData.program} onChange={(e) => setEditFormData({ ...editFormData, program: e.target.value, section: '' })} required>
+                    <select className="form-select" value={editFormData.program} onChange={(e) => setEditFormData({ ...editFormData, program: e.target.value, course_ref: '', section: '' })} required>
                       <option value="">Select program...</option>
                       {programs.map((p) => (<option key={p.id} value={p.id}>{p.code} - {p.name}</option>))}
                     </select>
                     <span className="form-text" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Filters available sections.</span>
                   </div>
                   <div className="form-group">
-                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>2. Section (Optional)</label>
+                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>2. Course *</label>
+                    <select className="form-select" value={editFormData.course_ref} onChange={(e) => setEditFormData({ ...editFormData, course_ref: e.target.value, section: '' })} required>
+                      <option value="">Select course...</option>
+                      {courses.filter((course) => !editFormData.program || String(course.program) === String(editFormData.program)).map((course) => <option key={course.id} value={course.id}>{course.code} - {course.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>3. Section (Optional)</label>
                     <select className="form-select" value={editFormData.section} onChange={(e) => setEditFormData({ ...editFormData, section: e.target.value })}>
                       <option value="">Choose section offering...</option>
-                      {(editFormData.program ? sections.filter((s) => { const pId = s.program_details?.id ?? s.program; return String(pId) === String(editFormData.program); }) : sections).map((s) => {
+                      {(editFormData.program ? sections.filter((s) => {
+                        const pId = s.program_details?.id ?? s.program;
+                        const matchesProgram = String(pId) === String(editFormData.program);
+                        const matchesCourse = !editFormData.course_ref || String(s.course_ref || s.course_details?.id) === String(editFormData.course_ref);
+                        return matchesProgram && matchesCourse;
+                      }) : sections).map((s) => {
                         const coursePart = s.course ? `${s.course} • ` : '';
                         const yearPart = s.year_level_display || `${s.year_level || 1} Year`;
                         const termPart = s.school_year ? ` • ${s.school_year}` : '';
@@ -749,15 +775,14 @@ export default function SubjectsView({ user, onSetHeaderInfo }) {
                 </div>
               </div>
               <div className="modal-footer" style={{ padding: '14px 22px', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button type="button" className="btn btn-outline" onClick={() => setEditingSubject(null)}>Cancel</button>
+                <button type="button" className="btn btn-outline" data-modal-close onClick={() => setEditingSubject(null)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={editSubmitting}>
-                  <Check size={16} />
                   <span>{editSubmitting ? 'Saving...' : 'Save Changes'}</span>
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </div>
   );

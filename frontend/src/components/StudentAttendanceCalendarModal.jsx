@@ -2,18 +2,13 @@ import React, { useState, useEffect } from 'react';
 import {
   CalendarCheck,
   Calendar,
-  ChevronLeft,
-  ChevronRight,
   X,
-  Loader2,
   Clock,
   CheckCircle,
   XCircle,
-  AlertTriangle,
-  Info,
-  List
 } from 'lucide-react';
 import { Api } from '../api';
+import { PageLoader } from '../ui';
 
 export default function StudentAttendanceCalendarModal({
   isOpen,
@@ -181,10 +176,7 @@ export default function StudentAttendanceCalendarModal({
           }}
         >
           {loading && !data ? (
-            <div style={{ textAlign: 'center', padding: '60px 24px', color: 'var(--text-muted)' }}>
-              <Loader2 className="spin" style={{ width: '36px', height: '36px', color: 'var(--primary)', margin: '0 auto 12px auto' }} />
-              <div style={{ fontSize: '14px', fontWeight: 500 }}>Loading attendance calendar &amp; verification times...</div>
-            </div>
+            <PageLoader label="Loading attendance calendar…" hint="Fetching sessions and verification times" />
           ) : data ? (
             /* 2-Column Responsive Layout: Calendar on Left, Time & Logs on the Right Side */
             <div
@@ -216,7 +208,7 @@ export default function StudentAttendanceCalendarModal({
                     onClick={handlePrevMonth}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', padding: '4px 10px' }}
                   >
-                    <ChevronLeft size={15} /> Previous
+                    Previous
                   </button>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -232,7 +224,7 @@ export default function StudentAttendanceCalendarModal({
                     onClick={handleNextMonth}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', padding: '4px 10px' }}
                   >
-                    Next <ChevronRight size={15} />
+                    Next 
                   </button>
                 </div>
 

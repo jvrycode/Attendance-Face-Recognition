@@ -158,10 +158,11 @@ def recognize_faces(request):
             teacher = getattr(request.user, 'teacher_profile', None)
             if not teacher:
                 return JsonResponse({'error': 'Forbidden: Teacher profile not found.'}, status=403)
+            has_subject_teacher = session.schedule.section.subjects.filter(teacher__isnull=False).exists()
             is_assigned = (
                 (session.started_by == teacher) or
-                (session.schedule.section.teacher == teacher) or
-                session.schedule.section.subjects.filter(teacher=teacher).exists()
+                session.schedule.section.subjects.filter(teacher=teacher).exists() or
+                (not has_subject_teacher and session.schedule.section.teacher == teacher)
             )
             if not is_assigned:
                 return JsonResponse({'error': 'Forbidden: You are not assigned to manage this attendance session.'}, status=403)

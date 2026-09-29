@@ -1,0 +1,74 @@
+/* ==========================================================================
+   Shared filter / search control sizing (admin, teacher, student portals)
+   --------------------------------------------------------------------------
+   Single source of truth for every filter toolbar and search box.
+
+   Why this exists: the global .form-control/.form-select rule uses
+   min-height: 42px + 10px padding + 14.5px text (sized for data-entry forms).
+   `min-height` always beats `height`, so older "height: 34px" overrides on
+   filters never took effect and filters rendered form-sized.
+
+   Standard compact control on desktop: 34px tall, 13px text.
+   On phones (<=768px) we keep 40px height and 16px text so touch targets stay
+   usable and iOS Safari does not auto-zoom on focus.
+
+   Applies to:
+   - .academic-filter-toolbar  (Sections, Section Catalog)
+   - .teacher-report-controls  (Attendance reports)
+   - .filter-control           (any standalone search/filter input or select)
+   ========================================================================== */
+
+:root {
+  --filter-control-height: 34px;
+  --filter-control-font: 13px;
+  --filter-label-font: 11.5px;
+}
+
+.academic-filter-toolbar .form-select,
+.academic-filter-toolbar .form-control,
+.teacher-report-controls .form-select,
+.teacher-report-controls .form-control,
+.form-control.filter-control,
+.form-select.filter-control {
+  height: var(--filter-control-height);
+  min-height: var(--filter-control-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: var(--filter-control-font);
+  line-height: calc(var(--filter-control-height) - 2px);
+}
+
+/* Selects need right padding for the native arrow */
+.academic-filter-toolbar .form-select,
+.teacher-report-controls .form-select,
+.form-select.filter-control {
+  padding-left: 10px;
+  padding-right: 28px;
+}
+
+.academic-filter-toolbar .form-control,
+.teacher-report-controls .form-control,
+.form-control.filter-control {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+/* Buttons that sit on the same row as filters (Reset, etc.) match the height */
+.academic-filter-toolbar .btn,
+.teacher-report-controls .btn {
+  height: var(--filter-control-height);
+  min-height: var(--filter-control-height);
+  font-size: 12.5px;
+}
+
+/* Filter field labels */
+.academic-filter-toolbar .form-group > span {
+  font-size: var(--filter-label-font);
+}
+
+@media (max-width: 768px) {
+  :root {
+    --filter-control-height: 40px;
+    --filter-control-font: 16px; /* prevents iOS zoom on focus */
+  }
+}

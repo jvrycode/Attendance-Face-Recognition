@@ -75,8 +75,9 @@ def dashboard_view(request):
             from core.models import Section, AttendanceSession, StudentSection, Schedule
             from django.db.models import Q
 
-            sections = Section.objects.filter(
-                Q(teacher=teacher) | Q(subjects__teacher=teacher)
+            from core.services.enrollment_service import EnrollmentService
+            sections = EnrollmentService.filter_sections_for_teacher(
+                Section.objects.all(), teacher
             ).select_related('program', 'subject', 'teacher__user').prefetch_related(
                 'schedules', 'enrollments__student__user', 'subjects'
             ).distinct().order_by('program__code', 'name')

@@ -110,9 +110,7 @@ class TimetableService:
                 height_px = (duration_min / 60.0) * cls.PIXELS_PER_HOUR
 
                 # Support multi-day schedules (e.g. T-TH places on Tue and Thu)
-                days_to_plot = [sched.day_of_week]
-                if sched.day_2 and sched.day_2 != sched.day_of_week:
-                    days_to_plot.append(sched.day_2)
+                days_to_plot = list(dict.fromkeys(sched.meeting_days))
 
                 schedules_data.append({
                     'schedule_id': sched.id,

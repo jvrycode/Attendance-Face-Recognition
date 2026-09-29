@@ -1,14 +1,16 @@
 """
 Classes Views
 Handles Programs, ProgramSections, Subjects, Sections, and Schedules.
+Course management lives in its own module: attendance_fr/api/views/courses.py.
 """
 from django.shortcuts import get_object_or_404
+from django.db.models import Prefetch, Q
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
 
-from core.models import Program, ProgramSection, Subject, Section, Schedule, StudentSection
+from core.models import Program, ProgramSection, Course, Subject, Section, Schedule, StudentSection
 from attendance_fr.api.serializers.classes import (
     ProgramSerializer,
     ProgramSectionSerializer,
@@ -19,6 +21,7 @@ from attendance_fr.api.serializers.classes import (
     SectionEnrollmentCreateSerializer,
 )
 from attendance_fr.api.services.classes import ClassService
+from attendance_fr.api.services.response_cache import ResponseCache, request_scope
 from attendance_fr.permissions import IsAdminRole, IsAdminOrReadOnly
 
 
@@ -45,16 +48,23 @@ class ProgramSectionListCreateAPIView(ListCreateAPIView):
     permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
-        qs = ProgramSection.objects.select_related('program').order_by(
+        qs = ProgramSection.objects.select_related('program', 'course_ref').order_by(
             'program__code', 'course', 'year_level', 'name'
         )
-        program_id = self.request.query_params.get('program')
+        program_id = self.request.query_params.get('program_id') or self.request.query_params.get('program')
+        course_id = self.request.query_params.get('course_id')
         course = self.request.query_params.get('course')
         year_level = self.request.query_params.get('year_level')
 
         if program_id:
             qs = qs.filter(program_id=program_id)
-        if course:
+        if course_id:
+            course_obj = Course.objects.filter(pk=course_id).only('code').first()
+            course_filter = Q(course_ref_id=course_id)
+            if course_obj:
+                course_filter |= Q(course__iexact=course_obj.code)
+            qs = qs.filter(course_filter)
+        elif course:
             qs = qs.filter(course__iexact=course)
         if year_level:
             qs = qs.filter(year_level=year_level)
@@ -74,11 +84,17 @@ class SubjectListCreateAPIView(ListCreateAPIView):
     permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
-        program_id = self.request.query_params.get('program_id')
+        program_id = self.request.query_params.get('program_id') or self.request.query_params.get('program')
+        course_id = self.request.query_params.get('course_id') or self.request.query_params.get('course')
+        section_id = self.request.query_params.get('section_id') or self.request.query_params.get('section')
         user = self.request.user
-        qs = Subject.objects.select_related('program', 'teacher__user', 'section')
+        qs = Subject.objects.select_related('program', 'course_ref__program', 'teacher__user', 'section')
         if program_id:
             qs = qs.filter(program_id=program_id)
+        if course_id:
+            qs = qs.filter(course_ref_id=course_id)
+        if section_id:
+            qs = qs.filter(section_id=section_id)
         if user.role == 'teacher' and hasattr(user, 'teacher_profile'):
             qs = qs.filter(teacher=user.teacher_profile)
         return qs.order_by('code')
@@ -96,23 +112,49 @@ class SectionListCreateAPIView(ListCreateAPIView):
     serializer_class = SectionSerializer
     permission_classes = [IsAdminOrReadOnly]
 
+    def list(self, request, *args, **kwargs):
+        data = ResponseCache.get_or_set(
+            'academic', request_scope(request, endpoint='section-list'),
+            lambda: self.get_serializer(self.filter_queryset(self.get_queryset()), many=True).data,
+        )
+        return Response(data)
+
     def get_queryset(self):
         user = self.request.user
         qs = Section.objects.select_related(
-            'program', 'program_section', 'subject', 'teacher__user'
-        ).prefetch_related('subjects', 'schedules')
+            'program', 'program_section', 'program_section__course_ref', 'course_ref', 'subject', 'teacher__user'
+        )
 
-        program_id = self.request.query_params.get('program')
+        program_id = self.request.query_params.get('program_id') or self.request.query_params.get('program')
+        course_id = self.request.query_params.get('course_id')
+        section_id = self.request.query_params.get('section_id')
+        subject_id = self.request.query_params.get('subject_id')
         course = self.request.query_params.get('course')
         year_level = self.request.query_params.get('year_level')
 
         if program_id:
             qs = qs.filter(program_id=program_id)
-        if course:
+        if course_id:
+            course_obj = Course.objects.filter(pk=course_id).only('code').first()
+            course_filter = Q(course_ref_id=course_id)
+            if course_obj:
+                course_filter |= Q(course__iexact=course_obj.code)
+            qs = qs.filter(course_filter)
+        elif course:
             qs = qs.filter(course__iexact=course)
+        if section_id:
+            qs = qs.filter(pk=section_id)
+        if subject_id:
+            qs = qs.filter(Q(subject_id=subject_id) | Q(subjects__id=subject_id)).distinct()
         if year_level:
             qs = qs.filter(year_level=year_level)
 
+        # Subjects are serialized with their instructor, program and course, so
+        # join those up-front instead of querying per subject row.
+        subject_queryset = Subject.objects.select_related('teacher__user', 'program', 'course_ref', 'section')
+        if subject_id:
+            subject_queryset = subject_queryset.filter(pk=subject_id)
+        qs = qs.prefetch_related(Prefetch('subjects', queryset=subject_queryset), 'schedules')
         qs = ClassService.filter_sections_for_user(qs, user)
         return qs.order_by('name')
 
@@ -123,7 +165,7 @@ class SectionDetailAPIView(RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         qs = Section.objects.select_related(
-            'program', 'program_section', 'subject', 'teacher__user'
+            'program', 'program_section', 'program_section__course_ref', 'course_ref', 'subject', 'teacher__user'
         ).prefetch_related('subjects', 'schedules')
         return ClassService.filter_sections_for_user(qs, self.request.user)
 
@@ -143,7 +185,11 @@ class SectionEnrollmentListCreateAPIView(APIView):
             )
         enrollments = StudentSection.objects.filter(
             section=section
-        ).select_related(
+        )
+        subject_id = request.query_params.get('subject_id') or request.query_params.get('subject')
+        if subject_id:
+            enrollments = enrollments.filter(Q(subject__isnull=True) | Q(subject_id=subject_id))
+        enrollments = enrollments.select_related(
             'student__user', 'subject', 'section'
         ).order_by('student__user__last_name', 'student__user__first_name')
         return Response(StudentSectionSerializer(enrollments, many=True).data)
@@ -180,6 +226,13 @@ class SectionEnrollmentDestroyAPIView(APIView):
 class ScheduleListCreateAPIView(ListCreateAPIView):
     serializer_class = ScheduleSerializer
     permission_classes = [IsAdminOrReadOnly]
+
+    def list(self, request, *args, **kwargs):
+        data = ResponseCache.get_or_set(
+            'academic', request_scope(request, endpoint='schedule-list'),
+            lambda: self.get_serializer(self.filter_queryset(self.get_queryset()), many=True).data,
+        )
+        return Response(data)
 
     def get_queryset(self):
         section_id = self.request.query_params.get('section_id')

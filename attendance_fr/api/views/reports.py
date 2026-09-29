@@ -11,6 +11,8 @@ from django.utils import timezone
 from core.models import Section
 from accounts.models import Student
 from attendance_fr.api.services.reports import ReportService
+from attendance_fr.api.services.response_cache import ResponseCache, request_scope
+from attendance_fr.permissions import can_view_student_attendance
 
 
 class DashboardStatsAPIView(APIView):
@@ -18,7 +20,10 @@ class DashboardStatsAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        stats = ReportService.get_dashboard_stats(request.user)
+        stats = ResponseCache.get_or_set(
+            'dashboard', request_scope(request),
+            lambda: ReportService.get_dashboard_stats(request.user),
+        )
         return Response(stats)
 
 
@@ -44,7 +49,13 @@ class StudentAttendanceOverviewAPIView(APIView):
         else:
             return Response({'error': 'Unauthorized.'}, status=status.HTTP_403_FORBIDDEN)
 
-        data = ReportService.get_student_overview(student)
+        if not can_view_student_attendance(user, student):
+            return Response({'error': 'You are not authorized to view this student attendance.'}, status=status.HTTP_403_FORBIDDEN)
+
+        data = ResponseCache.get_or_set(
+            'reports', request_scope(request, student_id=student.pk, report='overview'),
+            lambda: ReportService.get_student_overview(student),
+        )
         return Response(data)
 
 
@@ -70,6 +81,9 @@ class StudentSectionCalendarAPIView(APIView):
         else:
             return Response({'error': 'Unauthorized.'}, status=status.HTTP_403_FORBIDDEN)
 
+        if not can_view_student_attendance(user, student, section):
+            return Response({'error': 'You are not authorized to view this student section calendar.'}, status=status.HTTP_403_FORBIDDEN)
+
         today = timezone.localdate()
         try:
             target_year = int(request.query_params.get('year', today.year))
@@ -80,7 +94,12 @@ class StudentSectionCalendarAPIView(APIView):
             target_year = today.year
             target_month = today.month
 
-        data = ReportService.get_student_section_calendar(
-            student, section, target_year, target_month
+        data = ResponseCache.get_or_set(
+            'reports',
+            request_scope(
+                request, student_id=student.pk, section_id=section.pk,
+                year=target_year, month=target_month, report='calendar',
+            ),
+            lambda: ReportService.get_student_section_calendar(student, section, target_year, target_month),
         )
         return Response(data)

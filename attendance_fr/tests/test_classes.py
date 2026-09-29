@@ -45,14 +45,29 @@ class RestAcademicApiTests(TestCase):
 
     def test_admin_create_section_api(self):
         """POST /api/sections/ allows administrator to register sections."""
+        # Create Course and ProgramSection (Section Catalog definition) first
+        from core.models import Course, ProgramSection
+        course = Course.objects.create(
+            program=self.program,
+            code='BSCS',
+            name='Bachelor of Science in Computer Science'
+        )
+        prog_section = ProgramSection.objects.create(
+            program=self.program,
+            course_ref=course,
+            name='CS-4B',
+            year_level=4,
+            description='Computer Science 4th Year Section B'
+        )
+        
         self.client.force_login(self.admin)
         res = self.client.post(
             '/api/sections/',
             {
-                'name': 'CS-4B',
-                'program': self.program.pk,
-                'course': 'BS Computer Science',
-                'year_level': 4,
+                'name': 'CS-4B',  # Will be overridden by program_section.name on save
+                'program_section': prog_section.pk,
+                'school_year': '2025-2026',
+                'semester': '1st',
             },
             content_type='application/json'
         )
@@ -114,3 +129,57 @@ class RestAcademicApiTests(TestCase):
         self.client.force_login(self.student_u)
         res = self.client.get(f'/api/sections/{other_section.pk}/')
         self.assertEqual(res.status_code, 404)
+
+
+class AcademicDeactivationTests(TestCase):
+    """Programs, catalog sections, class sections and subjects can be temporarily deactivated."""
+
+    def setUp(self):
+        from core.models import Course, ProgramSection
+        self.admin = CustomUser.objects.create_user(username='deact_admin', role='admin', password='StrongPassword123!')
+        self.program = Program.objects.create(code='DX', name='Deactivation Program')
+        self.course = Course.objects.create(program=self.program, code='BSDX', name='BS Deactivation')
+        self.catalog = ProgramSection.objects.create(program=self.program, course_ref=self.course, name='DX-1A', year_level=1)
+        self.subject = Subject.objects.create(code='DX101', name='Deactivation 101')
+        # Legacy section without a catalog link: a status-only PATCH must still work.
+        self.section = Section.objects.create(name='DX-LEGACY', program=self.program, subject=self.subject)
+        self.client = Client()
+        self.client.force_login(self.admin)
+
+    def _patch(self, url, data):
+        return self.client.patch(url, data, content_type='application/json')
+
+    def test_status_only_patch_toggles_each_entity(self):
+        cases = [
+            (f'/api/programs/{self.program.pk}/', self.program),
+            (f'/api/program-sections/{self.catalog.pk}/', self.catalog),
+            (f'/api/sections/{self.section.pk}/', self.section),
+            (f'/api/subjects/{self.subject.pk}/', self.subject),
+        ]
+        for url, obj in cases:
+            res = self._patch(url, {'is_active': False})
+            self.assertEqual(res.status_code, 200, (url, res.content))
+            self.assertFalse(res.json()['is_active'])
+            obj.refresh_from_db()
+            self.assertFalse(obj.is_active)
+
+    def test_catalog_definition_can_be_edited(self):
+        res = self._patch(f'/api/program-sections/{self.catalog.pk}/', {
+            'program': self.program.pk, 'course_ref': self.course.pk, 'name': 'DX-1B', 'year_level': 2,
+        })
+        self.assertEqual(res.status_code, 200, res.content)
+        self.catalog.refresh_from_db()
+        self.assertEqual((self.catalog.name, self.catalog.year_level), ('DX-1B', 2))
+
+    def test_attendance_cannot_start_for_deactivated_section(self):
+        from attendance_fr.api.services.attendance import AttendanceService
+        from datetime import time
+        schedule = Schedule.objects.create(
+            section=self.section, subject=self.subject, day_of_week='Mon',
+            start_time=time(8, 0), end_time=time(9, 0), room='R1',
+        )
+        self.assertIsNone(AttendanceService.inactive_offering_error(schedule))
+        self.section.is_active = False
+        self.section.save(update_fields=['is_active'])
+        schedule.refresh_from_db()
+        self.assertIn('temporarily deactivated', AttendanceService.inactive_offering_error(schedule))

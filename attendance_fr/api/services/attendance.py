@@ -10,7 +10,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from core.models import (
-    Schedule, Section, AttendanceSession, AttendanceRecord, StudentSection, Student
+    Schedule, Section, AttendanceSession, AttendanceRecord, AttendanceSessionReopenAudit, StudentSection, Student
 )
 
 
@@ -30,10 +30,12 @@ class AttendanceService:
     @staticmethod
     def verify_teacher_assignment(teacher, schedule):
         """Returns True if teacher is assigned to the schedule, False otherwise."""
+        section = schedule.section
+        has_subject_teacher = section.subjects.filter(teacher__isnull=False).exists()
         return (
-            (schedule.subject and schedule.subject.teacher == teacher) or
-            (schedule.section.teacher == teacher) or
-            schedule.section.subjects.filter(teacher=teacher).exists()
+            (schedule.subject is not None and schedule.subject.teacher == teacher) or
+            (schedule.subject is None and section.subjects.filter(teacher=teacher).exists()) or
+            (not has_subject_teacher and section.teacher == teacher)
         )
 
     @staticmethod
@@ -73,6 +75,27 @@ class AttendanceService:
             )
 
         return None  # All good
+
+    @staticmethod
+    def validate_session_time_window(session):
+        """Validate that an existing attendance session is still within its schedule window."""
+        return AttendanceService.validate_schedule_time_window(session.schedule)
+
+    @staticmethod
+    def inactive_offering_error(schedule):
+        """Return a message when the class is temporarily closed (deactivated), else None."""
+        section = schedule.section
+        checks = [
+            (schedule.subject, 'subject'),
+            (section, 'class section'),
+            (getattr(section, 'program_section', None), 'section catalog entry'),
+            (getattr(section, 'course_ref', None), 'course'),
+            (getattr(section, 'program', None), 'program'),
+        ]
+        for obj, label in checks:
+            if obj is not None and getattr(obj, 'is_active', True) is False:
+                return f'Attendance is unavailable because this {label} is temporarily deactivated.'
+        return None
 
     @staticmethod
     @transaction.atomic
@@ -120,12 +143,18 @@ class AttendanceService:
         return session
 
     @staticmethod
-    def reopen_session(session):
-        """Reopens a closed attendance session."""
+    @transaction.atomic
+    def reopen_session(session, teacher, reason):
+        """Reopen a closed session and retain an immutable teacher/reason audit record."""
         session.status = 'open'
         session.closed_at = None
         session.save(update_fields=['status', 'closed_at'])
-        return session
+        audit = AttendanceSessionReopenAudit.objects.create(
+            session=session,
+            reopened_by=teacher,
+            reason=reason,
+        )
+        return session, audit
 
     @staticmethod
     def mark_manual(session, student, status_val):
@@ -383,7 +412,11 @@ class AttendanceReportService:
             'section_name': section.name,
             'subject_code': eff_sub.code if eff_sub else '—',
             'subject_name': eff_sub.name if eff_sub else 'General',
-            'teacher_name': section.teacher.user.get_full_name() if (section.teacher and section.teacher.user) else 'Unassigned',
+            'teacher_name': (
+                eff_sub.teacher.user.get_full_name()
+                if eff_sub and eff_sub.teacher
+                else section.teacher.user.get_full_name() if section.teacher and section.teacher.user else 'Unassigned'
+            ),
             'schedule_display': section.schedule_display,
             'month_label': month_label,
             'target_year': target_year,

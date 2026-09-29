@@ -14,10 +14,17 @@ from attendance_fr.api.serializers.attendance import (
     AttendanceSessionSerializer,
     AttendanceRecordSerializer,
     AttendanceSessionStartSerializer,
+    AttendanceSessionReopenSerializer,
+    AttendanceSessionReopenAuditSerializer,
     ManualAttendanceMarkSerializer,
 )
-from attendance_fr.permissions import IsTeacherOrAdminRole, IsSessionManager
+from attendance_fr.permissions import (
+    IsTeacherRole,
+    IsSessionManager,
+    is_student_enrolled_for_schedule,
+)
 from attendance_fr.api.services.attendance import AttendanceService
+from attendance_fr.api.services.response_cache import ResponseCache, request_scope
 from attendance_fr.api.views.reports import (
     StudentAttendanceOverviewAPIView,
     StudentSectionCalendarAPIView,
@@ -45,15 +52,23 @@ class AttendanceSessionListAPIView(APIView):
                 Q(schedule__section__teacher=teacher) |
                 Q(started_by=teacher)
             )
+        elif user.role == 'student' and hasattr(user, 'student_profile'):
+            qs = qs.filter(schedule__section__enrollments__student=user.student_profile).distinct()
+        elif user.role != 'admin':
+            qs = qs.none()
 
-        return Response(AttendanceSessionSerializer(qs[:50], many=True).data)
+        data = ResponseCache.get_or_set(
+            'attendance', request_scope(request, endpoint='session-list'),
+            lambda: AttendanceSessionSerializer(qs[:50], many=True).data,
+        )
+        return Response(data)
 
 
 # ── Session Lifecycle ─────────────────────────────────────────────────────────
 
 class AttendanceSessionStartAPIView(APIView):
     """POST /api/attendance/sessions/start/ - Start or resume session today."""
-    permission_classes = [IsTeacherOrAdminRole]
+    permission_classes = [IsTeacherRole]
 
     def post(self, request):
         serializer = AttendanceSessionStartSerializer(data=request.data)
@@ -74,14 +89,17 @@ class AttendanceSessionStartAPIView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
+        inactive_error = AttendanceService.inactive_offering_error(schedule)
+        if inactive_error:
+            return Response({'error': inactive_error}, status=status.HTTP_403_FORBIDDEN)
+
         today = timezone.localdate()
         existing_open = AttendanceSession.objects.filter(schedule=schedule, date=today, status='open').first()
 
-        # Time-window validation (admins bypass)
-        if not existing_open and request.user.role != 'admin':
-            error = AttendanceService.validate_schedule_time_window(schedule)
-            if error:
-                return Response({'error': error}, status=status.HTTP_403_FORBIDDEN)
+        # The time window applies to every start/resume request, not only new sessions.
+        error = AttendanceService.validate_schedule_time_window(schedule)
+        if error:
+            return Response({'error': error}, status=status.HTTP_403_FORBIDDEN)
 
         created = False
         session = existing_open
@@ -114,11 +132,24 @@ class AttendanceSessionReopenAPIView(APIView):
     def post(self, request, pk):
         session = get_object_or_404(AttendanceSession, pk=pk)
         self.check_object_permissions(request, session)
-        AttendanceService.reopen_session(session)
+        serializer = AttendanceSessionReopenSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if session.status != 'closed':
+            return Response({'error': 'Only a closed attendance session can be reopened.'}, status=status.HTTP_409_CONFLICT)
+
+        error = AttendanceService.validate_session_time_window(session)
+        if error:
+            return Response({'error': error}, status=status.HTTP_403_FORBIDDEN)
+        teacher = request.user.teacher_profile
+        session, audit = AttendanceService.reopen_session(
+            session, teacher, serializer.validated_data['reason']
+        )
         return Response({
             'success': True,
             'message': f'Attendance session #{pk} re-opened successfully.',
             'session': AttendanceSessionSerializer(session).data,
+            'reopen_audit': AttendanceSessionReopenAuditSerializer(audit).data,
         })
 
 
@@ -130,10 +161,17 @@ class AttendanceSessionDetailAPIView(APIView):
         session = get_object_or_404(AttendanceSession, pk=pk)
         self.check_object_permissions(request, session)
         records = session.records.select_related('student__user').order_by('student__user__last_name')
-        return Response({
-            'session': AttendanceSessionSerializer(session).data,
-            'records': AttendanceRecordSerializer(records, many=True).data,
-        })
+        data = ResponseCache.get_or_set(
+            'attendance', request_scope(request, endpoint='session-detail', session_id=session.pk),
+            lambda: {
+                'session': AttendanceSessionSerializer(session).data,
+                'records': AttendanceRecordSerializer(records, many=True).data,
+                'reopen_history': AttendanceSessionReopenAuditSerializer(
+                    session.reopen_history.select_related('reopened_by__user'), many=True
+                ).data,
+            },
+        )
+        return Response(data)
 
 
 # ── Manual Marking ────────────────────────────────────────────────────────────
@@ -153,7 +191,21 @@ class ManualAttendanceMarkAPIView(APIView):
 
         session = get_object_or_404(AttendanceSession, pk=session_id)
         self.check_object_permissions(request, session)
+        if session.status != 'open':
+            return Response(
+                {'error': 'Attendance session is closed. Reopen it explicitly before making changes.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        error = AttendanceService.validate_session_time_window(session)
+        if error:
+            return Response({'error': error}, status=status.HTTP_403_FORBIDDEN)
+
         student = get_object_or_404(Student, pk=student_id)
+        if not is_student_enrolled_for_schedule(student, session.schedule):
+            return Response(
+                {'error': 'Student is not enrolled in this session\'s section or subject.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         record = AttendanceService.mark_manual(session, student, status_val)
 

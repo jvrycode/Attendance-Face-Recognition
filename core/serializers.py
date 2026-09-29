@@ -1,18 +1,43 @@
 from rest_framework import serializers
-from core.models import Program, ProgramSection, Subject, Section, Schedule, AttendanceSession, AttendanceRecord, StudentSection
+from core.models import Course, Program, ProgramSection, Subject, Section, Schedule, AttendanceSession, AttendanceRecord, StudentSection
 from accounts.serializers import TeacherSerializer, StudentSerializer
+
+
+class CourseSerializer(serializers.ModelSerializer):
+    program_details = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Course
+        fields = ['id', 'program', 'program_details', 'code', 'name', 'description', 'is_active', 'created_at']
+        read_only_fields = ['created_at']
+
+    def get_program_details(self, obj):
+        return {
+            'id': obj.program_id,
+            'code': obj.program.code,
+            'name': obj.program.name,
+        } if obj.program else None
+
+
+def _is_status_only_update(serializer, attrs):
+    """True for PATCH requests that only toggle is_active (activate / deactivate)."""
+    return bool(serializer.instance) and serializer.partial and set(attrs) <= {'is_active'}
 
 
 class ProgramSerializer(serializers.ModelSerializer):
     section_count = serializers.SerializerMethodField()
     subject_count = serializers.SerializerMethodField()
+    course_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Program
-        fields = ['id', 'code', 'name', 'college', 'description', 'section_count', 'subject_count', 'created_at']
+        fields = ['id', 'code', 'name', 'college', 'description', 'is_active', 'course_count', 'section_count', 'subject_count', 'created_at']
+
+    def get_course_count(self, obj):
+        return obj.courses.count()
 
     def get_section_count(self, obj):
-        return obj.standard_sections.count()
+        return obj.sections.count()
 
     def get_subject_count(self, obj):
         return obj.subjects.count()
@@ -20,28 +45,73 @@ class ProgramSerializer(serializers.ModelSerializer):
 
 class ProgramSectionSerializer(serializers.ModelSerializer):
     program_details = ProgramSerializer(source='program', read_only=True)
+    course_details = CourseSerializer(source='course_ref', read_only=True)
     year_level_display = serializers.CharField(source='get_year_level_display', read_only=True)
     active_classes_count = serializers.SerializerMethodField()
 
     class Meta:
         model = ProgramSection
-        fields = ['id', 'program', 'program_details', 'course', 'name', 'year_level', 'year_level_display', 'description', 'active_classes_count', 'created_at']
+        fields = ['id', 'program', 'program_details', 'course', 'course_ref', 'course_details', 'name', 'year_level', 'year_level_display', 'description', 'is_active', 'active_classes_count', 'created_at']
+
+    def validate(self, attrs):
+        if _is_status_only_update(self, attrs):
+            return attrs
+        program = attrs.get('program', getattr(self.instance, 'program', None))
+        course_ref = attrs.get('course_ref', getattr(self.instance, 'course_ref', None))
+
+        if not course_ref:
+            raise serializers.ValidationError({'course_ref': 'Select a Course from Course Management.'})
+        if program and course_ref.program_id != program.pk:
+            raise serializers.ValidationError({'course_ref': 'The selected Course does not belong to the selected Program.'})
+
+        # Keep the legacy text column synchronized while new records use the FK.
+        attrs['course'] = course_ref.code
+        if not program:
+            attrs['program'] = course_ref.program
+        return attrs
 
     def get_active_classes_count(self, obj):
-        return Section.objects.filter(name=obj.name).count()
+        return obj.offerings.count()
 
 
 class SubjectSerializer(serializers.ModelSerializer):
     program_details = ProgramSerializer(source='program', read_only=True)
+    course_details = CourseSerializer(source='course_ref', read_only=True)
     teacher_details = TeacherSerializer(source='teacher', read_only=True)
     section_name = serializers.CharField(source='section.name', read_only=True, default='')
+    student_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Subject
         fields = [
-            'id', 'name', 'code', 'description', 'units', 'program', 'program_details',
-            'section', 'section_name', 'teacher', 'teacher_details', 'created_at'
+            'id', 'name', 'code', 'description', 'units', 'is_active', 'program', 'program_details',
+            'course_ref', 'course_details', 'section', 'section_name', 'teacher', 'teacher_details', 'student_count', 'created_at'
         ]
+
+    def validate(self, attrs):
+        if _is_status_only_update(self, attrs):
+            return attrs
+        course = attrs.get('course_ref')
+        section = attrs.get('section')
+        program = attrs.get('program')
+        if course and program and course.program_id != program.pk:
+            raise serializers.ValidationError({'course_ref': 'The selected Course does not belong to the selected Program.'})
+        if course and section and section.course_ref_id and section.course_ref_id != course.pk:
+            raise serializers.ValidationError({'course_ref': 'The selected Course does not belong to the selected Section.'})
+        if section and course is None and section.course_ref_id:
+            attrs['course_ref'] = section.course_ref
+        if attrs.get('course_ref') and not attrs.get('program'):
+            attrs['program'] = attrs['course_ref'].program
+        return attrs
+
+    def get_student_count(self, obj):
+        if not obj.section_id:
+            return 0
+        from core.models import StudentSection
+        from django.db.models import Q
+        return StudentSection.objects.filter(
+            Q(section_id=obj.section_id) & (Q(subject__isnull=True) | Q(subject_id=obj.id))
+        ).values('student_id').distinct().count()
 
 
 class ScheduleSerializer(serializers.ModelSerializer):
@@ -106,6 +176,7 @@ class StudentSectionSerializer(serializers.ModelSerializer):
 
 class SectionSerializer(serializers.ModelSerializer):
     program_details = ProgramSerializer(source='program', read_only=True)
+    course_details = CourseSerializer(source='course_ref', read_only=True)
     program_section_details = ProgramSectionSerializer(source='program_section', read_only=True)
     subject_details = SubjectSerializer(source='subject', read_only=True)
     teacher_details = TeacherSerializer(source='teacher', read_only=True)
@@ -120,11 +191,36 @@ class SectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Section
         fields = [
-            'id', 'name', 'course', 'program', 'program_details', 'program_section', 'program_section_details',
+            'id', 'name', 'course', 'course_ref', 'course_details', 'program', 'program_details', 'program_section', 'program_section_details',
             'year_level', 'year_level_display', 'subject', 'subject_details', 'teacher',
-            'teacher_details', 'school_year', 'semester', 'schedule_display',
+            'teacher_details', 'school_year', 'semester', 'is_active', 'schedule_display',
             'effective_subject_code', 'effective_subject_name', 'subjects', 'schedules', 'student_count', 'created_at'
         ]
+
+    def validate(self, attrs):
+        if _is_status_only_update(self, attrs):
+            return attrs
+        program_section = attrs.get('program_section', getattr(self.instance, 'program_section', None))
+        program = attrs.get('program', getattr(self.instance, 'program', None))
+        course_ref = attrs.get('course_ref', getattr(self.instance, 'course_ref', None))
+
+        if not program_section:
+            raise serializers.ValidationError({'program_section': 'Select a Section Catalog definition.'})
+        if not program_section.course_ref_id:
+            raise serializers.ValidationError({'program_section': 'This catalog definition is not linked to a Course from Course Management.'})
+        if program and program.pk != program_section.program_id:
+            raise serializers.ValidationError({'program_section': 'The selected Section Catalog definition does not belong to the selected Program.'})
+        if course_ref and course_ref.pk != program_section.course_ref_id:
+            raise serializers.ValidationError({'program_section': 'The selected Section Catalog definition does not belong to the selected Course.'})
+
+        # The catalog is authoritative for the class identity fields.
+        attrs['program_section'] = program_section
+        attrs['program'] = program_section.program
+        attrs['course_ref'] = program_section.course_ref
+        attrs['course'] = program_section.course_ref.code
+        attrs['name'] = program_section.name
+        attrs['year_level'] = program_section.year_level
+        return attrs
 
     def get_effective_subject_code(self, obj):
         eff = obj.effective_subject

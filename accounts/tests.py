@@ -1,19 +1,18 @@
-"""
-Accounts Feature Tests:
-Tests user roles, password validation, and profile relationships.
-"""
-from django.test import TestCase, Client
+"""Accounts and current REST API workflow tests."""
+import json
+
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
 from django.contrib.auth.password_validation import validate_password
-from accounts.models import Teacher, Student
+from django.core.exceptions import ValidationError
+from django.test import Client, TestCase
+
+from accounts.models import Student, Teacher
 
 User = get_user_model()
 
 
 class AccountsFeatureTests(TestCase):
     def test_custom_user_roles(self):
-        """Verify role choices and role boolean helper properties."""
         admin = User.objects.create_user(username='admin_u', role='admin', password='StrongPassword123!')
         teacher = User.objects.create_user(username='teacher_u', role='teacher', password='StrongPassword123!')
         student = User.objects.create_user(username='student_u', role='student', password='StrongPassword123!')
@@ -21,186 +20,143 @@ class AccountsFeatureTests(TestCase):
         self.assertTrue(admin.is_admin_role)
         self.assertFalse(admin.is_teacher_role)
         self.assertFalse(admin.is_student_role)
-
         self.assertTrue(teacher.is_teacher_role)
         self.assertTrue(student.is_student_role)
 
     def test_teacher_profile_creation(self):
-        """Verify Teacher profile links one-to-one with CustomUser."""
         user = User.objects.create_user(
-            username='prof_smith',
-            first_name='John',
-            last_name='Smith',
-            role='teacher',
-            password='StrongPassword123!'
+            username='prof_smith', first_name='John', last_name='Smith',
+            role='teacher', password='StrongPassword123!'
         )
         teacher = Teacher.objects.create(
-            user=user,
-            employee_id='EMP-1001',
-            department='Computer Science',
+            user=user, employee_id='EMP-1001', department='Computer Science',
             specialization='Artificial Intelligence'
         )
         self.assertEqual(teacher.employee_id, 'EMP-1001')
         self.assertIn('John Smith', str(teacher))
 
     def test_student_profile_creation(self):
-        """Verify Student profile links one-to-one with CustomUser."""
         user = User.objects.create_user(
-            username='stud_doe',
-            first_name='Jane',
-            last_name='Doe',
-            role='student',
-            password='StrongPassword123!'
+            username='stud_doe', first_name='Jane', last_name='Doe',
+            role='student', password='StrongPassword123!'
         )
         student = Student.objects.create(
-            user=user,
-            student_id='STU-2026-001',
-            year_level=3,
+            user=user, student_id='STU-2026-001', year_level=3,
             course='BS Computer Science'
         )
         self.assertEqual(student.student_id, 'STU-2026-001')
         self.assertFalse(student.is_face_enrolled)
 
     def test_password_validators_enforcement(self):
-        """Verify production password validation rules (min 6 chars, uppercase, lowercase, special char)."""
-        # Short password (< 6 chars) should fail
         with self.assertRaises(ValidationError):
             validate_password('Ab1!')
-
-        # Missing uppercase
         with self.assertRaises(ValidationError):
             validate_password('lowercase@123')
-
-        # Missing lowercase
         with self.assertRaises(ValidationError):
             validate_password('UPPERCASE@123')
-
-        # Missing special character
         with self.assertRaises(ValidationError):
             validate_password('Password123')
+        with self.assertRaises(ValidationError):
+            validate_password('Pass@1')        # too short (min 8)
+        with self.assertRaises(ValidationError):
+            validate_password('Secure@Pass')   # no number
+        validate_password('SecurePass2026!#')
 
-        # Compliant complex password should pass without error
-        try:
-            validate_password('SecurePass2026!#')
-            validate_password('Pass@1')
-        except ValidationError:
-            self.fail("validate_password unexpectedly raised ValidationError for a compliant password")
-
-    def test_admin_user_create_staff_teacher(self):
-        """Verify admin can create a teacher with employee profile via user_create."""
+    def test_admin_creates_teacher_through_current_api(self):
         admin = User.objects.create_user(username='super_admin', role='admin', password='StrongPassword123!')
         client = Client()
         client.force_login(admin)
-
-        post_data = {
-            'username': 'prof_newton',
-            'role': 'teacher',
-            'first_name': 'Isaac',
-            'last_name': 'Newton',
-            'email': 'newton@attendfr.edu',
-            'phone': '1234567890',
-            'password1': 'StrongPassword123!',
-            'password2': 'StrongPassword123!',
-            'employee_id': 'EMP-2026-99',
-            'department': 'Mathematics',
-            'specialization': 'Calculus'
-        }
-        res = client.post('/accounts/users/create/', post_data)
-        self.assertRedirects(res, '/accounts/users/')
-
+        response = client.post(
+            '/api/users/',
+            data=json.dumps({
+                'username': 'prof_newton', 'role': 'teacher', 'first_name': 'Isaac',
+                'last_name': 'Newton', 'email': 'newton@attendfr.edu',
+                'phone': '09123456789', 'password': 'StrongPassword123!',
+                'employee_id': 'EMP-2026-99', 'department': 'Mathematics',
+                'specialization': 'Calculus',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 201)
         new_teacher = User.objects.get(username='prof_newton')
-        self.assertEqual(new_teacher.role, 'teacher')
         self.assertEqual(new_teacher.teacher_profile.employee_id, 'EMP-2026-99')
         self.assertEqual(new_teacher.teacher_profile.department, 'Mathematics')
 
-    def test_admin_user_create_staff_admin(self):
-        """Verify admin can create another administrator user."""
+    def test_admin_creates_admin_through_current_api(self):
         admin = User.objects.create_user(username='super_admin2', role='admin', password='StrongPassword123!')
         client = Client()
         client.force_login(admin)
+        response = client.post(
+            '/api/users/',
+            data=json.dumps({
+                'username': 'admin_assistant', 'role': 'admin', 'first_name': 'Grace',
+                'last_name': 'Hopper', 'email': 'hopper@attendfr.edu',
+                'password': 'StrongPassword123!',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(User.objects.get(username='admin_assistant').role, 'admin')
 
-        post_data = {
-            'username': 'admin_assistant',
-            'role': 'admin',
-            'first_name': 'Grace',
-            'last_name': 'Hopper',
-            'email': 'hopper@attendfr.edu',
-            'phone': '0987654321',
-            'password1': 'StrongPassword123!',
-            'password2': 'StrongPassword123!',
-        }
-        res = client.post('/accounts/users/create/', post_data)
-        self.assertRedirects(res, '/accounts/users/')
-
-        new_admin = User.objects.get(username='admin_assistant')
-        self.assertEqual(new_admin.role, 'admin')
-
-    def test_admin_user_create_rejects_student_role(self):
-        """Verify user_create form rejects 'student' role since students must use student_register."""
+    def test_admin_creates_student_through_current_api(self):
         admin = User.objects.create_user(username='super_admin3', role='admin', password='StrongPassword123!')
         client = Client()
         client.force_login(admin)
-
-        post_data = {
-            'username': 'stud_illegal',
-            'role': 'student',  # Not in STAFF_ROLE_CHOICES
-            'first_name': 'Bad',
-            'last_name': 'Student',
-            'email': 'bad@attendfr.edu',
-            'password1': 'StrongPassword123!',
-            'password2': 'StrongPassword123!',
-        }
-        res = client.post('/accounts/users/create/', post_data)
-        self.assertEqual(res.status_code, 200)
-        self.assertFalse(User.objects.filter(username='stud_illegal').exists())
-
-    def test_student_register_flow_redirects_to_face_enrollment(self):
-        """Verify student_register creates student and redirects directly to biometric face capture."""
-        admin = User.objects.create_user(username='super_admin4', role='admin', password='StrongPassword123!')
-        client = Client()
-        client.force_login(admin)
-
-        post_data = {
-            'student_id': '2026-88888',
-            'first_name': 'Rosalind',
-            'last_name': 'Franklin',
-            'email': 'franklin@attendfr.edu',
-            'course': 'BS Biology',
-            'year_level': 2,
-            'password': 'StrongPassword123!',
-        }
-        res = client.post('/accounts/students/register/', post_data)
-        student = Student.objects.get(student_id='2026-88888')
+        response = client.post(
+            '/api/users/',
+            data=json.dumps({
+                'role': 'student', 'student_id': 'STU-API-888', 'first_name': 'Rosalind',
+                'last_name': 'Franklin', 'email': 'franklin@attendfr.edu',
+                'course': 'BS Biology', 'year_level': 2,
+                'password': 'StrongPassword123!',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 201)
+        student = Student.objects.get(student_id='STU-API-888')
         self.assertEqual(student.user.first_name, 'Rosalind')
         self.assertEqual(student.course, 'BS Biology')
-        # Checks instant redirect to face enrollment
-        self.assertRedirects(res, f'/face/enroll/?student_id={student.pk}')
 
-    def test_student_register_requires_admin_permission(self):
-        """Verify only administrators can access the student registration endpoint."""
+    def test_non_admin_cannot_create_users_through_current_api(self):
         teacher = User.objects.create_user(username='teacher_anon', role='teacher', password='StrongPassword123!')
         Teacher.objects.create(user=teacher, employee_id='EMP-ANON')
         client = Client()
         client.force_login(teacher)
+        response = client.post(
+            '/api/users/',
+            data=json.dumps({'username': 'blocked', 'role': 'teacher', 'password': 'StrongPassword123!'}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 403)
 
-        res = client.get('/accounts/students/register/')
-        self.assertRedirects(res, '/accounts/dashboard/')
-
-    def test_user_list_view_counts_and_filters(self):
-        """Verify user list accurately counts by role and filters tabs."""
-        User.objects.create_user(username='u_admin', role='admin', password='StrongPassword123!')
-        User.objects.create_user(username='u_teacher', role='teacher', password='StrongPassword123!')
-        u_student = User.objects.create_user(username='u_student', role='student', password='StrongPassword123!')
-        Student.objects.create(user=u_student, student_id='STU-FILTER-1')
-
+    def test_user_list_api_filters_by_role(self):
+        admin = User.objects.create_user(username='u_admin', role='admin', password='StrongPassword123!')
+        teacher = User.objects.create_user(username='u_teacher', role='teacher', password='StrongPassword123!')
+        student_user = User.objects.create_user(username='u_student', role='student', password='StrongPassword123!')
+        Student.objects.create(user=student_user, student_id='STU-FILTER-1')
         client = Client()
-        admin = User.objects.filter(role='admin').first()
         client.force_login(admin)
 
-        res = client.get('/accounts/users/')
-        self.assertEqual(res.status_code, 200)
-        self.assertIn('counts', res.context)
-        self.assertGreaterEqual(res.context['counts']['admin'], 1)
-        self.assertGreaterEqual(res.context['counts']['teacher'], 1)
-        self.assertGreaterEqual(res.context['counts']['student'], 1)
+        students = client.get('/api/users/?role=student')
+        self.assertEqual(students.status_code, 200)
+        self.assertTrue(any(item['username'] == 'u_student' for item in students.json()))
+        self.assertFalse(any(item['username'] == 'u_teacher' for item in students.json()))
 
+        teachers = client.get('/api/users/?role=teacher')
+        self.assertEqual(teachers.status_code, 200)
+        self.assertTrue(any(item['username'] == 'u_teacher' for item in teachers.json()))
+
+    def test_student_creation_requires_explicit_strong_password(self):
+        admin = User.objects.create_user(username='password_admin', role='admin', password='StrongPassword123!')
+        client = Client()
+        client.force_login(admin)
+        response = client.post(
+            '/api/users/',
+            data=json.dumps({
+                'role': 'student', 'student_id': 'STU-NO-PASSWORD',
+                'first_name': 'No', 'last_name': 'Password',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('password', response.json()['error'].lower())

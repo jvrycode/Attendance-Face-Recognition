@@ -5,6 +5,7 @@ Configured via .env file using python-dotenv.
 import os
 import sys
 from pathlib import Path
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -13,8 +14,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 # ─── Security ─────────────────────────────────────────────────────────────────
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-me-before-production')
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
+SECRET_KEY = os.getenv('SECRET_KEY', '').strip()
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'django-insecure-development-key-do-not-deploy'
+    else:
+        raise ImproperlyConfigured('SECRET_KEY must be set when DEBUG is disabled.')
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') if h.strip()]
 RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
 if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
@@ -34,7 +40,6 @@ INSTALLED_APPS = [
     'cloudinary',
     # Third-party
     'rest_framework',
-    'rest_framework_simplejwt',
     'corsheaders',
     'crispy_forms',
     'crispy_bootstrap5',
@@ -43,6 +48,12 @@ INSTALLED_APPS = [
     'core',
     'face_app',
 ]
+
+# Token blacklist storage uses Django UUID columns that older MariaDB releases do not support.
+# Enable it only on a database where `manage.py migrate` applies token_blacklist successfully.
+JWT_BLACKLIST_ENABLED = os.getenv('JWT_BLACKLIST_ENABLED', 'False').lower() in ('true', '1', 'yes')
+if JWT_BLACKLIST_ENABLED:
+    INSTALLED_APPS.append('rest_framework_simplejwt.token_blacklist')
 
 # ─── Middleware ────────────────────────────────────────────────────────────────
 MIDDLEWARE = [
@@ -53,6 +64,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'attendance_fr.request_context.CurrentRequestMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -136,19 +148,32 @@ from datetime import timedelta
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # simplejwt + server-side revocation (logout, used refresh tokens)
+        'attendance_fr.authentication.RevocationAwareJWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    # Rates for views that opt in via throttle_classes / throttle_scope.
+    # Note: throttle counters live in CACHES; with LocMemCache each worker counts separately.
+    'DEFAULT_THROTTLE_RATES': {
+        'login': os.getenv('THROTTLE_LOGIN', '10/min'),                  # per IP
+        'token_refresh': os.getenv('THROTTLE_TOKEN_REFRESH', '30/min'),  # per IP
+        'face_recognize': os.getenv('THROTTLE_FACE_RECOGNIZE', '180/min'),  # per user (scanner sends ~120/min)
+        'face_enroll': os.getenv('THROTTLE_FACE_ENROLL', '30/min'),      # per user
+        'face_photo': os.getenv('THROTTLE_FACE_PHOTO', '600/min'),       # per IP (student tables)
+    },
+    # Number of trusted reverse proxies in front of Django (Render = 1). Used to read the real
+    # client IP from X-Forwarded-For; 0 means use REMOTE_ADDR directly (local dev).
+    'NUM_PROXIES': int(os.getenv('TRUSTED_PROXY_COUNT', '0')),
 }
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_MINUTES', '60'))),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('JWT_REFRESH_DAYS', '7'))),
     'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': False,
+    'BLACKLIST_AFTER_ROTATION': JWT_BLACKLIST_ENABLED,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
@@ -158,9 +183,14 @@ CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         'CORS_ALLOWED_ORIGINS',
-        'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,https://*.onrender.com'
+        'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000'
     ).split(',')
     if origin.strip()
+]
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    expression.strip()
+    for expression in os.getenv('CORS_ALLOWED_ORIGIN_REGEXES', '').split(',')
+    if expression.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
 
@@ -168,7 +198,9 @@ CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         'CSRF_TRUSTED_ORIGINS',
-        'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,https://*.onrender.com'
+        # Exact origins only (no wildcards). The Render hostname is appended below automatically;
+        # add the deployed frontend origin via the CSRF_TRUSTED_ORIGINS env var.
+        'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000'
     ).split(',')
     if origin.strip()
 ]
@@ -214,7 +246,51 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
+    {
+        # Upper + lower + digit + special character
+        'NAME': 'accounts.validators.ComplexPasswordValidator',
+        'OPTIONS': {'min_length': 8},
+    },
 ]
+
+# ─── Login brute-force protection ─────────────────────────────────────────────
+# After this many failed logins for the same username from the same IP, lock that pair out.
+LOGIN_MAX_FAILED_ATTEMPTS = int(os.getenv('LOGIN_MAX_FAILED_ATTEMPTS', '5'))
+LOGIN_LOCKOUT_MINUTES = int(os.getenv('LOGIN_LOCKOUT_MINUTES', '15'))
+
+# ─── Upload limits ────────────────────────────────────────────────────────────
+# Largest decoded camera frame accepted by the face endpoints, and its max width/height.
+FACE_MAX_FRAME_BYTES = int(os.getenv('FACE_MAX_FRAME_BYTES', str(2 * 1024 * 1024)))
+FACE_MAX_FRAME_DIMENSION = int(os.getenv('FACE_MAX_FRAME_DIMENSION', '4096'))
+# Largest uploaded profile/face image file
+MAX_IMAGE_UPLOAD_BYTES = int(os.getenv('MAX_IMAGE_UPLOAD_BYTES', str(2 * 1024 * 1024)))
+# Request body cap: enrollment sends 3-5 JPEG photos (~0.2-0.5 MB each as base64)
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('DATA_UPLOAD_MAX_MEMORY_SIZE', str(6 * 1024 * 1024)))
+
+# ─── Face enrollment quality (1 student = 1 face identity from 3-5 photos) ───
+FACE_ENROLL_MIN_SAMPLES = int(os.getenv('FACE_ENROLL_MIN_SAMPLES', '3'))
+FACE_ENROLL_MAX_SAMPLES = int(os.getenv('FACE_ENROLL_MAX_SAMPLES', '5'))
+FACE_ENROLL_MIN_FACE_PX = int(os.getenv('FACE_ENROLL_MIN_FACE_PX', '80'))          # face box min side
+FACE_ENROLL_MIN_BRIGHTNESS = float(os.getenv('FACE_ENROLL_MIN_BRIGHTNESS', '50'))   # 0-255 mean
+FACE_ENROLL_MAX_BRIGHTNESS = float(os.getenv('FACE_ENROLL_MAX_BRIGHTNESS', '215'))
+FACE_ENROLL_MIN_SHARPNESS = float(os.getenv('FACE_ENROLL_MIN_SHARPNESS', '40'))     # Laplacian variance
+FACE_ENROLL_MAX_FRONTAL_YAW = float(os.getenv('FACE_ENROLL_MAX_FRONTAL_YAW', '0.2'))  # "facing camera"
+FACE_ENROLL_MAX_YAW = float(os.getenv('FACE_ENROLL_MAX_YAW', '0.6'))                # max allowed turn
+FACE_ENROLL_CONSISTENCY_TOLERANCE = float(os.getenv('FACE_ENROLL_CONSISTENCY_TOLERANCE', '0.5'))
+
+# ─── Liveness: head-turn challenge during attendance ─────────────────────────
+# After identity consensus, the student must turn their head; a photo or still screen cannot.
+FACE_LIVENESS_CHALLENGE = os.getenv('FACE_LIVENESS_CHALLENGE', 'True').lower() in ('true', '1', 'yes')
+FACE_CHALLENGE_YAW_DELTA = float(os.getenv('FACE_CHALLENGE_YAW_DELTA', '0.18'))   # required turn
+FACE_CHALLENGE_TIMEOUT_SECONDS = int(os.getenv('FACE_CHALLENGE_TIMEOUT_SECONDS', '10'))
+# Match tolerance for the challenged student while their head is turned (identity already confirmed)
+FACE_CHALLENGE_TOLERANCE = float(os.getenv('FACE_CHALLENGE_TOLERANCE', '0.5'))
+# Enrollment is one frontal selfie, so a turned head may briefly not match: frames allowed to
+# miss during the turn before the scan restarts. The mark itself happens on the frontal
+# "look back" frame, which must pass the normal strict match.
+FACE_CHALLENGE_MAX_MISSES = int(os.getenv('FACE_CHALLENGE_MAX_MISSES', '2'))
+# True = the turn must be in the requested direction (left/right). Test on your camera before enabling.
+FACE_CHALLENGE_STRICT_DIRECTION = os.getenv('FACE_CHALLENGE_STRICT_DIRECTION', 'False').lower() in ('true', '1', 'yes')
 
 LOGIN_URL = '/admin/login/'
 LOGIN_REDIRECT_URL = '/admin/'
@@ -234,10 +310,19 @@ STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+# Local (non-Cloudinary) home for biometric face photos. Outside MEDIA_ROOT: never served.
+PRIVATE_MEDIA_ROOT = BASE_DIR / 'private_media'
+# Lifetime of the signed links the API hands out for face photos
+FACE_PHOTO_LINK_SECONDS = int(os.getenv('FACE_PHOTO_LINK_SECONDS', '300'))
 
 CLOUDINARY_CLOUD_NAME = os.getenv('CLOUDINARY_CLOUD_NAME', '').strip()
 CLOUDINARY_API_KEY = os.getenv('CLOUDINARY_API_KEY', '').strip()
 CLOUDINARY_API_SECRET = os.getenv('CLOUDINARY_API_SECRET', '').strip()
+
+# The test suite must never upload to (or delete from) the real Cloudinary account.
+import sys as _sys
+if len(_sys.argv) > 1 and _sys.argv[1] == 'test':
+    CLOUDINARY_CLOUD_NAME = CLOUDINARY_API_KEY = CLOUDINARY_API_SECRET = ''
 
 if CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
     CLOUDINARY_STORAGE = {
@@ -265,14 +350,9 @@ else:
         },
     }
 
-# ─── CORS (Cross-Origin Resource Sharing for Vite & Cloudflare Pages) ──────────
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS is intentionally allow-list only. Configure production origins in CORS_ALLOWED_ORIGINS.
+# Optional regular-expression origins belong in CORS_ALLOWED_ORIGIN_REGEXES.
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^http:\/\/localhost:\d+$",
-    r"^http:\/\/127\.0\.0\.1:\d+$",
-    r"^https:\/\/.*\.pages\.dev$",
-]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -288,17 +368,22 @@ CACHES = {
     }
 }
 
-# ─── Face Recognition ─────────────────────────────────────────────────────────
+# Face-vector cache lifetime. Targeted invalidation bypasses stale entries immediately.
+FACE_CACHE_TIMEOUT = int(os.getenv('FACE_CACHE_TIMEOUT', '60'))
 # Euclidean threshold for dlib 128-D embeddings (lower = stricter; 0.38 rejects look-alikes)
 FACE_RECOGNITION_TOLERANCE = float(os.getenv('FACE_RECOGNITION_TOLERANCE', '0.38'))
 # Minimum confidence (0–1) required before marking attendance (1 - tolerance ≈ 0.62)
 MIN_FACE_CONFIDENCE = float(os.getenv('MIN_FACE_CONFIDENCE', '0.62'))
 # Best match must beat second-best by at least this distance to avoid ambiguous matches
 FACE_MATCH_MARGIN = float(os.getenv('FACE_MATCH_MARGIN', '0.08'))
-# Consecutive matching frames required before attendance is marked (weak matches)
-FACE_CONSENSUS_FRAMES = int(os.getenv('FACE_CONSENSUS_FRAMES', '2'))
-# Strong match marks on first frame (~1.5s queue time with fast rescan)
-FACE_INSTANT_MARK_CONFIDENCE = float(os.getenv('FACE_INSTANT_MARK_CONFIDENCE', '0.70'))
+# Consecutive matching frames (same student) required before attendance is marked
+FACE_CONSENSUS_FRAMES = max(1, int(os.getenv('FACE_CONSENSUS_FRAMES', '3')))
+# Frames whose face vector differs from the previous one by less than this are treated as a
+# replayed/duplicated image and do not count toward consensus (real camera frames always vary)
+FACE_REPLAY_EPSILON = float(os.getenv('FACE_REPLAY_EPSILON', '0.002'))
+# Enrollment: a new face within this distance of another student's face is rejected as a duplicate,
+# and a re-enrollment farther than this from the student's current face needs explicit replace
+FACE_DUPLICATE_TOLERANCE = float(os.getenv('FACE_DUPLICATE_TOLERANCE', '0.5'))
 # Minutes after class starts before a student is considered "late"
 LATE_THRESHOLD_MINUTES = int(os.getenv('LATE_THRESHOLD_MINUTES', '15'))
 # Chi-squared threshold for LBPH fallback encoder
@@ -332,17 +417,4 @@ LOGGING = {
         'accounts': {'handlers': ['console'], 'level': 'DEBUG', 'propagate': False},
     },
 }
-
-# ─── Password Validation ──────────────────────────────────────────────────────
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'accounts.validators.ComplexPasswordValidator',
-        'OPTIONS': {
-            'min_length': 6,
-        }
-    },
-]
 

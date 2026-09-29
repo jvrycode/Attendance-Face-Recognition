@@ -1,6 +1,6 @@
 import React from 'react';
 import { Check, AlertCircle } from 'lucide-react';
-import { cleanPhPhoneNumber, isValidPhPhoneNumber } from '../utils/validation';
+import { cleanPhPhoneNumber, isValidPhPhoneNumber } from '../../utils/validation';
 
 export default function PhoneInput({
   value = '',
@@ -122,7 +122,8 @@ export default function PhoneInput({
         </div>
       )}
 
-      <div
+      {/* Format hints only make sense while the field is editable */}
+      {!disabled && <div
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -136,7 +137,7 @@ export default function PhoneInput({
       >
         {icon}
         <span>{helperText}</span>
-      </div>
+      </div>}
     </div>
   );
 }

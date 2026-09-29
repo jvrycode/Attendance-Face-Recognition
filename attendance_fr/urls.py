@@ -7,17 +7,24 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.shortcuts import redirect
 
+import logging
+
 from django.http import JsonResponse
 from django.db import connection
 
+logger = logging.getLogger(__name__)
+
+
 def health_check(request):
-    """Health check endpoint for Render and local verification."""
+    """Health check endpoint for Render and local verification (public: never expose error details)."""
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
         db_status = "connected"
-    except Exception as e:
-        db_status = f"unhealthy: {str(e)}"
+    except Exception:
+        # Details go to the server log only; the public response stays generic.
+        logger.exception("Health check: database connection failed")
+        db_status = "unavailable"
 
     return JsonResponse({
         "status": "healthy" if db_status == "connected" else "degraded",

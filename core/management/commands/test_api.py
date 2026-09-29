@@ -7,7 +7,7 @@ from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
-    help = "Runs the AttendFR REST API test suite with styled CLI output"
+    help = "Runs only the centralized AttendFR REST API test suite"
 
     def handle(self, *args, **options):
         call_command('test_features', api=True)

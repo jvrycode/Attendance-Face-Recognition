@@ -1,236 +1,47 @@
-import React, { useState, useEffect } from 'react';
-import { FileText, Printer, Filter, Calendar, CheckCircle2, Clock, XCircle } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { TableLoadingRow } from '../ui';
+import { Calendar, CheckCircle2, Clock, FileText, Filter, Users, XCircle } from 'lucide-react';
 import { Api } from '../api';
 
 export default function SectionReportView({ user, onSetHeaderInfo }) {
-  const [sections, setSections] = useState([]);
-  const [selectedSectionId, setSelectedSectionId] = useState('');
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [sections, setSections] = useState([]); const [sessions, setSessions] = useState([]); const [records, setRecords] = useState([]);
+  const [sectionId, setSectionId] = useState(''); const [subjectId, setSubjectId] = useState(''); const [date, setDate] = useState(''); const [status, setStatus] = useState('');
+  const [loading, setLoading] = useState(true); const [error, setError] = useState('');
+  useEffect(() => { if (!onSetHeaderInfo) return; onSetHeaderInfo({ title: user?.role === 'teacher' ? 'Attendance reports' : 'Section attendance report', subtitle: 'Review attendance trends, late arrivals, and session records.', headerActions: <button type="button" className="btn btn-primary" onClick={() => window.print()}>Print / Save PDF</button> }); }, [onSetHeaderInfo, user?.role]);
+  useEffect(() => { (async () => { try { setLoading(true); setError(''); const [nextSections, nextSessions] = await Promise.all([Api.getSections(), Api.getSessions()]); setSections(nextSections || []); setSessions(nextSessions || []); setSectionId((current) => current || String(nextSections?.[0]?.id || '')); } catch (loadError) { setError(loadError.message || 'Unable to load attendance reports.'); } finally { setLoading(false); } })(); }, []);
+  const selectedSection = sections.find((section) => String(section.id) === String(sectionId));
+  const subjects = selectedSection?.subjects || [];
+  const filteredSessions = useMemo(() => sessions.filter((session) => { const detail = session.schedule_details || {}; return (!sectionId || String(detail.section || session.section) === String(sectionId)) && (!subjectId || String(detail.subject) === String(subjectId)) && (!date || session.date === date) && (!status || session.status === status); }), [sessions, sectionId, subjectId, date, status]);
+  useEffect(() => { (async () => { if (!filteredSessions.length) { setRecords([]); return; } try { setLoading(true); const details = await Promise.all(filteredSessions.slice(0, 20).map((session) => Api.getSessionDetail(session.id).catch(() => null))); setRecords(details.flatMap((detail) => (detail?.records || []).map((record) => ({ ...record, session_date: detail.session?.date, session_id: detail.session?.id, subject_code: detail.session?.subject_code || detail.session?.schedule_details?.subject_code || '—' })))); } finally { setLoading(false); } })(); }, [filteredSessions]);
+  const summary = useMemo(() => records.reduce((total, record) => ({ ...total, total: total.total + 1, present: total.present + (record.status === 'present' ? 1 : 0), late: total.late + (record.status === 'late' ? 1 : 0), absent: total.absent + (record.status === 'absent' ? 1 : 0), excused: total.excused + (record.status === 'excused' ? 1 : 0) }), { total: 0, present: 0, late: 0, absent: 0, excused: 0 }), [records]);
+  const rate = summary.total ? Math.round(((summary.present + summary.late + summary.excused) / summary.total) * 100) : 0;
+  const reset = () => { setSectionId(String(sections[0]?.id || '')); setSubjectId(''); setDate(''); setStatus(''); };
+  return <div className="page-content teacher-report-page"><section className="teacher-report-filter card"><div><span className="eyebrow"><Filter size={14} /> Report filters</span><h2>Attendance performance</h2></div><div className="teacher-report-controls"><label>Section<select className="form-select" value={sectionId} onChange={(event) => { setSectionId(event.target.value); setSubjectId(''); }}><option value="">All assigned sections</option>{sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}</select></label><label>Subject<select className="form-select" value={subjectId} onChange={(event) => setSubjectId(event.target.value)}><option value="">All subjects</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.code} — {subject.name}</option>)}</select></label><label>Date<input className="form-control" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><label>Session<select className="form-select" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All sessions</option><option value="open">Open</option><option value="closed">Finalized</option></select></label><button type="button" className="btn btn-outline btn-sm" onClick={reset}>Reset</button></div></section>
+    {error && <div className="ui-recovery-banner" role="alert">{error}</div>}
+    <section className="report-stat-grid mb-3" aria-label="Attendance overview">
+      <article className="report-stat-card report-rate-card">
+        <span className="eyebrow"><Users size={14} /> Attendance overview</span>
+        <strong>{rate}%</strong>
+        <small>attendance rate</small>
+        <div className="report-rate-bar" role="progressbar" aria-valuenow={rate} aria-valuemin={0} aria-valuemax={100} aria-label="Attendance rate"><span style={{ width: `${rate}%` }} /></div>
+      </article>
+      <ReportStat icon={Calendar} tone="slate" value={filteredSessions.length} label="Sessions" note="Matching your filters" />
+      <ReportStat icon={CheckCircle2} tone="green" value={summary.present} label="Present" total={summary.total} />
+      <ReportStat icon={Clock} tone="amber" value={summary.late} label="Late" total={summary.total} />
+      <ReportStat icon={XCircle} tone="red" value={summary.absent} label="Absent" total={summary.total} />
+      <ReportStat icon={FileText} tone="blue" value={summary.excused} label="Excused" total={summary.total} />
+    </section>
+    <section className="card teacher-report-table"><div className="teacher-card-heading"><div><span className="eyebrow"><Calendar size={14} /> {filteredSessions.length} matching session{filteredSessions.length === 1 ? '' : 's'}</span><h2>Student attendance records</h2></div><span className="text-muted" style={{ fontSize: '12px' }}>Showing up to 20 sessions</span></div><div className="table-container"><table><thead><tr><th>Student</th><th>Student ID</th><th>Subject</th><th>Session date</th><th>Status</th><th>Time marked</th></tr></thead><tbody>{loading ? <TableLoadingRow colSpan={6} label="Loading attendance records…" /> : !records.length ? <tr><td colSpan="6" className="text-center text-muted">No records match these filters.</td></tr> : records.map((record) => { const student = record.student_details || record.student_info || {}; return <tr key={record.id}><td><strong>{record.student_name || `${student.user?.first_name || ''} ${student.user?.last_name || ''}`.trim() || 'Student'}</strong></td><td>{record.student_id_number || student.student_id || '—'}</td><td><span className="badge badge-accent">{record.subject_code}</span></td><td>{record.session_date || '—'}</td><td><StatusBadge status={record.status} /></td><td>{record.recognized_at ? new Date(record.recognized_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td></tr>; })}</tbody></table></div></section></div>;
+}
+function StatusBadge({ status }) { const labels = { present: ['success', 'Present'], late: ['warning', 'Late'], absent: ['danger', 'Absent'], excused: ['info', 'Excused'] }; const [tone, label] = labels[status] || ['muted', status || '—']; return <span className={`badge badge-${tone}`}>{label}</span>; }
 
-  useEffect(() => {
-    async function loadSections() {
-      try {
-        setLoading(true);
-        const secList = await Api.getSections();
-        setSections(secList);
-        if (secList.length > 0) {
-          setSelectedSectionId(secList[0].id);
-        }
-      } catch (err) {
-        console.error('Failed to load sections:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadSections();
-  }, []);
-
-  useEffect(() => {
-    if (onSetHeaderInfo) {
-      onSetHeaderInfo({
-        title: user?.role === 'teacher' ? 'Attendance Reports' : 'Section Attendance Report',
-        subtitle: 'Consolidated attendance records by class section',
-        headerActions: (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => window.print()}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Printer size={16} />
-            <span>Print / Save PDF</span>
-          </button>
-        ),
-      });
-    }
-  }, [user, onSetHeaderInfo]);
-
-  useEffect(() => {
-    async function loadSectionAttendance() {
-      if (!selectedSectionId) return;
-      try {
-        setLoading(true);
-        const sessions = await Api.getSessions();
-        const secSessions = sessions.filter(
-          (s) => s.schedule_details?.section == selectedSectionId || s.schedule?.section == selectedSectionId
-        );
-        if (secSessions.length > 0) {
-          // Fetch details for the sessions and consolidate records
-          const detailPromises = secSessions.slice(0, 5).map((s) => Api.getSessionDetail(s.id).catch(() => null));
-          const details = await Promise.all(detailPromises);
-          const allRecs = [];
-          const seen = new Set();
-          for (const d of details) {
-            if (d && d.records) {
-              for (const r of d.records) {
-                const key = `${r.student || r.id}-${r.session}`;
-                if (!seen.has(key)) {
-                  seen.add(key);
-                  allRecs.push(r);
-                }
-              }
-            }
-          }
-          setRecords(allRecs.length > 0 ? allRecs : (details[0]?.records || []));
-        } else {
-          setRecords([]);
-        }
-      } catch (err) {
-        console.error('Failed to load report:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadSectionAttendance();
-  }, [selectedSectionId]);
-
-  const selectedSection = sections.find((s) => s.id == selectedSectionId);
-
-  // Compute instructors & subjects string for selected section
-  const sectionSubjects = selectedSection?.subjects && selectedSection.subjects.length > 0
-    ? selectedSection.subjects.map((sub) => sub.code).join(', ')
-    : (selectedSection?.effective_subject_code || selectedSection?.subject_details?.code || 'CS 101');
-
-  const sectionInstructors = selectedSection?.subjects && selectedSection.subjects.length > 0
-    ? selectedSection.subjects
-        .map((sub) => sub.teacher_details?.user ? `${sub.teacher_details.user.first_name} ${sub.teacher_details.user.last_name}` : 'TBA')
-        .filter((val, idx, self) => self.indexOf(val) === idx)
-        .join(', ')
-    : (selectedSection?.teacher_details?.user?.first_name || 'Assigned Faculty');
-
-  const formatTimestamp = (ts) => {
-    if (!ts) return '—';
-    try {
-      const d = new Date(ts);
-      if (isNaN(d.getTime())) return ts;
-      return d.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      });
-    } catch {
-      return ts;
-    }
-  };
-
-  return (
-    <div className="page-content">
-
-      {/* Filter Toolbar */}
-      <div className="card mb-3" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-              Section:
-            </span>
-            <select
-              className="form-select form-select-sm"
-              value={selectedSectionId}
-              onChange={(e) => setSelectedSectionId(e.target.value)}
-              style={{ width: '220px', fontSize: '13px' }}
-            >
-              {sections.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.school_year})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-              Subject:
-            </span>
-            <span className="badge badge-accent" style={{ fontWeight: '700' }}>
-              {sectionSubjects}
-            </span>
-          </div>
-        </div>
-
-        <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-          Instructor: <strong>{sectionInstructors}</strong>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-        <div className="table-container" style={{ border: 'none', margin: 0 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Student</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Student ID</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Verification Status</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Timestamp</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Attendance Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan="5" style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Loading attendance records...
-                  </td>
-                </tr>
-              ) : records.length === 0 ? (
-                <tr>
-                  <td colSpan="5" style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    No attendance records logged for this section yet.
-                  </td>
-                </tr>
-              ) : (
-                records.map((rec) => {
-                  const isPresent = rec.status === 'present';
-                  const isLate = rec.status === 'late';
-                  const st = rec.student_details || rec.student_info || (typeof rec.student === 'object' ? rec.student : {}) || {};
-                  const studentName = rec.student_name || (st.user ? `${st.user.first_name || ''} ${st.user.last_name || ''}`.trim() : '') || 'Student';
-                  const studentId = rec.student_id_number || st.student_id || '—';
-
-                  return (
-                    <tr key={rec.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '14px 18px' }}>
-                        <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
-                          {studentName}
-                        </div>
-                      </td>
-                      <td style={{ padding: '14px 18px', fontWeight: '600' }}>
-                        {studentId}
-                      </td>
-                      <td style={{ padding: '14px 18px' }}>
-                        {isPresent ? (
-                          <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <CheckCircle2 size={11} /> Present
-                          </span>
-                        ) : isLate ? (
-                          <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <Clock size={11} /> Late
-                          </span>
-                        ) : (
-                          <span className="badge badge-muted" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <XCircle size={11} /> Absent
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '14px 18px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                        {formatTimestamp(rec.recognized_at)}
-                      </td>
-                      <td style={{ padding: '14px 18px' }}>
-                        <span className="badge badge-outline" style={{ fontWeight: '700' }}>
-                          {isPresent ? '100%' : isLate ? '80%' : '0%'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
+// One standalone stat card; `total` adds a share-of-records hint when provided.
+function ReportStat({ icon: Icon, tone, value, label, total, note }) {
+  const share = total ? `${Math.round((value / total) * 100)}% of records` : note || 'of records';
+  return <article className={`report-stat-card report-tone-${tone}`}>
+    <span className="report-stat-icon" aria-hidden="true"><Icon size={16} /></span>
+    <strong>{value}</strong>
+    <span className="report-stat-label">{label}</span>
+    <small>{total !== undefined && !total ? 'No records yet' : share}</small>
+  </article>;
 }

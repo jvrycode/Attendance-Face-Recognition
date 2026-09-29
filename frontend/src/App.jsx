@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { Api, TokenStorage } from './api';
+import {
+  DEFAULT_TAB, TAB_PATHS, isTabAllowed, pathForTab, pathFromLegacyHash, tabFromPath,
+} from './routes';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import LoginView from './views/LoginView';
 import DashboardView from './views/DashboardView';
 import ProgramsView from './views/ProgramsView';
+import CoursesView from './views/CoursesView';
 import SectionCatalogView from './views/SectionCatalogView';
 import SectionsView from './views/SectionsView';
 import SubjectsView from './views/SubjectsView';
@@ -14,45 +19,31 @@ import FaceEnrollmentView from './views/FaceEnrollmentView';
 import SectionReportView from './views/SectionReportView';
 import ReportsView from './views/ReportsView';
 import ProfileView from './views/ProfileView';
+import StudentProfileView from './views/StudentProfileView';
 import LiveScannerView from './views/LiveScannerView';
 import StudentEnrollmentView from './views/StudentEnrollmentView';
+import { GlobalLoader, ConfirmHost, PageLoader } from './ui';
 
-const VALID_TABS = [
-  'dashboard',
-  'programs',
-  'section_catalog',
-  'sections',
-  'subjects',
-  'schedules',
-  'users',
-  'face_enrollment',
-  'student_enrollment',
-  'section_report',
-  'session_logs',
-  'profile',
-  'scanner',
-];
-
-function getInitialTab() {
-  try {
-    const hash = window.location.hash.replace(/^#\/?/, '').trim();
-    if (hash && VALID_TABS.includes(hash)) {
-      return hash;
-    }
-    const saved = localStorage.getItem('attendfr_active_tab');
-    if (saved && VALID_TABS.includes(saved)) {
-      return saved;
-    }
-  } catch {
-    // fallback
+/**
+ * Route guard: only renders the page when the signed-in role may open it.
+ * The backend enforces the same rules on the data; this keeps the UI clean
+ * when someone types an admin URL as a student.
+ */
+function RequireRole({ tab, user, children }) {
+  if (!isTabAllowed(tab, user)) {
+    return <Navigate to={pathForTab(DEFAULT_TAB)} replace />;
   }
-  return 'dashboard';
+  return children;
 }
 
 export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [user, setUser] = useState(TokenStorage.getUser());
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState(getInitialTab);
+  // The URL is the source of truth for the current page.
+  const routeTab = tabFromPath(location.pathname);
+  const activeTab = routeTab && isTabAllowed(routeTab, user) ? routeTab : DEFAULT_TAB;
   const [activeSessionId, setActiveSessionId] = useState(() => {
     try {
       return localStorage.getItem('attendfr_active_session_id') || null;
@@ -61,11 +52,20 @@ export default function App() {
     }
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Header details set by the current page; tagged with the tab that set them so
+  // a new page never shows the previous page's subtitle/actions.
   const [headerInfo, setHeaderInfo] = useState({
+    tab: null,
     title: '',
     subtitle: '',
     headerActions: null,
   });
+
+  // Old "/#/users" bookmarks -> "/users"
+  useEffect(() => {
+    const legacyPath = pathFromLegacyHash(location.hash);
+    if (legacyPath) navigate(legacyPath, { replace: true });
+  }, [location.hash, navigate]);
 
   useEffect(() => {
     async function checkAuth() {
@@ -109,6 +109,8 @@ export default function App() {
           : 'My Dashboard';
       case 'programs':
         return 'Academic Programs';
+      case 'courses':
+        return 'Courses';
       case 'section_catalog':
         return 'Section Catalog (Master List)';
       case 'sections':
@@ -140,67 +142,33 @@ export default function App() {
     }
   }, [user?.role]);
 
+  // Bound to the current tab: each page only ever updates its own header.
   const updateHeaderInfo = useCallback((info) => {
+    const tab = activeTab;
     setHeaderInfo((prev) => {
+      const base = prev.tab === tab ? prev : { tab, title: '', subtitle: '', headerActions: null };
       if (
+        base === prev &&
         prev.title === info.title &&
         prev.subtitle === info.subtitle &&
         prev.headerActions === info.headerActions
       ) {
         return prev;
       }
-      return { ...prev, ...info };
+      return { ...base, ...info, tab };
     });
-  }, []);
+  }, [activeTab]);
 
-  const handleTabChange = useCallback((newTab) => {
-    setActiveTab(newTab);
-    try {
-      localStorage.setItem('attendfr_active_tab', newTab);
-      if (window.location.hash.replace(/^#\/?/, '').trim() !== newTab) {
-        window.location.hash = `#/${newTab}`;
-      }
-    } catch {
-      // ignore
-    }
-    setHeaderInfo({
-      title: getTitle(newTab),
-      subtitle: '',
-      headerActions: null,
-    });
-  }, [getTitle]);
+  // Views call onNavigate('tab_id'); this turns it into a real URL (history + back button work).
+  const handleTabChange = useCallback((requestedTab, principal = user) => {
+    const newTab = isTabAllowed(requestedTab, principal) ? requestedTab : DEFAULT_TAB;
+    const path = pathForTab(newTab);
+    if (location.pathname !== path) navigate(path);
+  }, [location.pathname, navigate, user]);
 
-  // Sync with browser URL hash change (e.g. forward/back buttons or direct URL change)
-  useEffect(() => {
-    const handleHashChange = () => {
-      try {
-        const hash = window.location.hash.replace(/^#\/?/, '').trim();
-        if (hash && VALID_TABS.includes(hash) && hash !== activeTab) {
-          setActiveTab(hash);
-          localStorage.setItem('attendfr_active_tab', hash);
-          setHeaderInfo({
-            title: getTitle(hash),
-            subtitle: '',
-            headerActions: null,
-          });
-        }
-      } catch {
-        // ignore
-      }
-    };
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [activeTab, getTitle]);
-
-  // Sync hash on mount if user is logged in
-  useEffect(() => {
-    if (user) {
-      const currentHash = window.location.hash.replace(/^#\/?/, '').trim();
-      if (!currentHash || currentHash !== activeTab) {
-        window.location.hash = `#/${activeTab}`;
-      }
-    }
-  }, [user, activeTab]);
+  const currentHeader = headerInfo.tab === activeTab
+    ? headerInfo
+    : { title: '', subtitle: '', headerActions: null };
 
   const handleStartSession = useCallback((sec) => {
     const secId = sec?.id || null;
@@ -217,41 +185,54 @@ export default function App() {
     handleTabChange('scanner');
   }, [handleTabChange]);
 
+  // Stay on the URL the user asked for (e.g. a /users deep link); the route guard
+  // sends them to the dashboard if their role may not open it.
   const handleLoginSuccess = (userData) => {
     setUser(userData);
-    const destTab = getInitialTab();
-    handleTabChange(destTab);
   };
 
   const handleLogout = () => {
     Api.logout();
     try {
-      localStorage.removeItem('attendfr_active_tab');
+      localStorage.removeItem('attendfr_active_tab'); // left over from the old hash router
       localStorage.removeItem('attendfr_active_session_id');
-      window.location.hash = '';
     } catch {
       // ignore
     }
     setUser(null);
-    setActiveTab('dashboard');
     setActiveSessionId(null);
+    navigate('/', { replace: true });
   };
 
+  const guarded = (tab, element) => (
+    <Route key={tab} path={TAB_PATHS[tab]} element={<RequireRole tab={tab} user={user}>{element}</RequireRole>} />
+  );
+
+  // Global overlays stay mounted at one stable position for every role and
+  // screen (boot, login, app) so confirmations always use the in-app dialog.
+  let screen;
   if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div className="pulse-indicator" style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--primary)', margin: '0 auto 16px auto' }} />
-          <p style={{ fontWeight: '600', fontSize: '14px' }}>Loading AttendFR...</p>
-        </div>
+    screen = (
+      <div className="app-boot-screen">
+        <div className="app-boot-brand">AttendFR</div>
+        <PageLoader label="Preparing your workspace…" hint="Checking your session" />
       </div>
     );
+  } else if (!user) {
+    screen = <LoginView onLoginSuccess={handleLoginSuccess} />;
+  } else {
+    screen = renderApp();
   }
 
-  if (!user) {
-    return <LoginView onLoginSuccess={handleLoginSuccess} />;
-  }
+  return (
+    <>
+      <GlobalLoader />
+      <ConfirmHost />
+      {screen}
+    </>
+  );
 
+  function renderApp() {
   return (
     <div className="app-layout">
       {/* Sidebar Navigation (100% copycat of templates/base.html) */}
@@ -276,118 +257,73 @@ export default function App() {
       {/* Main Content Area */}
       <main className="main-content">
         <Header
-          title={headerInfo.title || getTitle(activeTab)}
-          subtitle={headerInfo.subtitle}
-          headerActions={headerInfo.headerActions}
+          title={currentHeader.title || getTitle(activeTab)}
+          subtitle={currentHeader.subtitle}
+          headerActions={currentHeader.headerActions}
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         />
 
         <div style={{ minHeight: 'calc(100vh - 64px)' }}>
-          {activeTab === 'dashboard' && (
-            <DashboardView
-              user={user}
-              onNavigate={handleTabChange}
-              onSetHeaderInfo={updateHeaderInfo}
-              onStartSession={handleStartSession}
-            />
-          )}
+          <Routes>
+            <Route path="/" element={<Navigate to={pathForTab(DEFAULT_TAB)} replace />} />
 
-          {activeTab === 'programs' && (
-            <ProgramsView
-              user={user}
-              onSetHeaderInfo={updateHeaderInfo}
-            />
-          )}
+            {guarded('dashboard', (
+              <DashboardView
+                user={user}
+                onNavigate={handleTabChange}
+                onSetHeaderInfo={updateHeaderInfo}
+                onStartSession={handleStartSession}
+              />
+            ))}
+            {guarded('programs', <ProgramsView user={user} onSetHeaderInfo={updateHeaderInfo} />)}
+            {guarded('courses', <CoursesView user={user} onSetHeaderInfo={updateHeaderInfo} />)}
+            {guarded('section_catalog', (
+              <SectionCatalogView user={user} onNavigate={handleTabChange} onSetHeaderInfo={updateHeaderInfo} />
+            ))}
+            {guarded('sections', (
+              <SectionsView
+                user={user}
+                onNavigate={handleTabChange}
+                onSetHeaderInfo={updateHeaderInfo}
+                onStartSession={handleStartSession}
+              />
+            ))}
+            {guarded('subjects', <SubjectsView user={user} onSetHeaderInfo={updateHeaderInfo} />)}
+            {guarded('schedules', <SchedulesView user={user} onSetHeaderInfo={updateHeaderInfo} />)}
+            {guarded('users', <UsersView user={user} onNavigate={handleTabChange} onSetHeaderInfo={updateHeaderInfo} />)}
+            {guarded('face_enrollment', (
+              <FaceEnrollmentView user={user} onNavigate={handleTabChange} onSetHeaderInfo={updateHeaderInfo} />
+            ))}
+            {guarded('student_enrollment', (
+              <StudentEnrollmentView user={user} onNavigate={handleTabChange} onSetHeaderInfo={updateHeaderInfo} />
+            ))}
+            {guarded('section_report', <SectionReportView user={user} onSetHeaderInfo={updateHeaderInfo} />)}
+            {guarded('session_logs', (
+              <ReportsView
+                user={user}
+                onNavigate={handleTabChange}
+                onSetHeaderInfo={updateHeaderInfo}
+                onStartSession={handleStartSession}
+              />
+            ))}
+            {guarded('profile', user?.role === 'student'
+              ? <StudentProfileView user={user} onUserUpdated={setUser} onSetHeaderInfo={updateHeaderInfo} />
+              : <ProfileView user={user} onUserUpdated={setUser} onSetHeaderInfo={updateHeaderInfo} />)}
+            {guarded('scanner', (
+              <LiveScannerView
+                user={user}
+                onNavigate={handleTabChange}
+                onSetHeaderInfo={updateHeaderInfo}
+                activeSessionId={activeSessionId}
+              />
+            ))}
 
-          {activeTab === 'section_catalog' && (
-            <SectionCatalogView
-              user={user}
-              onNavigate={handleTabChange}
-              onSetHeaderInfo={updateHeaderInfo}
-            />
-          )}
-
-          {activeTab === 'sections' && (
-            <SectionsView
-              user={user}
-              onNavigate={handleTabChange}
-              onSetHeaderInfo={updateHeaderInfo}
-              onStartSession={handleStartSession}
-            />
-          )}
-
-          {activeTab === 'subjects' && (
-            <SubjectsView
-              user={user}
-              onSetHeaderInfo={updateHeaderInfo}
-            />
-          )}
-
-          {activeTab === 'schedules' && (
-            <SchedulesView
-              user={user}
-              onSetHeaderInfo={updateHeaderInfo}
-            />
-          )}
-
-          {activeTab === 'users' && (
-            <UsersView
-              user={user}
-              onNavigate={handleTabChange}
-              onSetHeaderInfo={updateHeaderInfo}
-            />
-          )}
-
-          {activeTab === 'face_enrollment' && (
-            <FaceEnrollmentView
-              user={user}
-              onNavigate={handleTabChange}
-              onSetHeaderInfo={updateHeaderInfo}
-            />
-          )}
-
-          {activeTab === 'student_enrollment' && (
-            <StudentEnrollmentView
-              user={user}
-              onNavigate={handleTabChange}
-              onSetHeaderInfo={updateHeaderInfo}
-            />
-          )}
-
-          {activeTab === 'section_report' && (
-            <SectionReportView
-              user={user}
-              onSetHeaderInfo={updateHeaderInfo}
-            />
-          )}
-
-          {activeTab === 'session_logs' && (
-            <ReportsView
-              user={user}
-              onNavigate={handleTabChange}
-              onSetHeaderInfo={updateHeaderInfo}
-              onStartSession={handleStartSession}
-            />
-          )}
-
-          {activeTab === 'profile' && (
-            <ProfileView
-              user={user}
-              onUserUpdated={setUser}
-              onSetHeaderInfo={updateHeaderInfo}
-            />
-          )}
-
-          {activeTab === 'scanner' && user?.role === 'teacher' && (
-            <LiveScannerView
-              user={user}
-              onNavigate={handleTabChange}
-              onSetHeaderInfo={updateHeaderInfo}
-              activeSessionId={activeSessionId}
-            />
-          )}
+            {/* Unknown URLs */}
+            <Route path="*" element={<Navigate to={pathForTab(DEFAULT_TAB)} replace />} />
+          </Routes>
         </div>
       </main>
     </div>
   );
+  }
 }

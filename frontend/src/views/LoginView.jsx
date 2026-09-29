@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { GraduationCap, Lock, AlertCircle, Loader2 } from 'lucide-react';
+import { GraduationCap, AlertCircle } from 'lucide-react';
 import { Api } from '../api';
-import PasswordInput from '../components/PasswordInput';
+import PasswordInput from '../components/shared/PasswordInput';
 
 export default function LoginView({ onLoginSuccess }) {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -23,7 +23,7 @@ export default function LoginView({ onLoginSuccess }) {
       const { user } = await Api.login(username, password);
       onLoginSuccess(user);
     } catch (err) {
-      setError(err.message || 'Login failed. Please check credentials.');
+      setError(err.message || 'Incorrect username or password.');
     } finally {
       setLoading(false);
     }
@@ -103,26 +103,15 @@ export default function LoginView({ onLoginSuccess }) {
           >
             {loading ? (
               <>
-                <Loader2 size={18} className="spin" />
                 <span>Signing In...</span>
               </>
             ) : (
               <>
-                <Lock size={16} />
                 <span>Sign In</span>
               </>
             )}
           </button>
         </form>
-
-        <div style={{ marginTop: '20px', padding: '12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius)', border: '1px solid var(--border)', fontSize: '12px' }}>
-          <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>Demo Admin Login:</div>
-          <div style={{ color: 'var(--text-secondary)' }}>Username: <code>admin</code> &bull; Password: <code>admin123</code></div>
-        </div>
-
-        <p className="text-center mt-2" style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '16px' }}>
-          Attendance Face Recognition System &bull; TiDB Cloud Connected
-        </p>
       </div>
     </div>
   );

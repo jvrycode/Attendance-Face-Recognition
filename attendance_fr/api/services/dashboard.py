@@ -7,6 +7,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from accounts.models import Teacher, Student
+from core.services.enrollment_service import EnrollmentService
 from core.models import Subject, Section, Schedule, AttendanceSession, StudentSection
 
 
@@ -34,9 +35,7 @@ class DashboardService:
 
     @staticmethod
     def get_teacher_stats(teacher):
-        sections_qs = Section.objects.filter(
-            Q(teacher=teacher) | Q(subjects__teacher=teacher)
-        ).distinct()
+        sections_qs = EnrollmentService.filter_sections_for_teacher(Section.objects.all(), teacher)
         return {
             'role': 'teacher',
             'total_sections': sections_qs.count(),

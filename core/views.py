@@ -10,6 +10,8 @@ from .models import Program, ProgramSection, Subject, Section, Schedule, Attenda
 from .forms import ProgramForm, ProgramSectionForm, SubjectForm, SectionForm, ScheduleForm
 from accounts.models import Student
 from accounts.decorators import admin_required, teacher_required
+from .services.enrollment_service import EnrollmentService
+from attendance_fr.api.services.attendance import AttendanceService
 
 
 # ─── Academic Programs (Admin only) ───────────────────────────────────────────
@@ -251,8 +253,7 @@ def section_list(request):
     elif request.user.role == 'teacher':
         teacher = getattr(request.user, 'teacher_profile', None)
         if teacher:
-            from django.db.models import Q
-            sections = base_qs.filter(Q(teacher=teacher) | Q(subjects__teacher=teacher)).distinct()
+            sections = EnrollmentService.filter_sections_for_teacher(base_qs, teacher)
         else:
             sections = Section.objects.none()
     elif request.user.role == 'student':
@@ -328,7 +329,7 @@ def section_detail(request, pk):
 
     if request.user.role == 'teacher':
         teacher = getattr(request.user, 'teacher_profile', None)
-        is_assigned = (section.teacher == teacher) or section.subjects.filter(teacher=teacher).exists()
+        is_assigned = EnrollmentService.user_can_access_section(request.user, section)
         if not is_assigned and request.user.role != 'admin':
             messages.error(request, "Permission denied: You are not assigned to this section.")
             return redirect('dashboard')
@@ -472,7 +473,7 @@ def student_unenroll(request, section_pk, student_pk):
     enrollment = get_object_or_404(StudentSection, section_id=section_pk, student_id=student_pk)
     if request.user.role == 'teacher':
         teacher = getattr(request.user, 'teacher_profile', None)
-        if enrollment.section.teacher != teacher and request.user.role != 'admin':
+        if not EnrollmentService.user_can_access_section(request.user, enrollment.section) and request.user.role != 'admin':
             messages.error(request, "Permission denied.")
             return redirect('dashboard')
     elif request.user.role != 'admin':
@@ -499,7 +500,7 @@ def api_section_details(request, pk):
 
     if request.user.role == 'teacher':
         teacher = getattr(request.user, 'teacher_profile', None)
-        is_assigned = (section.teacher == teacher) or section.subjects.filter(teacher=teacher).exists()
+        is_assigned = EnrollmentService.user_can_access_section(request.user, section)
         if not is_assigned and not request.user.is_superuser:
             return JsonResponse({'error': 'Unauthorized'}, status=403)
     elif request.user.role == 'student':
@@ -555,8 +556,16 @@ def api_section_details(request, pk):
         'year_level': section.get_year_level_display(),
         'subject_code': section.effective_subject.code if section.effective_subject else '—',
         'subject_name': section.effective_subject.name if section.effective_subject else 'No Subject Linked',
-        'teacher_name': section.teacher.user.get_full_name() if section.teacher else 'Unassigned',
-        'teacher_email': section.teacher.user.email if section.teacher else '',
+        'teacher_name': (
+            section.effective_subject.teacher.user.get_full_name()
+            if section.effective_subject and section.effective_subject.teacher
+            else section.teacher.user.get_full_name() if section.teacher else 'Unassigned'
+        ),
+        'teacher_email': (
+            section.effective_subject.teacher.user.email
+            if section.effective_subject and section.effective_subject.teacher
+            else section.teacher.user.email if section.teacher else ''
+        ),
         'school_year': section.school_year,
         'semester': section.get_semester_display() if hasattr(section, 'get_semester_display') else section.semester,
         'student_count': section.enrollments.values('student_id').distinct().count(),
@@ -662,7 +671,7 @@ def session_start(request, schedule_pk):
     teacher = request.user.teacher_profile
 
     # Verify the teacher owns this section or subject
-    is_assigned = (schedule.section.teacher == teacher) or schedule.section.subjects.filter(teacher=teacher).exists()
+    is_assigned = EnrollmentService.user_can_access_section(request.user, schedule.section)
     if not is_assigned and request.user.role != 'admin':
         messages.error(request, "You are not assigned to this section.")
         return redirect('dashboard')
@@ -732,9 +741,7 @@ def _user_can_manage_session(user, session):
             return False
         return (
             (session.started_by == teacher) or
-            (session.schedule.subject and session.schedule.subject.teacher == teacher) or
-            (session.schedule.section.teacher == teacher) or
-            session.schedule.section.subjects.filter(teacher=teacher).exists()
+            AttendanceService.verify_teacher_assignment(teacher, session.schedule)
         )
     return False
 
@@ -880,8 +887,8 @@ def section_attendance_report(request):
         if not teacher:
             messages.error(request, "No teacher profile found.")
             return redirect('dashboard')
-        available_sections = Section.objects.filter(
-            Q(teacher=teacher) | Q(subjects__teacher=teacher)
+        available_sections = EnrollmentService.filter_sections_for_teacher(
+            Section.objects.all(), teacher
         ).select_related('program', 'subject', 'teacher__user').prefetch_related('subjects').distinct().order_by('program__code', 'name')
     else:
         messages.error(request, "Permission denied.")
@@ -1320,7 +1327,11 @@ def student_section_attendance(request, section_pk):
             'section_name': section.name,
             'subject_code': section.effective_subject.code if section.effective_subject else '—',
             'subject_name': section.effective_subject.name if section.effective_subject else 'General',
-            'teacher_name': section.teacher.user.get_full_name() if section.teacher else 'Unassigned',
+            'teacher_name': (
+                section.effective_subject.teacher.user.get_full_name()
+                if section.effective_subject and section.effective_subject.teacher
+                else section.teacher.user.get_full_name() if section.teacher else 'Unassigned'
+            ),
             'schedule_display': section.schedule_display,
             'month_label': month_label,
             'target_year': target_year,

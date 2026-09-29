@@ -80,7 +80,7 @@ if not CustomUser.objects.filter(username='teacher1').exists():
     )
     teacher = Teacher.objects.create(
         user=t_user,
-        employee_id='EMP-001',
+        employee_id='FAC-001',
         department='Computer Science',
         specialization='Software Engineering'
     )

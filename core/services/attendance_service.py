@@ -25,13 +25,9 @@ class AttendanceService:
 
         threshold_seconds = AttendanceService.get_late_threshold_minutes() * 60
 
-        # If session was opened recently (within threshold minutes), always count as present
-        if session.created_at:
-            since_opened = (scan_time - session.created_at).total_seconds()
-            if 0 <= since_opened <= threshold_seconds:
-                return 'present'
-
-        # Combine session date with schedule start_time
+        # Attendance timing is measured from the scheduled class start, not from
+        # when a teacher opened the scanner. This keeps late classification fair
+        # and consistent even when a session begins after the class has started.
         schedule = session.schedule
         session_start_dt = timezone.make_aware(
             timezone.datetime.combine(session.date, schedule.start_time)

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, CalendarRange, Plus, X, Check, Clock, Building, Infinity, Trash2, Edit2 } from 'lucide-react';
+import { Calendar, X, Trash2, Edit2 } from 'lucide-react';
 import { Api } from '../api';
 import { formatTime12h, formatSchoolScheduleParts } from '../utils/time';
-import ActionPopover from '../components/ActionPopover';
-import Toast from '../components/Toast';
+import ActionPopover from '../components/shared/ActionPopover';
+import Toast from '../components/shared/Toast';
+import { confirmAction, TableLoadingRow, ModalBackdrop } from '../ui';
 
 export default function SchedulesView({ user, onSetHeaderInfo }) {
   const [schedules, setSchedules] = useState([]);
@@ -75,7 +76,6 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
             onClick={() => setShowAddModal(true)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            <Plus size={16} />
             <span>Add Schedule</span>
           </button>
         ) : null,
@@ -128,7 +128,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
   };
 
   const handleDelete = async (id, sectionName) => {
-    if (!window.confirm(`Are you sure you want to delete the schedule for "${sectionName}"?`)) return;
+    if (!(await confirmAction({ title: 'Delete this schedule?', message: `The class schedule for ${sectionName} will be removed from the timetable. Past attendance records are kept.`, confirmLabel: 'Delete schedule', tone: 'danger' }))) return;
     try {
       await Api.deleteSchedule(id);
       setSuccessMsg('Schedule deleted successfully.');
@@ -211,11 +211,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={isAdmin ? 8 : 7} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Loading schedules...
-                  </td>
-                </tr>
+                <TableLoadingRow colSpan={isAdmin ? 8 : 7} label="Loading schedules…" />
               ) : schedules.length === 0 ? (
                 <tr>
                   <td colSpan={isAdmin ? 8 : 7} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -309,13 +305,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
 
       {/* Add Schedule Modal */}
       {showAddModal && (
-        <div
-          className="modal-backdrop open"
-          style={{ display: 'flex', opacity: 1, zIndex: 1200 }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowAddModal(false);
-          }}
-        >
+        <ModalBackdrop onClose={() => setShowAddModal(false)} busy={submitting}>
           <div className="modal-card modal-lg" style={{ width: '100%', maxWidth: '580px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             <div className="modal-header" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h3 className="modal-title" style={{ fontSize: '16px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -324,7 +314,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
               </h3>
               <button
                 type="button"
-                className="btn btn-outline btn-sm modal-close-btn"
+                className="btn btn-icon btn-outline btn-sm modal-close-btn"
                 onClick={() => setShowAddModal(false)}
                 style={{ padding: '4px', border: 'none', background: 'none', cursor: 'pointer' }}
               >
@@ -353,7 +343,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
                     <option value="">Select section...</option>
                     {sections.map((s) => {
                       const subj = s.effective_subject_code || s.subject_details?.code || '';
-                      const teacher = s.teacher_details?.user ? `${s.teacher_details.user.first_name} ${s.teacher_details.user.last_name || ''}` : '';
+                      const teacher = (s.subjects || []).map((subject) => subject.teacher_details?.user ? `${subject.teacher_details.user.first_name} ${subject.teacher_details.user.last_name || ''}`.trim() : '').filter(Boolean).filter((name, index, names) => names.indexOf(name) === index).join(', ');
                       const extra = [subj, teacher].filter(Boolean).join(' • ');
                       return (
                         <option key={s.id} value={s.id}>
@@ -512,28 +502,21 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
               </div>
 
               <div className="modal-footer" style={{ padding: '14px 22px', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>
+                <button type="button" className="btn btn-outline" data-modal-close onClick={() => setShowAddModal(false)}>
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
-                  <Check size={16} />
                   <span>{submitting ? 'Creating...' : 'Create Schedule'}</span>
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       {/* Edit Schedule Modal */}
       {editingSchedule && (
-        <div
-          className="modal-backdrop open"
-          style={{ display: 'flex', opacity: 1, zIndex: 1200 }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setEditingSchedule(null);
-          }}
-        >
+        <ModalBackdrop onClose={() => setEditingSchedule(null)} busy={editSubmitting}>
           <div className="modal-card modal-lg" style={{ width: '100%', maxWidth: '580px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             <div className="modal-header" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h3 className="modal-title" style={{ fontSize: '16px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -542,7 +525,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
               </h3>
               <button
                 type="button"
-                className="btn btn-outline btn-sm modal-close-btn"
+                className="btn btn-icon btn-outline btn-sm modal-close-btn"
                 onClick={() => setEditingSchedule(null)}
                 style={{ padding: '4px', border: 'none', background: 'none', cursor: 'pointer' }}
               >
@@ -571,7 +554,7 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
                     <option value="">Select section...</option>
                     {sections.map((s) => {
                       const subj = s.effective_subject_code || s.subject_details?.code || '';
-                      const teacher = s.teacher_details?.user ? `${s.teacher_details.user.first_name} ${s.teacher_details.user.last_name || ''}` : '';
+                      const teacher = (s.subjects || []).map((subject) => subject.teacher_details?.user ? `${subject.teacher_details.user.first_name} ${subject.teacher_details.user.last_name || ''}`.trim() : '').filter(Boolean).filter((name, index, names) => names.indexOf(name) === index).join(', ');
                       const extra = [subj, teacher].filter(Boolean).join(' • ');
                       return (
                         <option key={s.id} value={s.id}>
@@ -770,17 +753,16 @@ export default function SchedulesView({ user, onSetHeaderInfo }) {
               </div>
 
               <div className="modal-footer" style={{ padding: '14px 22px', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button type="button" className="btn btn-outline" onClick={() => setEditingSchedule(null)}>
+                <button type="button" className="btn btn-outline" data-modal-close onClick={() => setEditingSchedule(null)}>
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={editSubmitting}>
-                  <Check size={16} />
                   <span>{editSubmitting ? 'Updating...' : 'Update Schedule'}</span>
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </div>
   );

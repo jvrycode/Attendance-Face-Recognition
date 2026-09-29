@@ -1,22 +1,39 @@
 """
 Enrollment visibility helpers shared by API and serializers.
 """
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 
-from core.models import StudentSection
+from core.models import StudentSection, Subject
 
 
 class EnrollmentService:
 
     @staticmethod
+    def filter_sections_for_teacher(qs, teacher):
+        subject_teacher_exists = Exists(
+            Subject.objects.filter(section_id=OuterRef('pk'), teacher__isnull=False)
+        )
+        return qs.annotate(_has_subject_teacher=subject_teacher_exists).filter(
+            Q(subjects__teacher=teacher) |
+            Q(schedules__subject__teacher=teacher) |
+            Q(_has_subject_teacher=False, teacher=teacher)
+        ).distinct()
+
+    @staticmethod
+    def filter_schedules_for_teacher(qs, teacher):
+        subject_teacher_exists = Exists(
+            Subject.objects.filter(section_id=OuterRef('section_id'), teacher__isnull=False)
+        )
+        return qs.annotate(_has_subject_teacher=subject_teacher_exists).filter(
+            Q(subject__teacher=teacher) |
+            Q(_has_subject_teacher=False, section__teacher=teacher)
+        ).distinct()
+
+    @staticmethod
     def filter_sections_for_user(qs, user):
         if user.role == 'teacher' and hasattr(user, 'teacher_profile'):
             teacher = user.teacher_profile
-            return qs.filter(
-                Q(teacher=teacher) |
-                Q(subjects__teacher=teacher) |
-                Q(schedules__subject__teacher=teacher)
-            ).distinct()
+            return EnrollmentService.filter_sections_for_teacher(qs, user.teacher_profile)
         if user.role == 'student' and hasattr(user, 'student_profile'):
             return qs.filter(enrollments__student=user.student_profile).distinct()
         return qs
@@ -25,10 +42,7 @@ class EnrollmentService:
     def filter_schedules_for_user(qs, user):
         if user.role == 'teacher' and hasattr(user, 'teacher_profile'):
             teacher = user.teacher_profile
-            return qs.filter(
-                Q(subject__teacher=teacher) |
-                Q(section__teacher=teacher)
-            ).distinct()
+            return EnrollmentService.filter_schedules_for_teacher(qs, user.teacher_profile)
         if user.role == 'student' and hasattr(user, 'student_profile'):
             student = user.student_profile
             enrollments = StudentSection.objects.filter(student=student)
@@ -65,10 +79,11 @@ class EnrollmentService:
             return True
         if user.role == 'teacher' and hasattr(user, 'teacher_profile'):
             teacher = user.teacher_profile
+            has_subject_teacher = section.subjects.filter(teacher__isnull=False).exists()
             return (
-                section.teacher_id == teacher.pk or
                 section.subjects.filter(teacher=teacher).exists() or
-                section.schedules.filter(subject__teacher=teacher).exists()
+                section.schedules.filter(subject__teacher=teacher).exists() or
+                (not has_subject_teacher and section.teacher_id == teacher.pk)
             )
         if user.role == 'student' and hasattr(user, 'student_profile'):
             return StudentSection.objects.filter(

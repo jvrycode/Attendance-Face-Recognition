@@ -15,40 +15,60 @@ import {
   LogOut,
   X,
 } from 'lucide-react';
+import { confirmAction } from '../ui';
+
+const ROLE_LABELS = { admin: 'Administrator', teacher: 'Instructor', student: 'Student' };
+
+function NavLink({ id, label, icon: Icon, activeTab, onSelect }) {
+  const isActive = activeTab === id;
+  return (
+    <button
+      type="button"
+      className={`nav-item ${isActive ? 'active' : ''}`}
+      aria-current={isActive ? 'page' : undefined}
+      onClick={() => onSelect(id)}
+    >
+      <span className="icon" aria-hidden="true"><Icon size={17} /></span>
+      <span className="nav-item-label">{label}</span>
+    </button>
+  );
+}
 
 export default function Sidebar({ user, activeTab, setActiveTab, onLogout, isOpen, onClose }) {
   const role = user?.role || 'admin';
+  const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'User';
+  const initials = displayName.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+  const roleLabel = ROLE_LABELS[role] || role;
 
-  const NavLink = ({ id, label, icon: Icon }) => (
-    <button
-      type="button"
-      className={`nav-item ${activeTab === id ? 'active' : ''}`}
-      onClick={() => {
-        setActiveTab(id);
-        if (onClose) onClose();
-      }}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        width: '100%',
-        textAlign: 'left',
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-      }}
-    >
-      <span className="icon" style={{ display: 'inline-flex', marginRight: '10px' }}>
-        <Icon size={18} />
-      </span>
-      <span>{label}</span>
-    </button>
-  );
+  const handleSelect = (id) => {
+    setActiveTab(id);
+    onClose?.();
+  };
+  const link = (id, label, icon) => <NavLink id={id} label={label} icon={icon} activeTab={activeTab} onSelect={handleSelect} />;
+
+  const handleSignOut = async () => {
+    const ok = await confirmAction({
+      title: 'Sign out?',
+      message: 'You will be returned to the sign-in page. Any unsaved changes on this page will be lost.',
+      details: (
+        <div className="confirm-account">
+          <span className="sidebar-user-avatar" aria-hidden="true">{initials}</span>
+          <span>
+            <strong>{displayName}</strong>
+            <small>Signed in as {roleLabel}{user?.username ? ` · @${user.username}` : ''}</small>
+          </span>
+        </div>
+      ),
+      confirmLabel: 'Sign out',
+      cancelLabel: 'Stay signed in',
+    });
+    if (ok) onLogout();
+  };
 
   return (
     <aside className={`sidebar ${isOpen ? 'open' : ''}`} id="sidebar">
-      {/* Brand Header */}
       <div className="sidebar-logo">
-        <div className="sidebar-logo-brand" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="sidebar-logo-brand">
           <div className="sidebar-logo-icon">
             <GraduationCap size={22} />
           </div>
@@ -64,75 +84,65 @@ export default function Sidebar({ user, activeTab, setActiveTab, onLogout, isOpe
         )}
       </div>
 
-      {/* Navigation (100% Reference Copy from base.html) */}
-      <nav className="sidebar-nav">
+      <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-section-label">Main</div>
-        <NavLink id="dashboard" label="Dashboard" icon={Home} />
+        {link('dashboard', 'Dashboard', Home)}
 
         {role === 'admin' && (
           <>
             <div className="nav-section-label">Academic Structure</div>
-            <NavLink id="programs" label="Programs" icon={Award} />
-            <NavLink id="section_catalog" label="Section Catalog" icon={Layers} />
-            <NavLink id="sections" label="Class Sections" icon={Building} />
-            <NavLink id="subjects" label="Subjects" icon={BookOpen} />
-            <NavLink id="schedules" label="Schedules" icon={Calendar} />
+            {link('programs', 'Programs', Award)}
+            {link('courses', 'Courses', BookOpen)}
+            {link('section_catalog', 'Section Catalog', Layers)}
+            {link('sections', 'Class Sections', Building)}
+            {link('subjects', 'Subjects', BookOpen)}
+            {link('schedules', 'Schedules', Calendar)}
 
             <div className="nav-section-label">Management</div>
-            <NavLink id="users" label="Users" icon={Users} />
-            <NavLink id="face_enrollment" label="Face Enrollment" icon={Camera} />
+            {link('users', 'Users', Users)}
+            {link('face_enrollment', 'Face Enrollment', Camera)}
 
             <div className="nav-section-label">Reports</div>
-            <NavLink id="section_report" label="Section Report" icon={FileText} />
-            <NavLink id="session_logs" label="Session Logs" icon={BarChart2} />
+            {link('section_report', 'Section Report', FileText)}
+            {link('session_logs', 'Session Logs', BarChart2)}
           </>
         )}
 
         {role === 'teacher' && (
           <>
             <div className="nav-section-label">Teaching</div>
-            <NavLink id="sections" label="Section & Schedule" icon={Calendar} />
+            {link('sections', 'Section & Schedule', Calendar)}
 
             <div className="nav-section-label">Reports</div>
-            <NavLink id="section_report" label="Attendance Reports" icon={FileText} />
+            {link('section_report', 'Attendance Reports', FileText)}
           </>
         )}
 
         {role === 'student' && (
           <>
             <div className="nav-section-label">Academics</div>
-            <NavLink id="sections" label="My Schedule" icon={Calendar} />
+            {link('sections', 'My Schedule', Calendar)}
 
             <div className="nav-section-label">My Attendance</div>
-            <NavLink id="session_logs" label="My Records" icon={BarChart2} />
+            {link('session_logs', 'My Records', BarChart2)}
           </>
         )}
 
         <div className="nav-section-label">Account</div>
-        <NavLink id="profile" label="Profile" icon={Settings} />
+        {link('profile', 'Profile', Settings)}
       </nav>
 
-      {/* Sidebar Footer with Sign Out */}
       <div className="sidebar-footer">
-        <button
-          type="button"
-          className="nav-item"
-          onClick={onLogout}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            width: '100%',
-            textAlign: 'left',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--danger)',
-          }}
-        >
-          <span className="icon" style={{ display: 'inline-flex', marginRight: '10px' }}>
-            <LogOut size={18} />
-          </span>
-          <span>Sign Out</span>
+        <div className="sidebar-user-card">
+          <div className="sidebar-user-avatar" aria-hidden="true">{initials}</div>
+          <div className="sidebar-user-meta">
+            <strong title={displayName}>{displayName}</strong>
+            <span>{roleLabel}</span>
+          </div>
+        </div>
+        <button type="button" className="nav-item nav-item-danger" onClick={handleSignOut}>
+          <span className="icon" aria-hidden="true"><LogOut size={17} /></span>
+          <span className="nav-item-label">Sign Out</span>
         </button>
       </div>
     </aside>

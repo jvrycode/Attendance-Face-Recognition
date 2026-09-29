@@ -1,521 +1,403 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Layers, Plus, Filter, X, Check, Building, Trash2, Calendar, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Trash2, Calendar, Edit2, Power } from 'lucide-react';
+import AcademicFilterToolbar, { AcademicFilterField, AcademicFilterSelect } from '../components/shared/AcademicFilterToolbar';
 import { Api } from '../api';
-import ActionPopover from '../components/ActionPopover';
-import Toast from '../components/Toast';
+import ActionPopover from '../components/shared/ActionPopover';
+import Toast from '../components/shared/Toast';
+import { confirmAction, TableLoadingRow, StatusBadge, changeActiveStatus, ModalBackdrop } from '../ui';
+
+const emptyForm = { program: '', course_ref: '', name: '', year_level: 1, description: '' };
+const YEAR_LABELS = { 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' };
 
 export default function SectionCatalogView({ user, onNavigate, onSetHeaderInfo }) {
   const [sections, setSections] = useState([]);
   const [programs, setPrograms] = useState([]);
+  const [courses, setCourses] = useState([]); // courses for the current filter
+  const [allCourses, setAllCourses] = useState([]); // every course, used by the add/edit form
   const [loading, setLoading] = useState(true);
 
-  // 3 Unified Filter Dropdowns
   const [filterCollege, setFilterCollege] = useState('');
   const [filterCourse, setFilterCourse] = useState('');
   const [filterYear, setFilterYear] = useState('');
 
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [formData, setFormData] = useState({
-    program: '',
-    course: 'BSIT',
-    name: '',
-    year_level: 1,
-    description: '',
-  });
+  const [modalMode, setModalMode] = useState(null); // 'add' | 'edit' | null
+  const [editingSection, setEditingSection] = useState(null);
+  const [formData, setFormData] = useState(emptyForm);
+  const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  const loadData = async () => {
+  const isAdmin = user?.role === 'admin';
+
+  const loadData = async (filters = {}) => {
     try {
       setLoading(true);
-      const [secList, progList] = await Promise.all([
-        Api.getProgramSections(),
-        Api.getPrograms(),
+      const [secList, progList, courseList] = await Promise.all([
+        Api.getProgramSections(filters),
+        programs.length ? Promise.resolve(programs) : Api.getPrograms(),
+        Api.getCourses(filters.program_id || filters.program || null),
       ]);
-      setSections(secList);
-      setPrograms(progList);
+      setSections(secList || []);
+      setPrograms(progList || []);
+      setCourses(courseList || []);
+      if (!filters.program_id && !filters.program) setAllCourses(courseList || []);
     } catch (err) {
-      console.error('Failed to load section catalog:', err);
+      setErrorMsg(err.message || 'Failed to load section catalog.');
     } finally {
       setLoading(false);
     }
   };
 
+  const currentFilters = () => ({ program_id: filterCollege, course_id: filterCourse, year_level: filterYear });
+
   useEffect(() => {
     loadData();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isAdmin = user?.role === 'admin';
+  const openAdd = () => {
+    setEditingSection(null);
+    setFormData({ ...emptyForm, program: filterCollege || '' });
+    setFormError('');
+    setModalMode('add');
+  };
+
+  const openEdit = (sec) => {
+    setEditingSection(sec);
+    setFormData({
+      program: String(sec.program || sec.program_details?.id || ''),
+      course_ref: String(sec.course_ref || sec.course_details?.id || ''),
+      name: sec.name || '',
+      year_level: sec.year_level || 1,
+      description: sec.description || '',
+    });
+    setFormError('');
+    setModalMode('edit');
+  };
+
+  const closeModal = () => {
+    if (submitting) return;
+    setModalMode(null);
+    setEditingSection(null);
+  };
 
   useEffect(() => {
-    if (onSetHeaderInfo) {
-      onSetHeaderInfo({
-        title: 'Section Catalog (Master List)',
-        subtitle: 'Official section definitions grouped by College, Course, and Year Level',
-        headerActions: isAdmin ? (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setShowAddModal(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Plus size={16} />
-            <span>Add Section Definition</span>
-          </button>
-        ) : null,
-      });
-    }
-  }, [isAdmin, onSetHeaderInfo]);
-
-  // Derive unique courses dynamically from available sections
-  const availableCourses = useMemo(() => {
-    const set = new Set();
-    // Common default options
-    ['BSIT', 'BSCS', 'BSEMC', 'ACT', 'BSA', 'BSN', 'BSCrim', 'BSCE'].forEach((c) => set.add(c));
-    sections.forEach((s) => {
-      if (s.course) set.add(s.course);
+    if (!onSetHeaderInfo) return;
+    onSetHeaderInfo({
+      title: 'Section Catalog (Master List)',
+      subtitle: 'Official section definitions grouped by College, Course, and Year Level',
+      headerActions: isAdmin ? (
+        <button type="button" className="btn btn-primary" onClick={openAdd}>
+          Add Section Definition
+        </button>
+      ) : null,
     });
-    return Array.from(set).sort();
-  }, [sections]);
-
-  // Client-side instant filtering across all 3 dimensions
-  const filteredSections = useMemo(() => {
-    return sections.filter((s) => {
-      // 1. College filter
-      if (filterCollege) {
-        const progId = s.program || s.program_details?.id;
-        const progCode = s.program_details?.code || '';
-        if (String(progId) !== String(filterCollege) && progCode !== filterCollege) {
-          return false;
-        }
-      }
-      // 2. Course filter
-      if (filterCourse) {
-        if ((s.course || '').toUpperCase() !== filterCourse.toUpperCase()) {
-          return false;
-        }
-      }
-      // 3. Year Level filter
-      if (filterYear) {
-        if (String(s.year_level) !== String(filterYear)) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [sections, filterCollege, filterCourse, filterYear]);
+  }, [isAdmin, onSetHeaderInfo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasActiveFilters = Boolean(filterCollege || filterCourse || filterYear);
+
+  const handleProgramChange = (programId) => {
+    setFilterCollege(programId);
+    setFilterCourse('');
+    loadData({ program_id: programId, year_level: filterYear });
+  };
+
+  const handleCourseChange = (courseId) => {
+    setFilterCourse(courseId);
+    loadData({ program_id: filterCollege, course_id: courseId, year_level: filterYear });
+  };
+
+  const handleYearChange = (yearLevel) => {
+    setFilterYear(yearLevel);
+    loadData({ program_id: filterCollege, course_id: filterCourse, year_level: yearLevel });
+  };
 
   const handleResetFilters = () => {
     setFilterCollege('');
     setFilterCourse('');
     setFilterYear('');
+    loadData();
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.program) {
-      setErrorMsg('College program and section name are required.');
+    const name = formData.name.trim();
+    if (!name || !formData.program || !formData.course_ref) {
+      setFormError('College, course, and section name are required.');
+      return;
+    }
+    const duplicate = sections.find((sec) => sec.id !== editingSection?.id
+      && String(sec.program) === String(formData.program)
+      && sec.name.trim().toLowerCase() === name.toLowerCase());
+    if (duplicate) {
+      setFormError(`A section named "${duplicate.name}" already exists in this college.`);
       return;
     }
 
+    const selectedCourse = allCourses.find((course) => String(course.id) === String(formData.course_ref));
+    const payload = {
+      program: Number(formData.program),
+      course_ref: Number(formData.course_ref),
+      course: selectedCourse?.code || '',
+      name,
+      year_level: parseInt(formData.year_level, 10) || 1,
+      description: formData.description.trim(),
+    };
+
     try {
       setSubmitting(true);
-      setErrorMsg('');
-      await Api.createProgramSection({
-        program: formData.program,
-        course: formData.course.trim().toUpperCase(),
-        name: formData.name.trim(),
-        year_level: parseInt(formData.year_level, 10) || 1,
-        description: formData.description || '',
-      });
-      setSuccessMsg(`Section definition "${formData.name}" created successfully!`);
-      setShowAddModal(false);
-      setFormData({ program: '', course: 'BSIT', name: '', year_level: 1, description: '' });
-      await loadData();
-      setTimeout(() => setSuccessMsg(''), 4000);
+      setFormError('');
+      if (modalMode === 'edit' && editingSection) {
+        await Api.updateProgramSection(editingSection.id, payload);
+        setSuccessMsg(`Section definition "${name}" updated.`);
+      } else {
+        await Api.createProgramSection(payload);
+        setSuccessMsg(`Section definition "${name}" created.`);
+      }
+      setModalMode(null);
+      setEditingSection(null);
+      setFormData(emptyForm);
+      await loadData(currentFilters());
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to create section definition.');
+      setFormError(err.message || 'Failed to save section definition.');
     } finally {
       setSubmitting(false);
     }
   };
+
+  const deleteDefinition = async (sec) => {
+    if (!(await confirmAction({
+      title: `Delete section ${sec.name}?`,
+      message: 'This section definition will be removed from the master list. This cannot be undone.',
+      details: 'Tip: deactivate it instead to close it temporarily without losing history.',
+      confirmLabel: 'Delete section',
+      tone: 'danger',
+    }))) return;
+    try {
+      await Api.deleteProgramSection(sec.id);
+      setSuccessMsg(`Section definition ${sec.name} deleted.`);
+      await loadData(currentFilters());
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to delete definition.');
+    }
+  };
+
+  const toggleDefinition = (sec) => changeActiveStatus({
+    entity: 'Section',
+    name: sec.name,
+    isActive: sec.is_active !== false,
+    impact: `Section ${sec.name} will be temporarily closed. Its class offerings and enrollments are kept, but attendance cannot be taken for them until it is activated again.`,
+    update: (data) => Api.updateProgramSection(sec.id, data),
+    onSuccess: async (msg) => { setSuccessMsg(msg); await loadData(currentFilters()); },
+    onError: setErrorMsg,
+  });
+
+  const colSpan = isAdmin ? 8 : 7;
+  const formCourses = allCourses.filter((course) => String(course.program) === String(formData.program));
 
   return (
     <div className="page-content">
       <Toast message={successMsg} type="success" onClose={() => setSuccessMsg('')} />
       <Toast message={errorMsg} type="error" onClose={() => setErrorMsg('')} />
 
-      {/* Modern 3-Dropdown Filter Toolbar */}
-      <div
-        className="card mb-3"
-        style={{
-          padding: '16px 20px',
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '14px',
-        }}
+      <AcademicFilterToolbar
+        title="Filter Section Catalog"
+        hasActiveFilters={hasActiveFilters}
+        onReset={handleResetFilters}
+        resultCount={sections.length}
+        resultTotal={sections.length}
+        resultLabel="section definitions"
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Filter size={16} style={{ color: 'var(--primary)' }} />
-            <span style={{ fontWeight: '700', fontSize: '13.5px', color: 'var(--text-primary)' }}>
-              Filter Section Catalog
-            </span>
-            {hasActiveFilters && (
-              <span className="badge badge-primary" style={{ fontSize: '11px', padding: '2px 8px' }}>
-                Active Filters
-              </span>
-            )}
-          </div>
-          <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
-            Showing <strong>{filteredSections.length}</strong> of <strong>{sections.length}</strong> section definitions
-          </div>
-        </div>
+        <AcademicFilterField label="1. College / Department">
+          <AcademicFilterSelect value={filterCollege} onChange={(e) => handleProgramChange(e.target.value)}>
+            <option value="">All Colleges / Departments</option>
+            {programs.map((p) => <option key={p.id} value={p.id}>{p.code} - {p.name}</option>)}
+          </AcademicFilterSelect>
+        </AcademicFilterField>
+        <AcademicFilterField label="2. Degree Course (BSIT, CS, etc.)">
+          <AcademicFilterSelect value={filterCourse} disabled={!filterCollege || loading} onChange={(e) => handleCourseChange(e.target.value)}>
+            <option value="">All Courses / Majors</option>
+            {courses.map((c) => <option key={c.id} value={c.id}>{c.code}{c.name ? ` - ${c.name}` : ''}</option>)}
+          </AcademicFilterSelect>
+        </AcademicFilterField>
+        <AcademicFilterField label="3. Year Level">
+          <AcademicFilterSelect value={filterYear} onChange={(e) => handleYearChange(e.target.value)}>
+            <option value="">All Year Levels</option>
+            {Object.entries(YEAR_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </AcademicFilterSelect>
+        </AcademicFilterField>
+      </AcademicFilterToolbar>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', alignItems: 'flex-end' }}>
-          {/* Filter 1: College / Program */}
-          <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-              1. College / Department
-            </label>
-            <select
-              className="form-select"
-              value={filterCollege}
-              onChange={(e) => setFilterCollege(e.target.value)}
-              style={{ fontSize: '13px', height: '36px' }}
-            >
-              <option value="">All Colleges / Departments</option>
-              {programs.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code} - {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Filter 2: Course (BSIT, CS, etc.) */}
-          <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-              2. Degree Course (BSIT, CS, etc.)
-            </label>
-            <select
-              className="form-select"
-              value={filterCourse}
-              onChange={(e) => setFilterCourse(e.target.value)}
-              style={{ fontSize: '13px', height: '36px' }}
-            >
-              <option value="">All Courses / Majors</option>
-              {availableCourses.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Filter 3: Year Level */}
-          <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-              3. Year Level
-            </label>
-            <select
-              className="form-select"
-              value={filterYear}
-              onChange={(e) => setFilterYear(e.target.value)}
-              style={{ fontSize: '13px', height: '36px' }}
-            >
-              <option value="">All Year Levels</option>
-              <option value="1">1st Year</option>
-              <option value="2">2nd Year</option>
-              <option value="3">3rd Year</option>
-              <option value="4">4th Year</option>
-            </select>
-          </div>
-
-          {/* Action: Clear Filters */}
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {hasActiveFilters && (
-              <button
-                type="button"
-                className="btn btn-outline btn-sm"
-                onClick={handleResetFilters}
-                style={{ height: '36px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}
-              >
-                <RotateCcw size={14} />
-                <span>Reset</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-        <div className="table-container" style={{ border: 'none', margin: 0 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+      <div className="card">
+        <div className="table-container">
+          <table>
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>College</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Course</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Section Name</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Year Level</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Description / Track</th>
-                <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Active Classes</th>
-                {isAdmin && <th style={{ padding: '12px 18px', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>}
+              <tr>
+                <th>College</th>
+                <th>Course</th>
+                <th>Section Name</th>
+                <th>Year Level</th>
+                <th>Description / Track</th>
+                <th>Class Offerings</th>
+                <th>Status</th>
+                {isAdmin && <th style={{ textAlign: 'right' }}>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
+                <TableLoadingRow colSpan={colSpan} label="Loading section catalog…" />
+              ) : sections.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 7 : 6} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Loading section catalog...
-                  </td>
-                </tr>
-              ) : filteredSections.length === 0 ? (
-                <tr>
-                  <td colSpan={isAdmin ? 7 : 6} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    {hasActiveFilters ? (
-                      <>
-                        No section definitions match your filter criteria.{' '}
-                        <button
-                          type="button"
-                          className="btn-link"
-                          onClick={handleResetFilters}
-                          style={{ color: 'var(--primary)', cursor: 'pointer', background: 'none', border: 'none', textDecoration: 'underline' }}
-                        >
-                          Clear filters
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        No section definitions found.{' '}
-                        {isAdmin && (
-                          <button
-                            type="button"
-                            className="btn-link"
-                            onClick={() => setShowAddModal(true)}
-                            style={{ color: 'var(--primary)', cursor: 'pointer', background: 'none', border: 'none', textDecoration: 'underline' }}
-                          >
-                            Create one
-                          </button>
-                        )}
-                      </>
-                    )}
+                  <td colSpan={colSpan} className="table-empty-cell">
+                    <strong>{hasActiveFilters ? 'No section definitions match your filters' : 'No section definitions yet'}</strong>
+                    {hasActiveFilters ? 'Try another college, course or year level.' : 'Add the official sections of each course to build the master list.'}
+                    <div style={{ marginTop: '12px' }}>
+                      {hasActiveFilters ? (
+                        <button type="button" className="btn btn-outline btn-sm" onClick={handleResetFilters}>Clear filters</button>
+                      ) : isAdmin && (
+                        <button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>Add Section Definition</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
-                filteredSections.map((sec) => (
-                  <tr key={sec.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span className="badge badge-accent" style={{ fontSize: '12px', fontWeight: '700' }}>
-                        {sec.program_details?.code || 'CITEC'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span className="badge badge-primary" style={{ fontSize: '12px', fontWeight: '700' }}>
-                        {sec.course || 'BSIT'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 18px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                      {sec.name}
-                    </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span className="badge badge-info" style={{ fontWeight: '600' }}>
-                        {sec.year_level_display || `${sec.year_level}th Year`}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                      {sec.description || '—'}
-                    </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span className="badge badge-outline">
-                        {sec.active_classes_count || 1} active
-                      </span>
-                    </td>
-                    {isAdmin && (
-                      <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                        <ActionPopover
-                          items={[
-                            {
-                              label: 'Open Semester Class',
-                              icon: Calendar,
-                              isPrimary: true,
-                              onClick: () => {
-                                if (onNavigate) onNavigate('sections');
-                              },
-                            },
-                            { isDivider: true },
-                            {
-                              label: 'Delete Definition',
-                              icon: Trash2,
-                              isDanger: true,
-                              onClick: async () => {
-                                if (!window.confirm(`Are you sure you want to delete definition "${sec.name}"?`)) return;
-                                try {
-                                  await Api.deleteProgramSection(sec.id);
-                                  setSuccessMsg(`Section definition ${sec.name} deleted.`);
-                                  loadData();
-                                  setTimeout(() => setSuccessMsg(''), 4000);
-                                } catch (err) {
-                                  setErrorMsg(err.message || 'Failed to delete definition.');
-                                }
-                              },
-                            },
-                          ]}
-                        />
-                      </td>
-                    )}
-                  </tr>
-                ))
+                sections.map((sec) => {
+                  const active = sec.is_active !== false;
+                  const offerings = sec.active_classes_count || 0;
+                  return (
+                    <tr key={sec.id} className={active ? undefined : 'row-inactive'}>
+                      <td><span className="code-tag">{sec.program_details?.code || '—'}</span></td>
+                      <td><span className="code-tag code-tag-info">{sec.course_details?.code || sec.course || '—'}</span></td>
+                      <td><strong>{sec.name}</strong></td>
+                      <td className="text-secondary">{sec.year_level_display || YEAR_LABELS[sec.year_level] || '—'}</td>
+                      <td className="text-muted">{sec.description || '—'}</td>
+                      <td className="num-cell">{offerings === 1 ? '1 class' : `${offerings} classes`}</td>
+                      <td><StatusBadge active={active} /></td>
+                      {isAdmin && (
+                        <td style={{ textAlign: 'right' }}>
+                          <ActionPopover
+                            items={[
+                              { label: 'Edit Definition', icon: Edit2, onClick: () => openEdit(sec) },
+                              { label: 'Open Semester Class', icon: Calendar, onClick: () => onNavigate?.('sections') },
+                              { label: active ? 'Deactivate Section' : 'Activate Section', icon: Power, isSuccess: !active, onClick: () => toggleDefinition(sec) },
+                              { isDivider: true },
+                              { label: 'Delete Definition', icon: Trash2, isDanger: true, onClick: () => deleteDefinition(sec) },
+                            ]}
+                          />
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Add Section Definition Modal */}
-      {showAddModal && (
-        <div
-          className="modal-backdrop open"
-          style={{ display: 'flex', opacity: 1, zIndex: 1200 }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowAddModal(false);
-          }}
-        >
-          <div className="modal-card modal-md" style={{ width: '100%', maxWidth: '520px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-xl)', overflow: 'hidden', border: '1px solid var(--border)' }}>
-            <div className="modal-header" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 className="modal-title" style={{ fontSize: '16px', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Layers size={18} style={{ color: 'var(--primary)' }} />
-                <span>Add Section Definition</span>
-              </h3>
-              <button
-                type="button"
-                className="btn btn-outline btn-sm modal-close-btn"
-                onClick={() => setShowAddModal(false)}
-                style={{ padding: '4px', border: 'none', background: 'none', cursor: 'pointer' }}
-              >
+      {modalMode && (
+        <ModalBackdrop onClose={closeModal} busy={submitting}>
+          <div className="modal-card modal-md" role="dialog" aria-modal="true" aria-labelledby="catalog-modal-title">
+            <div className="modal-header">
+              <div>
+                <h3 className="modal-title" id="catalog-modal-title">
+                  {modalMode === 'edit' ? `Edit ${editingSection?.name || 'Section Definition'}` : 'Add Section Definition'}
+                </h3>
+                <p className="modal-subtitle">
+                  {modalMode === 'edit'
+                    ? 'Fix typos or move this section to the right course. Linked class offerings update automatically.'
+                    : 'Create an official section under a college and course.'}
+                </p>
+              </div>
+              <button type="button" className="modal-close-btn" aria-label="Close" onClick={closeModal}>
                 <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleSubmit}>
-              <div className="modal-body" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {errorMsg && (
-                  <div className="alert alert-danger" style={{ fontSize: '13px', padding: '10px 14px' }}>
-                    {errorMsg}
-                  </div>
-                )}
+              <div className="modal-body">
+                {formError && <div className="alert alert-danger">{formError}</div>}
 
-                <div className="grid-2">
+                <div className="modal-form-grid">
                   <div className="form-group">
-                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                      1. College / Department *
-                    </label>
+                    <label className="form-label" htmlFor="catalog-program">College / Department *</label>
                     <select
+                      id="catalog-program"
                       className="form-select"
                       value={formData.program}
-                      onChange={(e) => setFormData({ ...formData, program: e.target.value })}
+                      onChange={(e) => setFormData({ ...formData, program: e.target.value, course_ref: '' })}
                       required
                     >
-                      <option value="">Select college...</option>
-                      {programs.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.code} - {p.name}
-                        </option>
-                      ))}
+                      <option value="">Select college…</option>
+                      {programs.map((p) => <option key={p.id} value={p.id}>{p.code} - {p.name}</option>)}
                     </select>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                      2. Course / Degree Program *
-                    </label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="e.g. BSIT, BSCS, BSA, ACT"
-                      list="course-suggestions"
-                      value={formData.course}
-                      onChange={(e) => setFormData({ ...formData, course: e.target.value })}
-                      required
-                    />
-                    <datalist id="course-suggestions">
-                      <option value="BSIT">Information Technology</option>
-                      <option value="BSCS">Computer Science</option>
-                      <option value="BSEMC">Entertainment & Multimedia Computing</option>
-                      <option value="ACT">Associate in Computer Tech</option>
-                      <option value="BSA">Accountancy</option>
-                      <option value="BSN">Nursing</option>
-                      <option value="BSCrim">Criminology</option>
-                      <option value="BSCE">Civil Engineering</option>
-                    </datalist>
-                  </div>
-                </div>
-
-                <div className="grid-2">
-                  <div className="form-group">
-                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                      3. Section Name *
-                    </label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="e.g. IT-43, IT 41, BSCS-2A"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                      4. Year Level
-                    </label>
+                    <label className="form-label" htmlFor="catalog-course">Course / Degree *</label>
                     <select
+                      id="catalog-course"
+                      className="form-select"
+                      value={formData.course_ref}
+                      onChange={(e) => setFormData({ ...formData, course_ref: e.target.value })}
+                      disabled={!formData.program}
+                      required
+                    >
+                      <option value="">{formData.program ? (formCourses.length ? 'Select course…' : 'No courses in this college') : 'Select a college first'}</option>
+                      {formCourses.map((course) => <option key={course.id} value={course.id}>{course.code} - {course.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="catalog-name">Section Name *</label>
+                    <input
+                      id="catalog-name"
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. BSIT-1A"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value.toUpperCase() })}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="catalog-year">Year Level</label>
+                    <select
+                      id="catalog-year"
                       className="form-select"
                       value={formData.year_level}
                       onChange={(e) => setFormData({ ...formData, year_level: parseInt(e.target.value, 10) })}
                     >
-                      <option value="1">1st Year</option>
-                      <option value="2">2nd Year</option>
-                      <option value="3">3rd Year</option>
-                      <option value="4">4th Year</option>
+                      {Object.entries(YEAR_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                     </select>
                   </div>
-                </div>
 
-                <div className="form-group">
-                  <label className="form-label" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px' }}>
-                    Description / Track (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="e.g. Software Engineering Track, Day Shift"
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  />
+                  <div className="form-group modal-form-full">
+                    <label className="form-label" htmlFor="catalog-description">Description / Track</label>
+                    <input
+                      id="catalog-description"
+                      type="text"
+                      className="form-control"
+                      placeholder="Optional, e.g. Software Engineering Track"
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="modal-footer" style={{ padding: '14px 22px', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>
-                  Cancel
-                </button>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" data-modal-close onClick={closeModal} disabled={submitting}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
-                  <Check size={16} />
-                  <span>{submitting ? 'Creating...' : 'Create Section Definition'}</span>
+                  {modalMode === 'edit'
+                    ? (submitting ? 'Saving changes…' : 'Save changes')
+                    : (submitting ? 'Creating…' : 'Create definition')}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </div>
   );

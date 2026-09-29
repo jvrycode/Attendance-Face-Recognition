@@ -10,15 +10,39 @@ class Program(models.Model):
     name = models.CharField(max_length=150)
     college = models.CharField(max_length=150, blank=True, default='')
     description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True, help_text='Inactive records are temporarily closed and hidden from new activity.')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.code} - {self.name}"
 
     class Meta:
+        db_table = 'academic_programs'
         ordering = ['code']
         verbose_name = 'Program'
         verbose_name_plural = 'Programs'
+
+
+class Course(models.Model):
+    """Degree course offered under an academic Program, e.g. BSIT or BSCS."""
+    program = models.ForeignKey(Program, on_delete=models.PROTECT, related_name='courses')
+    code = models.CharField(max_length=20)
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+    class Meta:
+        db_table = 'academic_courses'
+        ordering = ['program__code', 'code']
+        constraints = [
+            models.UniqueConstraint(fields=['program', 'code'], name='unique_course_per_program'),
+        ]
+        verbose_name = 'Course'
+        verbose_name_plural = 'Courses'
 
 
 class ProgramSection(models.Model):
@@ -37,17 +61,25 @@ class ProgramSection(models.Model):
     program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name='standard_sections')
     course = models.CharField(
         max_length=50, blank=True, default='',
-        help_text='Course/Degree program abbreviation (e.g., BSIT, BSCS, BSEMC, BSA, BSCrim)'
+        help_text='Legacy course code retained during migration (e.g., BSIT, BSCS, BSEMC, BSA, BSCrim)'
+    )
+    course_ref = models.ForeignKey(
+        Course, on_delete=models.SET_NULL, null=True, blank=True, related_name='program_sections'
     )
     name = models.CharField(max_length=50)
     year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, default=1)
     description = models.CharField(max_length=150, blank=True, default='')
+    is_active = models.BooleanField(default=True, help_text='Inactive records are temporarily closed and hidden from new activity.')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'academic_section_definitions'
         verbose_name = 'Program Section'
         verbose_name_plural = 'Program Sections'
         unique_together = ['program', 'name']
+        indexes = [
+            models.Index(fields=['program', 'course_ref', 'year_level'], name='progsec_filter_idx'),
+        ]
         ordering = ['program__code', 'course', 'year_level', 'name']
 
     def __str__(self):
@@ -56,8 +88,11 @@ class ProgramSection(models.Model):
 
 
 class Subject(models.Model):
-    """Academic subject linked to a Program and Section."""
+    """Academic subject linked to a Course, Program, and Section."""
     program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name='subjects', null=True, blank=True)
+    course_ref = models.ForeignKey(
+        Course, on_delete=models.SET_NULL, null=True, blank=True, related_name='subjects'
+    )
     section = models.ForeignKey('Section', on_delete=models.SET_NULL, null=True, blank=True, related_name='subjects')
     teacher = models.ForeignKey(
         Teacher, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_subjects'
@@ -66,12 +101,22 @@ class Subject(models.Model):
     name = models.CharField(max_length=150)
     description = models.TextField(blank=True)
     units = models.PositiveSmallIntegerField(default=3)
+    is_active = models.BooleanField(default=True, help_text='Inactive records are temporarily closed and hidden from new activity.')
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.course_ref:
+            self.program = self.course_ref.program
+        elif self.section_id and self.section and self.section.course_ref_id:
+            self.course_ref = self.section.course_ref
+            self.program = self.section.program
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.code} - {self.name}"
 
     class Meta:
+        db_table = 'academic_subjects'
         ordering = ['code']
         verbose_name = 'Subject'
         verbose_name_plural = 'Subjects'
@@ -94,7 +139,10 @@ class Section(models.Model):
     program_section = models.ForeignKey(
         ProgramSection, on_delete=models.SET_NULL, null=True, blank=True, related_name='offerings'
     )
-    course = models.CharField(max_length=50, blank=True, default='')
+    course = models.CharField(max_length=50, blank=True, default='', help_text='Legacy course code retained during migration')
+    course_ref = models.ForeignKey(
+        Course, on_delete=models.SET_NULL, null=True, blank=True, related_name='sections'
+    )
     name = models.CharField(max_length=50)
     year_level = models.PositiveSmallIntegerField(choices=YEAR_LEVEL_CHOICES, default=1)
     subject = models.ForeignKey(
@@ -110,6 +158,7 @@ class Section(models.Model):
         choices=[('1st', '1st Semester'), ('2nd', '2nd Semester'), ('summer', 'Summer')],
         default='1st'
     )
+    is_active = models.BooleanField(default=True, help_text='Inactive records are temporarily closed and hidden from new activity.')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
@@ -117,8 +166,13 @@ class Section(models.Model):
             self.name = self.program_section.name
             self.program = self.program_section.program
             self.year_level = self.program_section.year_level
+            if self.program_section.course_ref_id:
+                self.course_ref = self.program_section.course_ref
             if self.program_section.course:
                 self.course = self.program_section.course
+        if self.course_ref:
+            self.course = self.course_ref.code
+            self.program = self.course_ref.program
         super().save(*args, **kwargs)
 
     @property
@@ -148,9 +202,14 @@ class Section(models.Model):
         return ", ".join(parts)
 
     class Meta:
+        db_table = 'academic_class_sections'
         ordering = ['name']
         verbose_name = 'Section'
         verbose_name_plural = 'Sections'
+        indexes = [
+            models.Index(fields=['program', 'course_ref', 'year_level'], name='section_filter_idx'),
+            models.Index(fields=['program_section', 'school_year', 'semester'], name='section_term_idx'),
+        ]
 
 
 class StudentSection(models.Model):
@@ -164,7 +223,11 @@ class StudentSection(models.Model):
     enrolled_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'academic_enrollments'
         unique_together = ['student', 'section', 'subject']
+        indexes = [
+            models.Index(fields=['section', 'subject'], name='enroll_section_subject_idx'),
+        ]
         verbose_name = 'Student Enrollment'
 
     def __str__(self):
@@ -255,11 +318,43 @@ class Schedule(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+        self._sync_schedule_days()
+
+    def _sync_schedule_days(self):
+        """Keeps ScheduleDay rows consistent with the legacy day_of_week/day_2 fields."""
+        target_days = set(self.meeting_days)
+        existing = set(self.meeting_day_rows.values_list('day_of_week', flat=True))
+        for day in target_days - existing:
+            ScheduleDay.objects.create(schedule=self, day_of_week=day)
+        for day in existing - target_days:
+            self.meeting_day_rows.filter(day_of_week=day).delete()
 
     class Meta:
+        db_table = 'academic_schedules'
         ordering = ['day_of_week', 'start_time']
         verbose_name = 'Schedule'
         verbose_name_plural = 'Schedules'
+
+
+class ScheduleDay(models.Model):
+    """
+    Normalized meeting day for a Schedule (1NF).
+    Replaces the day_of_week/day_2 repeating-group columns on Schedule with one
+    row per meeting day. Schedule.day_of_week/day_2 are kept in sync for
+    backward compatibility until all call sites are migrated to use this table.
+    """
+    schedule = models.ForeignKey(Schedule, on_delete=models.CASCADE, related_name='meeting_day_rows')
+    day_of_week = models.CharField(max_length=3, choices=Schedule.DAY_CHOICES)
+
+    class Meta:
+        db_table = 'academic_schedule_days'
+        unique_together = ['schedule', 'day_of_week']
+        ordering = ['schedule_id', 'day_of_week']
+        verbose_name = 'Schedule Day'
+        verbose_name_plural = 'Schedule Days'
+
+    def __str__(self):
+        return f"{self.schedule} - {self.get_day_of_week_display()}"
 
 
 class AttendanceSession(models.Model):
@@ -296,10 +391,32 @@ class AttendanceSession(models.Model):
         return f"{self.schedule.section.name} | {self.date} [{self.status}]"
 
     class Meta:
+        db_table = 'attendance_sessions'
         ordering = ['-date', '-created_at']
         verbose_name = 'Attendance Session'
         verbose_name_plural = 'Attendance Sessions'
         unique_together = ['schedule', 'date']
+
+
+class AttendanceSessionReopenAudit(models.Model):
+    """Immutable audit record for a teacher reopening a closed attendance session."""
+    session = models.ForeignKey(
+        AttendanceSession, on_delete=models.CASCADE, related_name='reopen_history'
+    )
+    reopened_by = models.ForeignKey(
+        Teacher, on_delete=models.PROTECT, related_name='attendance_reopens'
+    )
+    reason = models.CharField(max_length=300)
+    reopened_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'attendance_session_reopen_audits'
+        ordering = ['-reopened_at']
+        verbose_name = 'Attendance Session Reopen Audit'
+        verbose_name_plural = 'Attendance Session Reopen Audits'
+
+    def __str__(self):
+        return f"Session #{self.session_id} reopened by {self.reopened_by_id}: {self.reason}"
 
 
 class AttendanceRecord(models.Model):
@@ -339,6 +456,7 @@ class AttendanceRecord(models.Model):
         return f"{self.student} | {self.session.date} - {self.status}"
 
     class Meta:
+        db_table = 'attendance_records'
         unique_together = ['session', 'student']
         ordering = ['student__user__last_name']
         verbose_name = 'Attendance Record'

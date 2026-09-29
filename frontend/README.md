@@ -14,3 +14,19 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the Oxlint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+
+## Feature tests
+
+Run the frontend feature suite once with:
+
+```bash
+npm run test
+```
+
+The suite uses Vitest and Testing Library with a jsdom environment. It covers the API token/refresh contract, dashboard role routing, student enrollment payload and validation, section roster enrollment, scanner session loading, and attendance recognition/manual marking.
+
+For watch mode during development:
+
+```bash
+npm run test:watch
+```

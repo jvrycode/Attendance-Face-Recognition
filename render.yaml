@@ -35,6 +35,19 @@ services:
         sync: false
       - key: ALLOWED_HOSTS
         sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      # Render puts one proxy in front of the app; needed for correct per-IP login throttling
+      - key: TRUSTED_PROXY_COUNT
+        value: "1"
+      # "true" = build.sh deletes the old public copies of face photos (irreversible).
+      # Leave "false" until you've confirmed face photos load in the app after a deploy.
+      - key: FACE_PHOTOS_DELETE_PUBLIC
+        value: "false"
       - key: FACE_RECOGNITION_TOLERANCE
         value: "0.5"
       - key: LATE_THRESHOLD_MINUTES

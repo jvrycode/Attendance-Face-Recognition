@@ -5,7 +5,7 @@
 [![dlib](https://img.shields.io/badge/dlib-128D%20Embeddings-red.svg)](http://dlib.net/)
 [![OpenCV](https://img.shields.io/badge/OpenCV-Enabled-orange.svg)](https://opencv.org/)
 [![Database](https://img.shields.io/badge/Database-MariaDB%20%2F%20MySQL-blue.svg)](https://mariadb.org/)
-[![Tests](https://img.shields.io/badge/Tests-22%20Passing-brightgreen.svg)](https://github.com/jvrycode/Attendance-Face-Recognition)
+[![Tests](https://img.shields.io/badge/Tests-Django%20Suites-brightgreen.svg)](https://github.com/jvrycode/Attendance-Face-Recognition)
 
 **AttendFR** is a modern, enterprise-ready Automated Attendance Management System developed in Python & Django 5. It pairs real-time webcam facial detection and 128-dimensional embedding comparison with intelligent academic scheduling, schedule conflict detection, dynamic multi-day schedule grouping, and two-tier wrong-section prevention.
 
@@ -31,7 +31,7 @@
   - Scanning updates row status to **Present** (or Late) in real-time with exact timestamp and confidence score.
   - Generates downloadable CSV reports and printable session summaries.
 - 🧪 **Comprehensive Automated Testing**:
-  - 22 Django unit tests + 19 feature tests passing with 100% success.
+  - Django feature tests for accounts, academic scheduling, attendance services, and face recognition, with a separate REST API contract suite.
 
 ---
 
@@ -99,11 +99,17 @@ Visit: **[http://127.0.0.1:8000/](http://127.0.0.1:8000/)**
 ## 🧪 Running Tests
 
 ```bash
-# Unit test suite (22 tests)
+# Standard Django discovery suite (all discovered tests)
 python manage.py test
 
-# Feature test suite (19 tests)
+# Feature suite (accounts, core, and face_app)
 python manage.py test_features
+
+# Run one feature area only
+python manage.py test_features --tag core
+
+# Separate centralized REST API contract suite
+python manage.py test_api
 ```
 
 ---

@@ -1,6 +1,6 @@
 """
 API Serializers Package
-Exports serializers across auth, students, classes, attendance, and reports.
+Exports serializers across auth, students, classes, courses, attendance, and reports.
 """
 from attendance_fr.api.serializers.auth import (
     CurrentUserProfileSerializer,
@@ -22,6 +22,7 @@ from attendance_fr.api.serializers.classes import (
     StudentSectionSerializer,
     SectionEnrollmentCreateSerializer,
 )
+from attendance_fr.api.serializers.courses import CourseSerializer
 from attendance_fr.api.serializers.attendance import (
     AttendanceSessionSerializer,
     AttendanceRecordSerializer,
@@ -42,6 +43,7 @@ __all__ = [
     'StudentSerializer',
     'UserCreateInputSerializer',
     'UserUpdateInputSerializer',
+    'CourseSerializer',
     'ProgramSerializer',
     'ProgramSectionSerializer',
     'SubjectSerializer',
